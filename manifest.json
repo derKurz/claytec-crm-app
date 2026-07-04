@@ -1,0 +1,19 @@
+{
+  "name": "Claytec CRM",
+  "short_name": "Claytec CRM",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11151c",
+  "theme_color": "#11151c",
+  "description": "CRM für den Claytec-Außendienst Bayern — Tourenplanung, Kontakte, Besuche, offline-fähig.",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claytec CRM — Außendienst Bayern</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#11151c">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.css?v=20260704c">
+<!-- Leaflet (Karte) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<!-- SheetJS für Excel-Import (Lesen) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- ExcelJS für die Excel-Ablage (Schreiben mit Formaterhalt) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<!-- Dexie.js (IndexedDB-Wrapper) — Migrationsphase 1, siehe OFFLINE_SYNC.md -->
+<script src="https://unpkg.com/dexie@3.2.7/dist/dexie.js"></script>
+<!-- Supabase-JS — Migrationsphase 3, siehe OFFLINE_SYNC.md -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+
+<header id="app-header">
+  <h1>Claytec <span>CRM</span></h1>
+  <div id="header-search-wrap">
+    <input type="text" id="header-search" placeholder="🔍 Kontakt suchen...">
+    <div id="header-search-results" class="hidden"></div>
+  </div>
+  <div class="header-actions">
+    <button class="btn" id="btn-import-excel">📥 Excel-Import</button>
+    <button class="btn" id="btn-backup-export">💾 Backup</button>
+    <button class="btn" id="btn-backup-import">📂 Wiederherstellen</button>
+  </div>
+  <input type="file" id="file-input-excel" accept=".xlsx,.xls" multiple class="hidden">
+  <input type="file" id="file-input-backup" accept=".json" class="hidden">
+</header>
+
+<nav id="tabs">
+  <button class="tab-btn active" data-tab="start">Start</button>
+  <button class="tab-btn" data-tab="karte">Karte</button>
+  <button class="tab-btn" data-tab="kontakte">Kontakte</button>
+  <button class="tab-btn" data-tab="agenda">Heute</button>
+  <button class="tab-btn" data-tab="projekte">Projekte</button>
+  <button class="tab-btn" data-tab="netzwerk">Netzwerk</button>
+  <button class="tab-btn" data-tab="regionen">Regionen</button>
+  <button class="tab-btn" data-tab="einstellungen">Einstellungen</button>
+</nav>
+
+<main id="main">
+
+  <section id="view-start" class="view active"></section>
+
+  <section id="view-karte" class="view">
+    <div id="map-container"></div>
+    <div id="map-controls" class="card"></div>
+    <div id="map-side-panel"></div>
+  </section>
+
+  <section id="view-kontakte" class="view">
+    <div class="card" style="background:rgba(255,92,92,.08);border-color:var(--red)">
+      ⚠️ Hinweis: LocalStorage kann durch Browser-Reset verloren gehen — regelmäßig Backup sichern!
+    </div>
+    <div class="filter-bar">
+      <div class="col" style="flex:2;min-width:200px">
+        <label>Suche (Firma, Person, Tag, ERP-Nr.)</label>
+        <input type="text" id="contact-search" placeholder="z.B. Müller, Maler, Messekontakt, 22769...">
+      </div>
+      <button type="button" class="btn btn-sm mobile-only-filter" id="btn-toggle-extra-filters">▾ Mehr Filter</button>
+      <div class="filter-bar-extra" id="filter-bar-extra">
+        <div class="col" style="max-width:150px">
+          <label>Ort / Region</label>
+          <input type="text" id="filter-ort" placeholder="z.B. München">
+        </div>
+        <div class="col" style="max-width:130px">
+          <label>PLZ-Bereich</label>
+          <input type="text" id="filter-plz" placeholder="z.B. 80–85">
+        </div>
+        <div class="col" style="max-width:140px">
+          <label>Kategorie</label>
+          <select id="filter-type"><option value="">Alle</option></select>
+        </div>
+        <div class="col" style="max-width:140px">
+          <label>Listenquelle</label>
+          <select id="filter-source"><option value="">Alle</option></select>
+        </div>
+        <div class="col" style="max-width:100px">
+          <label>A/B/C</label>
+          <select id="filter-abc"><option value="">Alle</option><option>A</option><option>B</option><option>C</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="quick-filters" id="contact-quick-filters">
+      <button class="qf-btn typ-chip mobile-only-filter active" data-typ="">Alle</button>
+      <button class="qf-btn typ-chip mobile-only-filter" data-typ="haendler">HA</button>
+      <button class="qf-btn typ-chip mobile-only-filter" data-typ="verarbeiter">BU</button>
+      <button class="qf-btn typ-chip mobile-only-filter" data-typ="architekt">AR</button>
+      <button class="qf-btn typ-chip mobile-only-filter" data-typ="sonstige">SO</button>
+      <button class="qf-btn" data-qf="partner">⭐ Nur Partner</button>
+      <button class="qf-btn" data-qf="overdue">Überfällig</button>
+      <button class="qf-btn" data-qf="week">Diese Woche</button>
+      <button class="qf-btn" data-qf="reset" style="margin-left:auto">✕ Filter zurücksetzen</button>
+    </div>
+    <div class="row" style="justify-content:space-between;align-items:center;margin:4px 0">
+      <p id="contact-count" style="color:var(--text-dim);font-size:13px;margin:0">0 Kontakte</p>
+      <div class="row" style="gap:6px">
+        <button class="btn btn-sm" id="btn-toggle-notes" onclick="CRM.toggleNotesColumn()">📝 Notizen anzeigen</button>
+        <button class="btn btn-sm" id="btn-new-contact">+ Neuer Kontakt</button>
+      </div>
+    </div>
+    <div id="contact-list-container"></div>
+  </section>
+
+  <section id="view-agenda" class="view">
+    <p style="padding:16px;color:var(--text-dim)">Agenda folgt in Schritt 8.</p>
+  </section>
+
+  <section id="view-projekte" class="view"></section>
+
+  <section id="view-netzwerk" class="view"></section>
+
+  <section id="view-regionen" class="view"></section>
+
+  <section id="view-einstellungen" class="view"></section>
+
+</main>
+
+<nav id="bottom-nav">
+  <button class="bn-btn active" data-tab="start"><span class="bn-icon">🏠</span><span class="bn-label">Start</span></button>
+  <button class="bn-btn" data-tab="karte"><span class="bn-icon">🗺️</span><span class="bn-label">Karte</span></button>
+  <button class="bn-btn" data-tab="agenda"><span class="bn-icon">📅</span><span class="bn-label">Heute</span></button>
+  <button class="bn-btn" id="bn-more-btn"><span class="bn-icon">☰</span><span class="bn-label">Mehr</span></button>
+</nav>
+<button id="fab-new" class="fab-hidden" title="Neuer Kontakt / Besuch erfassen">➕</button>
+
+<div id="more-sheet-overlay" class="hidden">
+  <div id="more-sheet">
+    <button class="more-sheet-item" data-tab="kontakte">👥 Kontakte</button>
+    <button class="more-sheet-item" data-tab="projekte">📋 Projekte</button>
+    <button class="more-sheet-item" data-tab="netzwerk">🕸️ Netzwerk</button>
+    <button class="more-sheet-item" data-tab="regionen">📍 Regionen</button>
+    <button class="more-sheet-item" data-tab="einstellungen">⚙️ Einstellungen</button>
+    <hr style="border-color:var(--border);margin:6px 0">
+    <button class="more-sheet-item" id="more-sheet-eingang">📤 Eingang exportieren</button>
+    <button class="more-sheet-item" id="more-sheet-import">📥 Excel-Import</button>
+    <button class="more-sheet-item" id="more-sheet-backup">💾 Backup</button>
+    <button class="more-sheet-item" id="more-sheet-restore">📂 Wiederherstellen</button>
+    <button class="more-sheet-item" id="more-sheet-close" style="color:var(--text-dim)">Schließen</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="storage.js?v=20260704c"></script>
+<script src="db-indexeddb.js?v=20260704c"></script>
+<script src="supabase-client.js?v=20260704c"></script>
+<script src="sync.js?v=20260704c"></script>
+<script src="import.js?v=20260704c"></script>
+<script src="contact-detail.js?v=20260704c"></script>
+<script src="agenda.js?v=20260704c"></script>
+<script src="dashboard.js?v=20260704c"></script>
+<script src="geocoding.js?v=20260704c"></script>
+<script src="map.js?v=20260704c"></script>
+<script src="speech.js?v=20260704c"></script>
+<script src="settings.js?v=20260704c"></script>
+<script src="projects.js?v=20260704c"></script>
+<script src="network.js?v=20260704c"></script>
+<script src="regions.js?v=20260704c"></script>
+<script src="excel-ablage.js?v=20260704c"></script>
+<script src="vcard.js?v=20260704c"></script>
+<script src="email-parser.js?v=20260704c"></script>
+<script src="app.js?v=20260704c"></script>
+</body>
+</html>

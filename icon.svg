@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#11151c"/>
+  <path d="M256 96 L400 200 V416 H312 V296 H200 V416 H112 V200 Z" fill="#c98a3c"/>
+  <circle cx="256" cy="180" r="34" fill="#11151c"/>
+  <circle cx="256" cy="180" r="18" fill="#c98a3c"/>
+  <text x="256" y="470" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="#c98a3c" text-anchor="middle">CRM</text>
+</svg>
