@@ -17,6 +17,7 @@ CRM.map.init = function () {
   if (CRM.map.instance || typeof L === 'undefined') return;
   const map = L.map('map-container', { center: [48.95, 11.4], zoom: 8, zoomControl: false });
   L.control.zoom({ position: 'topright' }).addTo(map);
+  CRM.map.addLocateControl(map);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© OpenStreetMap-Mitwirkende',
@@ -30,6 +31,76 @@ CRM.map.init = function () {
   map.on('click', CRM.map.closeSidePanel);
   CRM.map.renderControls();
   CRM.map.refresh();
+};
+
+/* ============================================================
+   GPS-Standort: Button unter dem Zoom (oben rechts) ermittelt die
+   aktuelle Position und zeigt sie als pulsierenden Punkt + Genauigkeits-
+   kreis. Zweiter Tipp = neu lokalisieren. Position wird NICHT gespeichert
+   und NICHT an Server gesendet — reine Anzeige auf der Karte.
+   ============================================================ */
+CRM.map.addLocateControl = function (map) {
+  const Locate = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      const div = L.DomUtil.create('div', 'leaflet-bar');
+      const a = L.DomUtil.create('a', 'crm-locate-btn', div);
+      a.href = '#';
+      a.title = 'Meinen Standort anzeigen';
+      a.setAttribute('aria-label', 'Meinen Standort anzeigen');
+      a.innerHTML = '🧭';
+      L.DomEvent.on(a, 'click', function (e) {
+        L.DomEvent.stop(e);
+        CRM.map.locateMe();
+      });
+      return div;
+    },
+  });
+  map.addControl(new Locate());
+};
+
+CRM.map.locateMe = function () {
+  if (!navigator.geolocation) {
+    CRM.toast('Standortbestimmung wird von diesem Browser nicht unterstützt.', 'error');
+    return;
+  }
+  const btn = document.querySelector('.crm-locate-btn');
+  if (btn) btn.classList.add('locating');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (btn) btn.classList.remove('locating');
+      CRM.map.showGpsPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+    },
+    (err) => {
+      if (btn) btn.classList.remove('locating');
+      const msg = err.code === 1
+        ? 'Standort-Zugriff verweigert — bitte in den Browser-/App-Einstellungen für diese Seite erlauben.'
+        : (err.code === 3 ? 'Zeitüberschreitung bei der Standortbestimmung — bitte nochmal tippen.' : 'Standort konnte nicht ermittelt werden.');
+      CRM.toast(msg, 'error');
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+  );
+};
+
+CRM.map.showGpsPosition = function (lat, lng, accuracy) {
+  const map = CRM.map.instance;
+  if (!map) return;
+  if (CRM.map._gpsMarker) { map.removeLayer(CRM.map._gpsMarker); CRM.map._gpsMarker = null; }
+  if (CRM.map._gpsCircle) { map.removeLayer(CRM.map._gpsCircle); CRM.map._gpsCircle = null; }
+
+  CRM.map._gpsCircle = L.circle([lat, lng], {
+    radius: Math.max(accuracy || 0, 15),
+    color: '#3da9fc', fillColor: '#3da9fc', fillOpacity: 0.12, weight: 1,
+  }).addTo(map);
+  CRM.map._gpsMarker = L.marker([lat, lng], {
+    icon: L.divIcon({ className: 'crm-gps-dot-wrap', html: '<div class="crm-gps-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+    zIndexOffset: 2000,
+    interactive: false,
+  }).addTo(map);
+
+  map.setView([lat, lng], Math.max(map.getZoom(), 14));
+  const acc = Math.round(accuracy || 0);
+  CRM.toast(acc ? `Standort gefunden (±${acc} m).` : 'Standort gefunden.', 'success');
 };
 
 CRM.map.makeIcon = function (c) {
