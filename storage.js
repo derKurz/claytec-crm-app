@@ -527,6 +527,7 @@ CRM.updateVisit = function (contactId, visitId, patch) {
   const v = (c.visits || []).find((x) => x.id === visitId);
   if (!v) return null;
   Object.assign(v, patch);
+  v.updatedAt = new Date().toISOString();
   c.visits.sort((a, b) => (a.date < b.date ? 1 : -1));
   c.updatedAt = new Date().toISOString();
   CRM.db.saveContacts();
@@ -539,6 +540,38 @@ CRM._removeVisit = function (contactId, visitId) {
   c.visits = (c.visits || []).filter((x) => x.id !== visitId);
   c.updatedAt = new Date().toISOString();
   CRM.db.saveContacts();
+};
+
+/* ============================================================
+   Intelligente Suche: Normalisierung + Token-Vergleich.
+   Behebt die typischen „findet nichts, obwohl richtig geschrieben"-Fälle:
+   - Umlaute/Schreibweisen: „Müller" = „Mueller" = „Muller"
+   - Satzzeichen: „Maier-Bau GmbH & Co." findet man mit „maier bau"
+   - Wortreihenfolge: „baustoffe maier" findet „Maier Baustoffe"
+   Jedes Suchwort muss irgendwo im Kontakt vorkommen (UND-Logik).
+   ============================================================ */
+CRM.searchNorm = function (s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/ß/g, 'ss')
+    .replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u')
+    .replace(/ae/g, 'a').replace(/oe/g, 'o').replace(/ue/g, 'u')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+};
+
+CRM.smartMatch = function (query, fields) {
+  const tokens = CRM.searchNorm(query).split(' ').filter(Boolean);
+  if (!tokens.length) return false;
+  const hay = ' ' + CRM.searchNorm(fields.filter(Boolean).join(' ')) + ' ';
+  return tokens.every((t) => hay.includes(t));
+};
+
+CRM.contactSearchFields = function (c) {
+  const ap = c.ansprechpartner || {};
+  return [c.firma1, c.firma2, c.firma3, c.strasse, c.ort, c.plz, c.erpNr,
+    ap.name, ap.vorname, ap.telefon, ap.email, c.telFirma, c.emailFirma,
+    (c.tags || []).join(' ')];
 };
 
 CRM.getLastVisit = function (contact) {

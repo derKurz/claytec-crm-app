@@ -259,10 +259,10 @@ CRM.renderKalender = function () {
   } else if (CRM._calMode === 'woche') {
     const start = CRM.startOfWeek(anchor);
     const end = new Date(start); end.setDate(end.getDate() + 6);
-    titleLabel = start.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) + ' – ' + end.toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+    titleLabel = 'KW ' + CRM.isoWeek(start) + ' · ' + start.toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }) + ' – ' + end.toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
     grid = CRM.calWeekGrid(start, events);
   } else {
-    titleLabel = anchor.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    titleLabel = anchor.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' (KW ' + CRM.isoWeek(anchor) + ')';
     grid = CRM.calDayList(CRM._calAnchor, events);
   }
 
@@ -285,6 +285,15 @@ CRM.renderKalender = function () {
     </div>`;
 };
 
+/* ISO-Kalenderwoche (DIN 1355: Woche mit dem ersten Donnerstag) */
+CRM.isoWeek = function (d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() + 3 - ((x.getDay() + 6) % 7));
+  const jan4 = new Date(x.getFullYear(), 0, 4);
+  return 1 + Math.round(((x - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+};
+
 CRM.startOfWeek = function (d) {
   const x = new Date(d);
   const day = (x.getDay() + 6) % 7; // Montag = 0
@@ -303,9 +312,10 @@ CRM.calMonthGrid = function (anchor, events) {
   const start = CRM.startOfWeek(first);
   const todayStr = CRM.ymd(new Date());
   const wd = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  let html = '<div class="cal-grid cal-month">' + wd.map((d) => `<div class="cal-wd">${d}</div>`).join('');
+  let html = '<div class="cal-grid cal-month cal-kw-grid"><div class="cal-wd cal-kw-head">KW</div>' + wd.map((d) => `<div class="cal-wd">${d}</div>`).join('');
   const cur = new Date(start);
   for (let i = 0; i < 42; i++) {
+    if (i % 7 === 0) html += `<div class="cal-kw-cell">${CRM.isoWeek(cur)}</div>`;
     const ds = CRM.ymd(cur);
     const inMonth = cur.getMonth() === anchor.getMonth();
     const isToday = ds === todayStr;
@@ -319,7 +329,8 @@ CRM.calMonthGrid = function (anchor, events) {
 CRM.calWeekGrid = function (start, events) {
   const todayStr = CRM.ymd(new Date());
   const wd = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  let html = '<div class="cal-grid cal-month">' + wd.map((d) => `<div class="cal-wd">${d}</div>`).join('');
+  let html = '<div class="cal-grid cal-month cal-kw-grid"><div class="cal-wd cal-kw-head">KW</div>' + wd.map((d) => `<div class="cal-wd">${d}</div>`).join('');
+  html += `<div class="cal-kw-cell">${CRM.isoWeek(start)}</div>`;
   const cur = new Date(start);
   for (let i = 0; i < 7; i++) {
     const ds = CRM.ymd(cur);

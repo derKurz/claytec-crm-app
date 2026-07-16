@@ -57,9 +57,27 @@ CRM.map.addLocateControl = function (map) {
     },
   });
   map.addControl(new Locate());
+
+  const Nearby = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function () {
+      const div = L.DomUtil.create('div', 'leaflet-bar');
+      const a = L.DomUtil.create('a', 'crm-locate-btn crm-nearby-btn', div);
+      a.href = '#';
+      a.title = 'Kontakte in der Nähe';
+      a.setAttribute('aria-label', 'Kontakte in der Nähe');
+      a.innerHTML = '🔎';
+      L.DomEvent.on(a, 'click', function (e) {
+        L.DomEvent.stop(e);
+        CRM.map.openNearby();
+      });
+      return div;
+    },
+  });
+  map.addControl(new Nearby());
 };
 
-CRM.map.locateMe = function () {
+CRM.map.locateMe = function (onSuccess) {
   if (!navigator.geolocation) {
     CRM.toast('Standortbestimmung wird von diesem Browser nicht unterstützt.', 'error');
     return;
@@ -70,6 +88,7 @@ CRM.map.locateMe = function () {
     (pos) => {
       if (btn) btn.classList.remove('locating');
       CRM.map.showGpsPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      if (onSuccess) onSuccess();
     },
     (err) => {
       if (btn) btn.classList.remove('locating');
@@ -85,6 +104,7 @@ CRM.map.locateMe = function () {
 CRM.map.showGpsPosition = function (lat, lng, accuracy) {
   const map = CRM.map.instance;
   if (!map) return;
+  CRM.map._gpsPos = { lat, lng, ts: Date.now() };
   if (CRM.map._gpsMarker) { map.removeLayer(CRM.map._gpsMarker); CRM.map._gpsMarker = null; }
   if (CRM.map._gpsCircle) { map.removeLayer(CRM.map._gpsCircle); CRM.map._gpsCircle = null; }
 
@@ -101,6 +121,106 @@ CRM.map.showGpsPosition = function (lat, lng, accuracy) {
   map.setView([lat, lng], Math.max(map.getZoom(), 14));
   const acc = Math.round(accuracy || 0);
   CRM.toast(acc ? `Standort gefunden (±${acc} m).` : 'Standort gefunden.', 'success');
+};
+
+/* ============================================================
+   Umkreis-Suche: „Was ist in der Nähe?" — Kontakte im Radius um die
+   GPS-Position, nach Luftlinie sortiert. Radius-Chips + „nur überfällige".
+   Nutzt das bestehende Seiten-Panel/Bottom-Sheet der Karte.
+   ============================================================ */
+CRM.map._nearbyRadius = CRM.map._nearbyRadius || 10;
+CRM.map._nearbyOverdueOnly = CRM.map._nearbyOverdueOnly || false;
+CRM.map._nearbyExpandedId = null;
+
+CRM.map.distKm = function (lat1, lng1, lat2, lng2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+CRM.map.openNearby = function () {
+  // Position älter als 5 Minuten → neu lokalisieren (im Auto ist man weitergefahren)
+  const pos = CRM.map._gpsPos;
+  if (!pos || Date.now() - pos.ts > 5 * 60 * 1000) {
+    CRM.map.locateMe(() => CRM.map.renderNearbyPanel());
+    return;
+  }
+  CRM.map.renderNearbyPanel();
+};
+
+CRM.map.setNearbyRadius = function (km) {
+  CRM.map._nearbyRadius = km;
+  CRM.map.renderNearbyPanel();
+};
+CRM.map.toggleNearbyOverdue = function () {
+  CRM.map._nearbyOverdueOnly = !CRM.map._nearbyOverdueOnly;
+  CRM.map.renderNearbyPanel();
+};
+CRM.map.toggleNearbyExpand = function (id) {
+  CRM.map._nearbyExpandedId = CRM.map._nearbyExpandedId === id ? null : id;
+  CRM.map.renderNearbyPanel();
+};
+
+CRM.map.renderNearbyPanel = function () {
+  const pos = CRM.map._gpsPos;
+  if (!pos) return;
+  const radius = CRM.map._nearbyRadius;
+
+  let hits = CRM.db.getContacts()
+    .filter((c) => c.lat != null && c.lng != null)
+    .map((c) => ({ c, dist: CRM.map.distKm(pos.lat, pos.lng, c.lat, c.lng), due: CRM.getDueStatus(c) }))
+    .filter((h) => h.dist <= radius);
+  if (CRM.map._nearbyOverdueOnly) hits = hits.filter((h) => h.due.status === 'overdue' || h.due.status === 'today');
+  hits.sort((a, b) => a.dist - b.dist);
+  const total = hits.length;
+  hits = hits.slice(0, 30);
+
+  const chip = (km) => `<button class="qf-btn ${CRM.map._nearbyRadius === km ? 'active' : ''}" onclick="CRM.map.setNearbyRadius(${km})">${km} km</button>`;
+
+  const rows = hits.map(({ c, dist, due }) => {
+    const overdue = due.status === 'overdue' || due.status === 'today';
+    const dueLabel = due.status === 'overdue' ? `${-due.diffDays} Tage überfällig`
+      : (due.status === 'today' ? 'heute fällig' : `letzter Besuch: ${CRM.formatLastVisit(c)}`);
+    const expanded = CRM.map._nearbyExpandedId === c.id;
+    const tel = c.telFirma || (c.ansprechpartner && c.ansprechpartner.telefon);
+    const addr = CRM.formatAddress(c);
+    const actions = expanded ? `
+      <div class="nearby-actions">
+        ${tel ? `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 Anrufen</a>` : ''}
+        ${addr ? `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚗 Hinfahren</a>` : ''}
+        <button class="btn btn-sm" onclick="event.stopPropagation();CRM.openContactDetail('${c.id}')">Profil</button>
+      </div>` : '';
+    return `
+      <div class="nearby-row ${overdue ? 'nearby-overdue' : ''}" onclick="CRM.map.toggleNearbyExpand('${c.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <div class="nearby-title">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
+          <div class="nearby-dist">${dist < 10 ? dist.toFixed(1).replace('.', ',') : Math.round(dist)} km</div>
+        </div>
+        <div class="nearby-sub">${c.abc} · ${CRM.TYPE_LABELS[c.type] || ''} · ${dueLabel}</div>
+        ${actions}
+      </div>`;
+  }).join('');
+
+  const panel = document.getElementById('map-side-panel');
+  CRM.map._panelContactId = null;
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <h3 style="margin:0">In der Nähe (${total})</h3>
+      <button class="btn btn-icon map-panel-close" onclick="CRM.map.closeSidePanel()">✕ Schließen</button>
+    </div>
+    <div class="nearby-chips">
+      ${chip(5)}${chip(10)}${chip(25)}${chip(50)}
+      <button class="qf-btn ${CRM.map._nearbyOverdueOnly ? 'active' : ''}" onclick="CRM.map.toggleNearbyOverdue()" style="margin-left:auto">nur überfällige</button>
+    </div>
+    <div class="nearby-list">
+      ${rows || '<p style="color:var(--text-dim);font-size:13px;margin:10px 0">Keine Kontakte in diesem Radius' + (CRM.map._nearbyOverdueOnly ? ' (Filter „nur überfällige" aktiv)' : '') + '.</p>'}
+      ${total > 30 ? `<p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">${total - 30} weitere — Radius verkleinern oder Filter nutzen.</p>` : ''}
+    </div>
+    <p style="color:var(--text-dim);font-size:11px;margin:8px 0 0">Entfernung = Luftlinie ab GPS-Position.</p>
+  `;
+  panel.classList.add('open');
 };
 
 CRM.map.makeIcon = function (c) {

@@ -57,6 +57,11 @@ CRM.renderDashboard = function () {
         ${CRM.dashboardNextUpHtml(visits, tasks)}
       </div>
 
+      <div class="dash-section">
+        <div class="dash-section-head"><span>Heute erfasst</span></div>
+        ${CRM.dashboardTodayHtml()}
+      </div>
+
       <div class="dash-actions">
         <button class="dash-action dash-action-primary" onclick="CRM.dashboardVoiceNote()">🎤 Sprachnotiz aufnehmen</button>
         <div class="dash-actions-row">
@@ -112,6 +117,60 @@ CRM.dashboardNextUpHtml = function (visits, tasks) {
         <span class="dash-next-chev">›</span>
       </div>`;
   }).join('');
+};
+
+/* Tagesübersicht: alles, was HEUTE eingetragen oder geändert wurde —
+   Besuche (neu/geändert), Journal-Einträge, Aufgaben (angelegt/erledigt),
+   neue Kontakte. Tipp auf einen Eintrag öffnet den Kontakt. */
+CRM.dashboardTodayHtml = function () {
+  const todayStr = CRM.ymd(new Date());
+  const isToday = (iso) => iso && CRM.ymd(new Date(iso)) === todayStr;
+  const items = [];
+
+  CRM.db.getContacts().forEach((c) => {
+    (c.visits || []).forEach((v) => {
+      if (isToday(v.createdAt)) {
+        items.push({ ts: v.createdAt, icon: '📍', title: `Besuch erfasst: ${c.firma1}`, sub: v.note ? v.note.slice(0, 60) : ('Besuchsdatum ' + v.date), contactId: c.id });
+      } else if (isToday(v.updatedAt)) {
+        items.push({ ts: v.updatedAt, icon: '✏️', title: `Besuch geändert: ${c.firma1}`, sub: 'Besuchsdatum ' + v.date, contactId: c.id });
+      }
+    });
+    if (isToday(c.createdAt)) {
+      items.push({ ts: c.createdAt, icon: '👤', title: `Kontakt angelegt: ${c.firma1}`, sub: [c.plz, c.ort].filter(Boolean).join(' '), contactId: c.id });
+    }
+  });
+
+  CRM.db.getJournalEntries().forEach((j) => {
+    if (!isToday(j.createdAt)) return;
+    const c = j.contactId ? CRM.db.getContact(j.contactId) : null;
+    const typeLabel = (CRM.JOURNAL_TYPE_LABELS && CRM.JOURNAL_TYPE_LABELS[j.type]) || 'Notiz';
+    items.push({ ts: j.createdAt, icon: '📓', title: `${typeLabel}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (j.text || '').slice(0, 60), contactId: j.contactId });
+  });
+
+  CRM.db.getTasks().forEach((t) => {
+    const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
+    if (isToday(t.doneAt)) {
+      items.push({ ts: t.doneAt, icon: '✅', title: `Aufgabe erledigt: ${t.title}`, sub: c ? c.firma1 : 'Allgemein', contactId: t.contactId });
+    } else if (isToday(t.createdAt)) {
+      items.push({ ts: t.createdAt, icon: '➕', title: `Aufgabe angelegt: ${t.title}`, sub: (c ? c.firma1 + ' · ' : '') + 'fällig ' + (t.due || '–'), contactId: t.contactId });
+    }
+  });
+
+  items.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const top = items.slice(0, 15);
+  if (!top.length) return '<div class="dash-empty">Heute noch nichts erfasst.</div>';
+
+  const time = (iso) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  return top.map((it) => `
+    <div class="dash-next" onclick="${it.contactId ? `CRM.openContactDetail('${it.contactId}')` : `CRM.switchTab('agenda')`}">
+      <span class="dash-next-icon">${it.icon}</span>
+      <div class="dash-next-main">
+        <div class="dash-next-title">${esc(it.title)}</div>
+        <div class="dash-next-sub">${time(it.ts)} Uhr${it.sub ? ' · ' + esc(it.sub) : ''}</div>
+      </div>
+      <span class="dash-next-chev">›</span>
+    </div>`).join('')
+    + (items.length > 15 ? `<div class="dash-empty">+ ${items.length - 15} weitere Einträge</div>` : '');
 };
 
 /* Sprachnotiz vom Dashboard: erst Kontakt wählen (Suche wie Header-Suche),

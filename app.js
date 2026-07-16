@@ -111,6 +111,22 @@ CRM.switchTab = function (tabId) {
   }
   if (tabId === 'einstellungen' && CRM.renderSettings) CRM.renderSettings();
   if (tabId === 'karte' && CRM.map && CRM.map.onShow) CRM.map.onShow();
+  // Letzten Tab merken: Wenn Android die PWA im Hintergrund beendet,
+  // startet sie wieder dort, wo man war (Wiederherstellung beim App-Start).
+  try { localStorage.setItem('crmLastTab', JSON.stringify({ tab: tabId, ts: Date.now() })); } catch (e) { /* voll/privat */ }
+};
+
+/* Nach einem Hintergrund-Kill der PWA den letzten Tab wiederherstellen —
+   aber nur innerhalb von 4 Stunden; am nächsten Morgen startet die App
+   bewusst frisch auf der Startseite. */
+CRM.restoreLastTab = function () {
+  try {
+    const saved = JSON.parse(localStorage.getItem('crmLastTab') || 'null');
+    if (!saved || saved.tab === 'start') return;
+    if (Date.now() - (saved.ts || 0) > 4 * 60 * 60 * 1000) return;
+    if (!document.getElementById('view-' + saved.tab)) return;
+    CRM.switchTab(saved.tab);
+  } catch (e) { /* defekter Eintrag — ignorieren */ }
 };
 
 /* ============================================================
@@ -155,17 +171,14 @@ CRM.contactMatchesFilters = function (c, f) {
   if (CRM._regionFilter && CRM._regionFilter.size) {
     if (!CRM._regionFilter.has(CRM.regionForPlz(c.plz))) return false;
   }
-  if (f.text) {
-    const hay = [c.firma1, c.firma2, c.firma3, c.ort, c.plz, c.erpNr, c.ansprechpartner?.name, c.ansprechpartner?.vorname, (c.tags || []).join(' ')]
-      .join(' ').toLowerCase();
-    if (!hay.includes(f.text)) return false;
-  }
+  if (f.text && !CRM.smartMatch(f.text, CRM.contactSearchFields(c))) return false;
   if (f.ort && !String(c.ort || '').toLowerCase().includes(f.ort)) return false;
   if (f.plz && !CRM.matchesPlzRange(c.plz, f.plz)) return false;
   if (f.type && c.type !== f.type) return false;
   if (f.source && c.source !== f.source) return false;
   if (f.abc && c.abc !== f.abc) return false;
   if (f.qf.partner && !c.isPartner) return false;
+  if (f.qf.eurobaustoff && c.source !== 'eurobaustoff') return false;
   if (f.qf.overdue || f.qf.week) {
     const st = CRM.getDueStatus(c).status;
     if (f.qf.overdue && f.qf.week) {
@@ -398,6 +411,12 @@ document.addEventListener('DOMContentLoaded', () => {
   CRM.renderContactList();
   if (CRM.renderDashboard) CRM.renderDashboard();
   if (CRM.map && CRM.map.init) CRM.map.init();
+  CRM.restoreLastTab();
+  // Browser bitten, den Speicher als „dauerhaft" zu markieren — verhindert,
+  // dass Android/Chrome die CRM-Daten bei Speicherdruck still löscht.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
 
   document.getElementById('btn-import-excel').addEventListener('click', () => {
     document.getElementById('file-input-excel').click();
@@ -520,15 +539,8 @@ CRM.initHeaderSearch = function () {
   const render = () => {
     const q = norm(input.value).trim();
     if (!q) { results.classList.add('hidden'); results.innerHTML = ''; return; }
-    const matches = CRM.db.getContacts().filter((c) => {
-      const ap = c.ansprechpartner || {};
-      return norm(c.firma1).includes(q) || norm(c.ort).includes(q) || norm(c.plz).includes(q)
-        || norm(ap.name).includes(q) || norm(ap.vorname).includes(q) || norm(c.firma2).includes(q)
-        || norm(c.erpNr).includes(q);
-    }).slice(0, 8);
-    const projMatches = CRM.db.getProjects().filter((p) =>
-      norm(p.name).includes(q) || norm(p.erpNr).includes(q) || norm(p.ort).includes(q)
-    ).slice(0, 4);
+    const matches = CRM.db.getContacts().filter((c) => CRM.smartMatch(q, CRM.contactSearchFields(c))).slice(0, 8);
+    const projMatches = CRM.db.getProjects().filter((p) => CRM.smartMatch(q, [p.name, p.erpNr, p.ort])).slice(0, 4);
     if (!matches.length && !projMatches.length) {
       results.innerHTML = '<div class="header-search-empty">Keine Treffer</div>';
     } else {
@@ -639,7 +651,7 @@ CRM.setTypeChipFilter = function (typ) {
 
 CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
-    CRM._quickFilters = { partner: false, overdue: false, week: false };
+    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false };
     CRM._regionFilter = new Set();
     ['contact-search', 'filter-ort', 'filter-plz'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['filter-type', 'filter-source', 'filter-abc'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
