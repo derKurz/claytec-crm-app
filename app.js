@@ -93,7 +93,7 @@ CRM.switchTab = function (tabId) {
   // dieselben Aktionen größer ab, und der FAB würde „Tour planen" überlappen.
   const fab = document.getElementById('fab-new');
   if (fab) fab.classList.toggle('fab-hidden', tabId === 'start');
-  if (tabId === 'kontakte') CRM.renderContactList();
+  if (tabId === 'kontakte') { CRM.refreshFilterDatalists(); CRM.renderContactList(); }
   if (tabId === 'projekte' && CRM.renderProjects) CRM.renderProjects();
   if (tabId === 'netzwerk' && CRM.renderNetzwerk) CRM.renderNetzwerk();
   if (tabId === 'agenda' && CRM.renderAgenda) CRM.renderAgenda();
@@ -171,7 +171,7 @@ CRM.contactMatchesFilters = function (c, f) {
   if (CRM._regionFilter && CRM._regionFilter.size) {
     if (!CRM._regionFilter.has(CRM.regionForPlz(c.plz))) return false;
   }
-  if (f.text && !CRM.smartMatch(f.text, CRM.contactSearchFields(c))) return false;
+  if (f.text && !CRM.contactQueryMatch(f.text, c)) return false;
   if (f.ort && !String(c.ort || '').toLowerCase().includes(f.ort)) return false;
   if (f.plz && !CRM.matchesPlzRange(c.plz, f.plz)) return false;
   if (f.type && c.type !== f.type) return false;
@@ -539,7 +539,7 @@ CRM.initHeaderSearch = function () {
   const render = () => {
     const q = norm(input.value).trim();
     if (!q) { results.classList.add('hidden'); results.innerHTML = ''; return; }
-    const matches = CRM.db.getContacts().filter((c) => CRM.smartMatch(q, CRM.contactSearchFields(c))).slice(0, 8);
+    const matches = CRM.db.getContacts().filter((c) => CRM.contactQueryMatch(q, c)).slice(0, 8);
     const projMatches = CRM.db.getProjects().filter((p) => CRM.smartMatch(q, [p.name, p.erpNr, p.ort])).slice(0, 4);
     if (!matches.length && !projMatches.length) {
       results.innerHTML = '<div class="header-search-empty">Keine Treffer</div>';
@@ -596,8 +596,29 @@ CRM.goToContactFromSearch = function (id) {
   }
 };
 
+/* Vorschlagslisten für die Filter Ort + PLZ-Bereich: aus den eigenen
+   Kontakten befüllt — beim Tippen filtert der Browser die Liste
+   (Buchstaben → Orte, Zahlen → PLZ-Bereiche/PLZ). */
+CRM.refreshFilterDatalists = function () {
+  const contacts = CRM.db.getContacts();
+  const dlOrt = document.getElementById('dl-orte');
+  if (dlOrt) {
+    const orte = [...new Set(contacts.map((c) => String(c.ort || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'de'));
+    dlOrt.innerHTML = orte.map((o) => `<option value="${escAttr(o)}"></option>`).join('');
+  }
+  const dlPlz = document.getElementById('dl-plz');
+  if (dlPlz) {
+    const plzs = [...new Set(contacts.map((c) => String(c.plz || '').trim()).filter(Boolean))].sort();
+    const bereiche = [...new Set(plzs.map((p) => p.slice(0, 2)))].sort();
+    dlPlz.innerHTML = bereiche.map((b) => `<option value="${b}">Bereich ${b}xxx</option>`).join('')
+      + plzs.map((p) => `<option value="${p}"></option>`).join('');
+  }
+};
+
 /* ---------- Filterleiste verdrahten (Schritt 5) ---------- */
 CRM.initContactFilters = function () {
+  CRM.refreshFilterDatalists();
   // Selects befüllen
   const typeSel = document.getElementById('filter-type');
   if (typeSel && typeSel.options.length <= 1) {

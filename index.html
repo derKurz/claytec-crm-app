@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260716b">
+<link rel="stylesheet" href="style.css?v=20260716d">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -77,11 +77,13 @@
       <div class="filter-bar-extra" id="filter-bar-extra">
         <div class="col" style="max-width:150px">
           <label>Ort / Region</label>
-          <input type="text" id="filter-ort" placeholder="z.B. München">
+          <input type="text" id="filter-ort" placeholder="Tippen wählt aus..." list="dl-orte">
+          <datalist id="dl-orte"></datalist>
         </div>
         <div class="col" style="max-width:130px">
           <label>PLZ-Bereich</label>
-          <input type="text" id="filter-plz" placeholder="z.B. 80–85">
+          <input type="text" id="filter-plz" placeholder="z.B. 92 oder 80–85" list="dl-plz">
+          <datalist id="dl-plz"></datalist>
         </div>
         <div class="col" style="max-width:140px">
           <label>Kategorie</label>
@@ -159,24 +161,24 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260716b"></script>
-<script src="db-indexeddb.js?v=20260716b"></script>
-<script src="supabase-client.js?v=20260716b"></script>
-<script src="sync.js?v=20260716b"></script>
-<script src="import.js?v=20260716b"></script>
-<script src="contact-detail.js?v=20260716b"></script>
-<script src="agenda.js?v=20260716b"></script>
-<script src="dashboard.js?v=20260716b"></script>
-<script src="geocoding.js?v=20260716b"></script>
-<script src="map.js?v=20260716b"></script>
-<script src="speech.js?v=20260716b"></script>
-<script src="settings.js?v=20260716b"></script>
-<script src="projects.js?v=20260716b"></script>
-<script src="network.js?v=20260716b"></script>
-<script src="regions.js?v=20260716b"></script>
-<script src="excel-ablage.js?v=20260716b"></script>
-<script src="vcard.js?v=20260716b"></script>
-<script src="email-parser.js?v=20260716b"></script>
-<script src="app.js?v=20260716b"></script>
+<script src="storage.js?v=20260716d"></script>
+<script src="db-indexeddb.js?v=20260716d"></script>
+<script src="supabase-client.js?v=20260716d"></script>
+<script src="sync.js?v=20260716d"></script>
+<script src="import.js?v=20260716d"></script>
+<script src="contact-detail.js?v=20260716d"></script>
+<script src="agenda.js?v=20260716d"></script>
+<script src="dashboard.js?v=20260716d"></script>
+<script src="geocoding.js?v=20260716d"></script>
+<script src="map.js?v=20260716d"></script>
+<script src="speech.js?v=20260716d"></script>
+<script src="settings.js?v=20260716d"></script>
+<script src="projects.js?v=20260716d"></script>
+<script src="network.js?v=20260716d"></script>
+<script src="regions.js?v=20260716d"></script>
+<script src="excel-ablage.js?v=20260716d"></script>
+<script src="vcard.js?v=20260716d"></script>
+<script src="email-parser.js?v=20260716d"></script>
+<script src="app.js?v=20260716d"></script>
 </body>
 </html>

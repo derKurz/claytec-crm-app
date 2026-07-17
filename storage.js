@@ -567,6 +567,25 @@ CRM.smartMatch = function (query, fields) {
   return tokens.every((t) => hay.includes(t));
 };
 
+/* Kontakt-Suche mit PLZ-Logik: reine Zahlen-Tokens wirken als
+   PLZ-ANFANG („9" → 9xxxx, „92" → 92xxx, „923" → 923xx) oder
+   ERP-Nr.-Anfang — nicht mehr als Treffer irgendwo in Telefon-/
+   Hausnummern. Text-Tokens wie gehabt (Umlaute/Reihenfolge egal). */
+CRM.contactQueryMatch = function (query, c) {
+  const tokens = CRM.searchNorm(query).split(' ').filter(Boolean);
+  if (!tokens.length) return false;
+  let hay = null;
+  return tokens.every((t) => {
+    if (/^\d+$/.test(t)) {
+      // 1–3 Ziffern: eindeutig PLZ-Anfang. Ab 4 Ziffern auch ERP-Nr.-Anfang.
+      if (String(c.plz || '').startsWith(t)) return true;
+      return t.length >= 4 && String(c.erpNr || '').replace(/\D/g, '').startsWith(t);
+    }
+    if (hay === null) hay = ' ' + CRM.searchNorm(CRM.contactSearchFields(c).filter(Boolean).join(' ')) + ' ';
+    return hay.includes(t);
+  });
+};
+
 CRM.contactSearchFields = function (c) {
   const ap = c.ansprechpartner || {};
   return [c.firma1, c.firma2, c.firma3, c.strasse, c.ort, c.plz, c.erpNr,
