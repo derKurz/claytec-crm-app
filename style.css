@@ -527,3 +527,21 @@ tr:hover td{background:rgba(255,255,255,.03)}
   font-size:11px;color:var(--text-dim);background:var(--bg-elev);
   border-radius:4px;
 }
+
+/* ============================================================
+   Dropdown-Filter (Ort / PLZ-Bereich) mit sichtbarem Pfeil
+   ============================================================ */
+.combo-wrap{position:relative}
+.combo-wrap input{width:100%;padding-right:28px}
+.combo-arrow{
+  position:absolute;right:2px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--text-dim);cursor:pointer;
+  font-size:13px;padding:6px 8px;line-height:1;
+}
+.combo-arrow:hover{color:var(--text)}
+.combo-list{
+  position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:260px;
+  background:var(--bg-elev2);border:1px solid var(--border);border-radius:8px;
+  max-height:280px;overflow-y:auto;z-index:300;box-shadow:0 8px 24px rgba(0,0,0,.4);
+}
+.combo-item{white-space:nowrap}

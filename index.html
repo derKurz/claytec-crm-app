@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260716e">
+<link rel="stylesheet" href="style.css?v=20260716f">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -75,15 +75,21 @@
       </div>
       <button type="button" class="btn btn-sm mobile-only-filter" id="btn-toggle-extra-filters">▾ Mehr Filter</button>
       <div class="filter-bar-extra" id="filter-bar-extra">
-        <div class="col" style="max-width:150px">
+        <div class="col" style="max-width:170px">
           <label>Ort / Region</label>
-          <input type="text" id="filter-ort" placeholder="Tippen wählt aus..." list="dl-orte">
-          <datalist id="dl-orte"></datalist>
+          <div class="combo-wrap">
+            <input type="text" id="filter-ort" placeholder="▾ wählen/tippen" autocomplete="off">
+            <button type="button" class="combo-arrow" data-combo="filter-ort" tabindex="-1">▾</button>
+            <div class="combo-list hidden" id="combo-filter-ort"></div>
+          </div>
         </div>
-        <div class="col" style="max-width:130px">
+        <div class="col" style="max-width:150px">
           <label>PLZ-Bereich</label>
-          <input type="text" id="filter-plz" placeholder="z.B. 92 oder 80–85" list="dl-plz">
-          <datalist id="dl-plz"></datalist>
+          <div class="combo-wrap">
+            <input type="text" id="filter-plz" placeholder="▾ z.B. 92 / 80–85" autocomplete="off">
+            <button type="button" class="combo-arrow" data-combo="filter-plz" tabindex="-1">▾</button>
+            <div class="combo-list hidden" id="combo-filter-plz"></div>
+          </div>
         </div>
         <div class="col" style="max-width:140px">
           <label>Kategorie</label>
@@ -161,24 +167,24 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260716e"></script>
-<script src="db-indexeddb.js?v=20260716e"></script>
-<script src="supabase-client.js?v=20260716e"></script>
-<script src="sync.js?v=20260716e"></script>
-<script src="import.js?v=20260716e"></script>
-<script src="contact-detail.js?v=20260716e"></script>
-<script src="agenda.js?v=20260716e"></script>
-<script src="dashboard.js?v=20260716e"></script>
-<script src="geocoding.js?v=20260716e"></script>
-<script src="map.js?v=20260716e"></script>
-<script src="speech.js?v=20260716e"></script>
-<script src="settings.js?v=20260716e"></script>
-<script src="projects.js?v=20260716e"></script>
-<script src="network.js?v=20260716e"></script>
-<script src="regions.js?v=20260716e"></script>
-<script src="excel-ablage.js?v=20260716e"></script>
-<script src="vcard.js?v=20260716e"></script>
-<script src="email-parser.js?v=20260716e"></script>
-<script src="app.js?v=20260716e"></script>
+<script src="storage.js?v=20260716f"></script>
+<script src="db-indexeddb.js?v=20260716f"></script>
+<script src="supabase-client.js?v=20260716f"></script>
+<script src="sync.js?v=20260716f"></script>
+<script src="import.js?v=20260716f"></script>
+<script src="contact-detail.js?v=20260716f"></script>
+<script src="agenda.js?v=20260716f"></script>
+<script src="dashboard.js?v=20260716f"></script>
+<script src="geocoding.js?v=20260716f"></script>
+<script src="map.js?v=20260716f"></script>
+<script src="speech.js?v=20260716f"></script>
+<script src="settings.js?v=20260716f"></script>
+<script src="projects.js?v=20260716f"></script>
+<script src="network.js?v=20260716f"></script>
+<script src="regions.js?v=20260716f"></script>
+<script src="excel-ablage.js?v=20260716f"></script>
+<script src="vcard.js?v=20260716f"></script>
+<script src="email-parser.js?v=20260716f"></script>
+<script src="app.js?v=20260716f"></script>
 </body>
 </html>

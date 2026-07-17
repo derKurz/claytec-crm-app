@@ -101,7 +101,7 @@ CRM.switchTab = function (tabId) {
   // dieselben Aktionen größer ab, und der FAB würde „Tour planen" überlappen.
   const fab = document.getElementById('fab-new');
   if (fab) fab.classList.toggle('fab-hidden', tabId === 'start');
-  if (tabId === 'kontakte') { CRM.refreshFilterDatalists(); CRM.renderContactList(); }
+  if (tabId === 'kontakte') CRM.renderContactList();
   if (tabId === 'projekte' && CRM.renderProjects) CRM.renderProjects();
   if (tabId === 'netzwerk' && CRM.renderNetzwerk) CRM.renderNetzwerk();
   if (tabId === 'agenda' && CRM.renderAgenda) CRM.renderAgenda();
@@ -604,29 +604,77 @@ CRM.goToContactFromSearch = function (id) {
   }
 };
 
-/* Vorschlagslisten für die Filter Ort + PLZ-Bereich: aus den eigenen
-   Kontakten befüllt — beim Tippen filtert der Browser die Liste
-   (Buchstaben → Orte, Zahlen → PLZ-Bereiche/PLZ). */
-CRM.refreshFilterDatalists = function () {
-  const contacts = CRM.db.getContacts();
-  const dlOrt = document.getElementById('dl-orte');
-  if (dlOrt) {
-    const orte = [...new Set(contacts.map((c) => String(c.ort || '').trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, 'de'));
-    dlOrt.innerHTML = orte.map((o) => `<option value="${escAttr(o)}"></option>`).join('');
-  }
-  const dlPlz = document.getElementById('dl-plz');
-  if (dlPlz) {
-    const plzs = [...new Set(contacts.map((c) => String(c.plz || '').trim()).filter(Boolean))].sort();
-    const bereiche = [...new Set(plzs.map((p) => p.slice(0, 2)))].sort();
-    dlPlz.innerHTML = bereiche.map((b) => `<option value="${b}">Bereich ${b}xxx</option>`).join('')
-      + plzs.map((p) => `<option value="${p}"></option>`).join('');
+/* Sichtbare Dropdown-Filter für Ort + PLZ-Bereich: ▾-Pfeil öffnet die volle
+   Liste (aus den eigenen Kontakten), Tippen filtert sie, Klick wählt aus.
+   Optionen werden bei jedem Öffnen frisch berechnet — immer aktuell. */
+CRM._comboOptions = {
+  'filter-ort': () => {
+    const counts = {};
+    CRM.db.getContacts().forEach((c) => { const o = String(c.ort || '').trim(); if (o) counts[o] = (counts[o] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => a.localeCompare(b, 'de'))
+      .map((o) => ({ value: o, label: o, sub: counts[o] + (counts[o] === 1 ? ' Kontakt' : ' Kontakte') }));
+  },
+  'filter-plz': () => {
+    const plzs = {};
+    CRM.db.getContacts().forEach((c) => { const p = String(c.plz || '').trim(); if (p) plzs[p] = c.ort || ''; });
+    const keys = Object.keys(plzs).sort();
+    const bereiche = {};
+    keys.forEach((p) => { const b = p.slice(0, 2); bereiche[b] = (bereiche[b] || 0) + 1; });
+    return Object.keys(bereiche).sort().map((b) => ({ value: b, label: b + 'xxx', sub: 'Bereich · ' + bereiche[b] + (bereiche[b] === 1 ? ' Kontakt' : ' Kontakte') }))
+      .concat(keys.map((p) => ({ value: p, label: p, sub: plzs[p] })));
+  },
+};
+
+CRM.initFilterCombos = function () {
+  ['filter-ort', 'filter-plz'].forEach((id) => {
+    const input = document.getElementById(id);
+    const list = document.getElementById('combo-' + id);
+    if (!input || !list || input._comboWired) return;
+    input._comboWired = true;
+
+    const render = () => {
+      const q = input.value.trim().toLowerCase();
+      const opts = CRM._comboOptions[id]().filter((o) =>
+        !q || o.value.toLowerCase().indexOf(q) === 0 || o.label.toLowerCase().indexOf(q) !== -1);
+      list.innerHTML = opts.length
+        ? opts.slice(0, 60).map((o) => `
+          <div class="header-search-item combo-item" data-value="${escAttr(o.value)}">
+            <strong>${esc(o.label)}</strong>${o.sub ? `<span style="color:var(--text-dim);font-size:12px"> · ${esc(o.sub)}</span>` : ''}
+          </div>`).join('')
+        : '<div class="header-search-empty">Keine Treffer</div>';
+      list.querySelectorAll('.combo-item').forEach((row) => {
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          input.value = row.dataset.value;
+          list.classList.add('hidden');
+          CRM.renderContactList();
+        });
+      });
+      list.classList.remove('hidden');
+    };
+
+    input.addEventListener('focus', render);
+    input.addEventListener('input', render);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === 'Enter') list.classList.add('hidden'); });
+    const arrow = document.querySelector(`.combo-arrow[data-combo="${id}"]`);
+    if (arrow) arrow.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      if (list.classList.contains('hidden')) { input.focus(); render(); }
+      else list.classList.add('hidden');
+    });
+  });
+  if (!CRM._comboOutsideWired) {
+    CRM._comboOutsideWired = true;
+    document.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.combo-wrap')) return;
+      document.querySelectorAll('.combo-list').forEach((l) => l.classList.add('hidden'));
+    });
   }
 };
 
 /* ---------- Filterleiste verdrahten (Schritt 5) ---------- */
 CRM.initContactFilters = function () {
-  CRM.refreshFilterDatalists();
+  CRM.initFilterCombos();
   // Selects befüllen
   const typeSel = document.getElementById('filter-type');
   if (typeSel && typeSel.options.length <= 1) {
