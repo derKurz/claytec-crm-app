@@ -146,7 +146,7 @@ CRM.emailParser.parse = function (rawText) {
       if (pm) phonesFound.push(['work', pm[0].trim()]);
       continue;
     }
-    if (lineLower.indexOf('m ') === 0 || lineLower.indexOf('mobil:') !== -1) {
+    if (lineLower.indexOf('m ') === 0 || lineLower.indexOf('mobil:') !== -1 || lineLower.indexOf('mobil ') === 0 || lineLower.indexOf('handy') === 0) {
       const pm = line.match(/[\+\d][\d\s\(\)\/\-]{5,}/);
       if (pm) phonesFound.push(['mobile', pm[0].trim()]);
       continue;
@@ -174,12 +174,17 @@ CRM.emailParser.parse = function (rawText) {
     if (sorted.length >= 2) data.email2 = sorted[1];
   }
 
-  // Telefon zuordnen
+  // Telefon zuordnen — unbeschriftete Nummern an der Vorwahl erkennen:
+  // 015x/016x/017x (auch als +49 15x...) ist Mobil, alles andere Festnetz.
+  const isMobileNum = (n) => {
+    const d = String(n).replace(/[^\d+]/g, '').replace(/^\+49/, '0').replace(/^0049/, '0');
+    return /^01[567]/.test(d);
+  };
   let mobilePhone = null, workPhone = null;
   phonesFound.forEach(([t, n]) => {
+    if (t === 'unknown') t = isMobileNum(n) ? 'mobile' : 'work';
     if (t === 'mobile' && !mobilePhone) mobilePhone = n;
     else if (t === 'work' && !workPhone) workPhone = n;
-    else if (t === 'unknown') { if (!mobilePhone) mobilePhone = n; else if (!workPhone) workPhone = n; }
   });
   if (mobilePhone) data.phone_mobile = mobilePhone;
   if (workPhone) data.phone_work = workPhone;
@@ -215,18 +220,52 @@ CRM.emailParser.parse = function (rawText) {
     }
   });
 
-  // Klassifizierung Firma/Name/Funktion/Titel
-  const isJobTitle = (line) => { const ll = line.toLowerCase(); return EP.TITLE_KEYWORDS.some((k) => ll.indexOf(k) !== -1); };
+  // Klassifizierung Firma/Name/Funktion/Titel.
+  // WICHTIG: Wort-genau vergleichen, nicht als Teilstring — sonst „findet"
+  // z.B. das Stichwort „hr" den Nachnamen „Mehringer" und ein Name landet
+  // als Funktion (real passiert). Kurze Stichwörter (≤4 Zeichen) müssen
+  // exakt als Wort vorkommen; längere dürfen in Komposita stecken
+  // (z.B. „berater" in „Verkaufsberater").
+  const tokensLower = (line) => line.toLowerCase().split(/[^a-zäöüß0-9]+/).filter(Boolean);
+  const isJobTitle = (line) => {
+    const ll = line.toLowerCase();
+    const toks = tokensLower(line);
+    return EP.TITLE_KEYWORDS.some((k) => {
+      if (k.indexOf(' ') !== -1) return ll.indexOf(k) !== -1; // Mehrwort („key account")
+      if (k.length <= 4) return toks.indexOf(k) !== -1;
+      return toks.some((t) => t.indexOf(k) !== -1);
+    });
+  };
   const isCompanyName = (line) => {
-    if (EP.COMPANY_INDICATORS.some((ind) => line.indexOf(ind) !== -1)) return true;
+    // Rechtsformen/Branchen-Wörter: exakt als Wort (Groß-/Kleinschreibung zählt,
+    // damit „AG" nicht in „Baugefühl" o.ä. anschlägt); ab 6 Zeichen auch als
+    // Wortanfang („Baugesellschaft" in „Baugesellschaften").
+    const rawToks = line.split(/[^A-Za-zÄÖÜäöüß0-9.]+/).filter(Boolean).map((t) => t.replace(/\.+$/, ''));
+    const hit = EP.COMPANY_INDICATORS.some((ind) => {
+      const indClean = ind.replace(/\./g, '');
+      return rawToks.some((t) => {
+        const tClean = t.replace(/\./g, '');
+        if (tClean === indClean) return true;
+        return indClean.length >= 6 && tClean.indexOf(indClean) === 0;
+      });
+    });
+    if (hit) return true;
     if (['Architekten', 'Ingenieure', 'Planer', 'Berater'].some((s) => line.endsWith(s))) return true;
     const words = splitWs(line);
     if (words.length === 3) {
       const last = words[words.length - 1].toLowerCase();
-      if (EP.CRAFT_JOBS.some((c) => last.indexOf(c) !== -1)) return true;
+      if (EP.CRAFT_JOBS.some((c) => last.indexOf(c) === 0)) return true;
     }
     if (words.length === 1 && isUpperStr(line) && line.length > 2) return true;
     return false;
+  };
+  // Werbeslogans wie „Immer ein gutes Baugefühl": mehrere kleingeschriebene
+  // Füllwörter mitten in der Zeile — nie Firma, nie Name, nie Funktion.
+  const isSlogan = (line) => {
+    const words = splitWs(line);
+    if (words.length < 3) return false;
+    const lower = words.slice(1).filter((w) => isLowerStr(w[0])).length;
+    return lower >= 2 && !isCompanyName(line);
   };
   const isAcademicTitle = (line) => {
     const inds = ['Prof.', 'Dipl.', 'Dr.', 'Ing.', 'Architekt', 'Stadtplaner', 'BDA', 'M.Sc.', 'B.Sc.', 'M.A.', 'B.A.'];
@@ -238,18 +277,25 @@ CRM.emailParser.parse = function (rawText) {
   };
   const isPersonName = (line) => {
     const words = splitWs(line);
-    if (/\d/.test(line)) return false;
+    if (/[\d@]/.test(line)) return false;
     if (words.length > 5 || words.length < 2) return false;
     if (isCompanyName(line)) return false;
     if (isJobTitle(line)) return false;
+    if (isSlogan(line)) return false;
     if (['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.'].some((t) => line.indexOf(t) !== -1)) {
       let woTitle = line;
       ['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.', 'M.A.', 'B.A.'].forEach((t) => { woTitle = woTitle.replace(t, '').trim(); });
       const rem = splitWs(woTitle);
       if (rem.length >= 1 && rem.length <= 3) return true;
     }
-    const capWords = words.filter((w) => w && w[0] === w[0].toUpperCase() && /^[a-zäöüßA-ZÄÖÜ]+$/.test(w)).length;
-    return capWords >= 2;
+    // Alle Wörter müssen wie Namensbestandteile aussehen (großgeschrieben,
+    // nur Buchstaben/Bindestrich; „von/zu/de..." klein erlaubt) — sonst
+    // rutschen Slogan-Reste als Name durch.
+    const small = ['von', 'zu', 'van', 'de', 'del', 'la', 'le', 'der'];
+    const nameWords = words.filter((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
+    const smallWords = words.filter((w) => small.indexOf(w.toLowerCase()) !== -1 && isLowerStr(w));
+    if (nameWords.length + smallWords.length !== words.length) return false;
+    return nameWords.length >= 2;
   };
   const correctName = (name) => {
     const small = ['von', 'zu', 'van', 'de', 'del', 'la', 'le'];
@@ -307,6 +353,7 @@ CRM.emailParser.parse = function (rawText) {
       continue;
     }
     if (isJobTitle(line)) { if (!titleFound) titleFound = line; continue; }
+    if (isSlogan(line)) continue; // Werbesprüche komplett ignorieren
     if (!companyFound && line.toLowerCase().indexOf('standort') !== 0) {
       if (isCompanyName(line) || !isPersonName(line)) companyFound = line;
     }
@@ -395,7 +442,7 @@ CRM.emailParser.openDialog = function () {
       <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
       <button class="btn btn-primary" onclick="CRM.emailParser.createContact()">Kontakt anlegen</button>
     </div>
-  `);
+  `, { dismissible: false });
 
   document.getElementById('ep-link-search').addEventListener('input', CRM.emailParser.renderLinkSearch);
   document.getElementById('ep-link-search').addEventListener('focus', CRM.emailParser.renderLinkSearch);

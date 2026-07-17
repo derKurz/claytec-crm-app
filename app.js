@@ -37,14 +37,22 @@ CRM.toast = function (msg, type) {
 };
 
 /* ---------- Modal helper ---------- */
-CRM.openModal = function (innerHTML) {
+CRM.openModal = function (innerHTML, opts) {
   CRM.closeModal();
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'active-modal-overlay';
   overlay.innerHTML = `<div class="modal">${innerHTML}</div>`;
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) CRM.closeModal();
+  // Schließen nur, wenn Maus-DRÜCKEN UND -LOSLASSEN beide auf dem Hintergrund
+  // liegen. Ein Klick, der im Dialog beginnt (z.B. Text markieren) und außerhalb
+  // endet, darf den Dialog NICHT schließen — sonst gehen Eingaben verloren.
+  // opts.dismissible === false: Hintergrund schließt nie (nur Buttons im Dialog).
+  const dismissible = !opts || opts.dismissible !== false;
+  let downOnOverlay = false;
+  overlay.addEventListener('mousedown', (e) => { downOnOverlay = e.target === overlay; });
+  overlay.addEventListener('mouseup', (e) => {
+    if (dismissible && downOnOverlay && e.target === overlay) CRM.closeModal();
+    downOnOverlay = false;
   });
   document.body.appendChild(overlay);
   return overlay;
