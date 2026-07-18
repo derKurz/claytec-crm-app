@@ -392,6 +392,7 @@ CRM.makeEmptyContact = function () {
     faxFirma: '',
     emailFirma: '',
     website: '',
+    notionUrl: '', // Link zur zugehörigen Notion-Seite (Wissens-/Doku-Ablage)
     ansprechpartner: {
       anrede: '',
       name: '',

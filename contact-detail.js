@@ -70,6 +70,81 @@ CRM._copyRichText = async function (html, text) {
   await navigator.clipboard.writeText(text);
 };
 
+/* Kontakt-Steckbrief für Notion in die Zwischenablage legen.
+   Notion nimmt beim Einfügen bevorzugt die HTML-Variante (→ saubere Blöcke
+   mit Überschriften/Listen); der Klartext ist Markdown als Fallback, den
+   Notion ebenfalls in Blöcke umwandelt. Kundendaten bleiben lokal — es wird
+   nur kopiert, nichts an Notion gesendet. */
+CRM.copyForNotion = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
+  const addr = CRM.formatAddress(c);
+  const ap = c.ansprechpartner || {};
+  const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
+  const visits = (c.visits || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const md = [];
+  md.push(`# ${c.firma1}${c.isPartner ? ' ⭐ (Claytec-Partner)' : ''}`);
+  md.push('');
+  const meta = [`**Typ:** ${CRM.TYPE_LABELS[c.type]}`, `**Einstufung:** ${c.abc}`];
+  if (c.erpNr) meta.push(`**ERP-/Kundennr.:** ${c.erpNr}`);
+  md.push(meta.join('  ·  '));
+  md.push('');
+  md.push('## Kontakt');
+  if (addr) md.push(`- **Adresse:** ${addr}`);
+  if (apName) md.push(`- **Ansprechpartner:** ${apName}${ap.funktion ? ' (' + ap.funktion + ')' : ''}`);
+  if (c.telFirma) md.push(`- **Telefon:** ${c.telFirma}`);
+  if (ap.telefon) md.push(`- **Telefon (AP):** ${ap.telefon}`);
+  if (c.emailFirma) md.push(`- **E-Mail:** ${c.emailFirma}`);
+  if (ap.email) md.push(`- **E-Mail (AP):** ${ap.email}`);
+  if (c.website) md.push(`- **Website:** ${c.website}`);
+  if (c.nextStep) { md.push(''); md.push('## Nächster Schritt'); md.push(c.nextStep); }
+  if (c.notiz) { md.push(''); md.push('## Notiz'); md.push(c.notiz); }
+  md.push('');
+  md.push('## Besuchshistorie');
+  if (visits.length) visits.forEach((v) => md.push(`- **${v.date}:** ${v.note || '(ohne Notiz)'}`));
+  else md.push('- (noch keine Besuche)');
+  const text = md.join('\n');
+
+  let html = `<h1>${esc2(c.firma1)}${c.isPartner ? ' ⭐ (Claytec-Partner)' : ''}</h1>`;
+  html += `<p><b>Typ:</b> ${esc2(CRM.TYPE_LABELS[c.type])} · <b>Einstufung:</b> ${esc2(c.abc)}${c.erpNr ? ' · <b>ERP-/Kundennr.:</b> ' + esc2(c.erpNr) : ''}</p>`;
+  html += '<h2>Kontakt</h2><ul>';
+  if (addr) html += `<li><b>Adresse:</b> ${esc2(addr)}</li>`;
+  if (apName) html += `<li><b>Ansprechpartner:</b> ${esc2(apName)}${ap.funktion ? ' (' + esc2(ap.funktion) + ')' : ''}</li>`;
+  if (c.telFirma) html += `<li><b>Telefon:</b> ${esc2(c.telFirma)}</li>`;
+  if (ap.telefon) html += `<li><b>Telefon (AP):</b> ${esc2(ap.telefon)}</li>`;
+  if (c.emailFirma) html += `<li><b>E-Mail:</b> ${esc2(c.emailFirma)}</li>`;
+  if (ap.email) html += `<li><b>E-Mail (AP):</b> ${esc2(ap.email)}</li>`;
+  if (c.website) html += `<li><b>Website:</b> ${esc2(c.website)}</li>`;
+  html += '</ul>';
+  if (c.nextStep) html += `<h2>Nächster Schritt</h2><p>${esc2(c.nextStep)}</p>`;
+  if (c.notiz) html += `<h2>Notiz</h2><p>${esc2(c.notiz)}</p>`;
+  html += '<h2>Besuchshistorie</h2><ul>';
+  html += visits.length
+    ? visits.map((v) => `<li><b>${esc2(v.date)}:</b> ${esc2(v.note || '(ohne Notiz)')}</li>`).join('')
+    : '<li>(noch keine Besuche)</li>';
+  html += '</ul>';
+
+  CRM._copyRichText(html, text).then(() => {
+    CRM.toast('Für Notion kopiert — in Notion mit Strg+V als neue Seite einfügen.', 'success');
+  }).catch(() => {
+    CRM.toast('Kopieren fehlgeschlagen — Zwischenablage-Berechtigung prüfen.', 'error');
+  });
+};
+
+/* Hinterlegte Notion-Seite im Browser/in der Notion-App öffnen. */
+CRM.openNotion = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
+  let url = (c.notionUrl || '').trim();
+  if (!url) {
+    CRM.toast('Noch kein Notion-Link hinterlegt — Feld oben ausfüllen und verlassen (speichert automatisch).', 'error');
+    return;
+  }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  window.open(url, '_blank', 'noopener');
+};
+
 CRM.renderContactDetailModal = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) {
@@ -179,6 +254,17 @@ CRM.renderContactDetailModal = function (id) {
       <label style="margin-top:12px">Tags</label>
       <div class="li-badges" id="cd-tags">${tagsHtml}</div>
       <input id="cd-new-tag" placeholder="Tag eingeben + Enter" style="margin-top:6px">
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">📓 Notion</h3>
+      <label>Link zur Notion-Seite</label>
+      <div class="row" style="align-items:flex-end">
+        <div class="col"><input data-field="notionUrl" value="${escAttr(c.notionUrl || '')}" placeholder="Notion-Seite verlinken (URL einfügen)"></div>
+        <button class="btn" style="min-height:44px" onclick="CRM.openNotion('${c.id}')">↗ In Notion öffnen</button>
+      </div>
+      <button class="btn btn-sm" style="margin-top:8px" onclick="CRM.copyForNotion('${c.id}')">📋 Steckbrief für Notion kopieren</button>
+      <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Kopiert Firma, Kontakt und Besuchshistorie als Notion-fähigen Text — in Notion mit Strg+V (Handy: Einfügen) als neue Seite ablegen. Kundendaten bleiben lokal; Notion ist nur für Wissen/Doku.</p>
     </div>
 
     <div class="card">
