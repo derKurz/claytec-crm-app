@@ -162,9 +162,28 @@ CRM.renderContactDetailModal = function (id) {
 
   const linksHtml = CRM.renderLinksSection(c);
 
-  const visitsSorted = (c.visits || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  const timelineHtml = visitsSorted.length
-    ? visitsSorted.map((v) => `
+  // Besuche + abgelegte E-Mails/Kommunikation in EINER Timeline (nach Datum)
+  const commRows = CRM.db.getCommsForContact(c.id).map((m) => ({ kind: 'comm', date: m.date || '', m }));
+  const visitRows = (c.visits || []).map((v) => ({ kind: 'visit', date: v.date || '', v }));
+  const merged = commRows.concat(visitRows).sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const commHtml = (m) => {
+    const dirLabel = m.direction === 'out' ? '📤 ausgehend' : '📥 eingehend';
+    const typeLabel = m.type === 'email' ? `✉ E-Mail (${dirLabel})` : (CRM.COMM_TYPE_LABELS[m.type] || m.type);
+    return `
+      <div class="list-item" style="cursor:default;align-items:flex-start">
+        <div class="li-main">
+          <div class="li-title">${esc2(m.date)} · ${typeLabel}${m.subject ? ': ' + esc2(m.subject) : ''}</div>
+          <details><summary style="cursor:pointer;color:var(--text-dim);font-size:12px">Text anzeigen</summary>
+            <div class="li-sub" style="white-space:pre-wrap;margin-top:4px">${esc2((m.body || '').slice(0, 2000))}</div>
+          </details>
+        </div>
+        <button class="btn btn-sm" title="Löschen" onclick="CRM.db.deleteComm('${m.id}');CRM.renderContactDetailModal('${c.id}')">🗑</button>
+      </div>`;
+  };
+
+  const timelineHtml = merged.length
+    ? merged.map((e) => (e.kind === 'comm' ? commHtml(e.m) : ((v) => `
       <div class="list-item" style="cursor:default;align-items:flex-start">
         <div class="li-main" id="visit-view-${v.id}">
           <div class="li-title">${esc2(v.date)}</div>
@@ -183,8 +202,8 @@ CRM.renderContactDetailModal = function (id) {
           <button class="btn btn-sm" title="Löschen" onclick="CRM.deleteVisit('${c.id}','${v.id}')">🗑</button>
           <button class="btn btn-sm" title="In Besuchsprotokoll + Monatsbericht ablegen" onclick='CRM.ablage.openDialog("${c.id}", ${JSON.stringify({ date: v.date, note: v.note || '' }).replace(/'/g, "&#39;")})'>📋</button>
         </div>
-      </div>`).join('')
-    : '<p style="color:var(--text-dim);font-size:13px">Noch keine Besuche erfasst.</p>';
+      </div>`)(e.v))).join('')
+    : '<p style="color:var(--text-dim);font-size:13px">Noch keine Besuche oder E-Mails erfasst.</p>';
 
   const html = `
     <div class="cd-header">
@@ -297,10 +316,11 @@ CRM.renderContactDetailModal = function (id) {
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Besuchshistorie</h3>
+      <h3 style="margin-top:0">Besuche & E-Mails</h3>
       <div class="row" style="margin-bottom:10px">
         <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
         <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
+        <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
       </div>
       <details style="margin-bottom:10px">
         <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Eintrag mit Datum/Notiz manuell hinzufügen</summary>

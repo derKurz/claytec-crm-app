@@ -147,6 +147,14 @@ CRM.dashboardTodayHtml = function () {
     items.push({ ts: j.createdAt, icon: '📓', title: `${typeLabel}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (j.text || '').slice(0, 60), contactId: j.contactId });
   });
 
+  CRM.db.getComms().forEach((m) => {
+    if (!isToday(m.createdAt)) return;
+    const c = (m.contactIds || []).length ? CRM.db.getContact(m.contactIds[0]) : null;
+    const dirLabel = m.direction === 'out' ? 'ausgehend' : 'eingehend';
+    const label = m.type === 'email' ? `E-Mail (${dirLabel})` : (CRM.COMM_TYPE_LABELS[m.type] || 'Kommunikation').replace(/^[^\w]+/, '');
+    items.push({ ts: m.createdAt, icon: '✉️', title: `${label}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (m.subject || '').slice(0, 60), contactId: c ? c.id : null });
+  });
+
   CRM.db.getTasks().forEach((t) => {
     const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
     if (isToday(t.doneAt)) {

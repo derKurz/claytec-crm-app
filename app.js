@@ -528,6 +528,7 @@ CRM.openQuickActionSheet = function () {
     <h2 style="margin-top:0">Schnellaktion</h2>
     <div class="row" style="flex-direction:column;gap:10px">
       <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="CRM.closeModal();CRM.createNewContact()">+ Neuer Kontakt</button>
+      <button class="btn" style="justify-content:center;padding:14px" onclick="CRM.closeModal();CRM.mailAblage.open()">📧 E-Mail ablegen</button>
       <button class="btn" style="justify-content:center;padding:14px" onclick="CRM.closeModal();CRM.switchTab('kontakte');setTimeout(() => document.getElementById('header-search')?.focus(), 150)">🔍 Kontakt suchen (für Besuch)</button>
     </div>
   `);

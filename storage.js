@@ -357,6 +357,7 @@ CRM.makeEmptyComm = function () {
   return {
     id: null,
     type: 'email',
+    direction: 'in', // 'in' (eingehend) | 'out' (ausgehend)
     date: new Date().toISOString().slice(0, 10),
     subject: '',
     body: '',

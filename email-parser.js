@@ -393,6 +393,158 @@ CRM.emailParser.toContact = function (data, type, source) {
 };
 
 /* ============================================================
+   Mail-Ablage: E-Mail aus Outlook einfügen → Absender wird erkannt →
+   als Kommunikation am Kontakt (+ optional Projekt) abgelegt.
+   Alles lokal, keine Konto-Verknüpfung — funktioniert für Firmen-
+   und Privat-Postfach identisch.
+   ============================================================ */
+CRM.mailAblage = { _contactId: null };
+
+/* Eigene Adressen: Mails VON diesen Adressen sind ausgehend */
+CRM.mailAblage.OWN_PATTERNS = ['claytec.com', 'kurz.christian78@gmail.com'];
+
+CRM.mailAblage.open = function (prefContactId) {
+  CRM.mailAblage._contactId = prefContactId || null;
+  const projectOpts = CRM.db.getProjects().map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  CRM.openModal(`
+    <h2>📧 E-Mail ablegen</h2>
+    <p style="color:var(--text-dim);font-size:13px">Mail aus Outlook kopieren (inkl. Kopfzeilen „Von/Betreff/Gesendet", wenn möglich) und hier einfügen — Absender, Betreff und Datum werden automatisch erkannt.</p>
+    <textarea id="ma-input" rows="7" placeholder="Hier die E-Mail einfügen (Strg+V)..."></textarea>
+    <div class="row" style="margin:8px 0">
+      <button class="btn btn-primary" onclick="CRM.mailAblage.analyze()">▼ Zuordnen</button>
+      <button class="btn btn-sm" onclick="document.getElementById('ma-input').value=''">Leeren</button>
+    </div>
+    <div id="ma-match"></div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+      <div class="col" style="max-width:160px"><label>Richtung</label>
+        <select id="ma-direction"><option value="in">📥 Eingehend</option><option value="out">📤 Ausgehend</option></select></div>
+      <div class="col" style="max-width:160px"><label>Datum</label><input type="date" id="ma-date" value="${new Date().toISOString().slice(0, 10)}"></div>
+      <div class="col" style="min-width:200px"><label>Betreff</label><input id="ma-subject" placeholder="Betreff der E-Mail"></div>
+      <div class="col" style="min-width:180px"><label>Projekt (optional)</label>
+        <select id="ma-project"><option value="">Kein Projekt</option>${projectOpts}</select></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="CRM.mailAblage.save()">💾 Am Kontakt ablegen</button>
+    </div>
+  `, { dismissible: false });
+  CRM.mailAblage.renderMatch();
+};
+
+/* Kopfzeilen der eingefügten Mail auswerten (deutsch + englisch) */
+CRM.mailAblage.analyze = function () {
+  const text = document.getElementById('ma-input').value;
+  if (!text.trim()) { CRM.toast('Bitte zuerst die E-Mail einfügen.', 'error'); return; }
+
+  const header = (names) => {
+    for (const n of names) {
+      const m = text.match(new RegExp('^\\s*' + n + '\\s*:\\s*(.+)$', 'im'));
+      if (m) return m[1].trim();
+    }
+    return '';
+  };
+  const mailIn = (s) => (String(s).match(/[\w.+-]+@[\w.-]+\.\w+/) || [null])[0];
+
+  const fromLine = header(['Von', 'From']);
+  const toLine = header(['An', 'To']);
+  const subject = header(['Betreff', 'Subject', 'AW', 'RE']);
+  const dateLine = header(['Gesendet', 'Datum', 'Date', 'Sent']);
+
+  const fromMail = mailIn(fromLine) || mailIn(text);
+  const toMail = mailIn(toLine);
+
+  // Richtung: kommt die Mail VON einer eigenen Adresse → ausgehend
+  const isOwn = (m) => m && CRM.mailAblage.OWN_PATTERNS.some((p) => m.toLowerCase().includes(p));
+  const direction = isOwn(fromMail) ? 'out' : 'in';
+  document.getElementById('ma-direction').value = direction;
+  if (subject) document.getElementById('ma-subject').value = subject.replace(/^(AW|RE|WG|FW|FWD)\s*:\s*/i, '');
+
+  // Datum: dd.mm.yyyy bevorzugt, sonst Date.parse-Versuch
+  const dm = dateLine.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (dm) {
+    document.getElementById('ma-date').value = `${dm[3]}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`;
+  } else if (dateLine) {
+    const d = new Date(dateLine);
+    if (!isNaN(d)) document.getElementById('ma-date').value = CRM.ymd(d);
+  }
+
+  // Kontakt über die Kunden-Mailadresse finden (bei ausgehender Mail: Empfänger)
+  const partnerMail = (direction === 'out' ? (toMail || fromMail) : fromMail);
+  CRM.mailAblage._detectedMail = partnerMail || '';
+  let found = null;
+  if (partnerMail && !isOwn(partnerMail)) {
+    const pm = partnerMail.toLowerCase();
+    found = CRM.db.getContacts().find((c) =>
+      String(c.emailFirma || '').toLowerCase() === pm
+      || String((c.ansprechpartner || {}).email || '').toLowerCase() === pm);
+  }
+  CRM.mailAblage._contactId = found ? found.id : CRM.mailAblage._contactId;
+  CRM.mailAblage.renderMatch(!found);
+};
+
+/* Erkennungs-Box: grün bei Treffer, sonst Kontakt-Suchfeld */
+CRM.mailAblage.renderMatch = function (showPicker) {
+  const el = document.getElementById('ma-match');
+  if (!el) return;
+  const c = CRM.mailAblage._contactId ? CRM.db.getContact(CRM.mailAblage._contactId) : null;
+  if (c) {
+    el.innerHTML = `
+      <div style="background:rgba(76,209,123,.12);border:1px solid var(--green);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span>✓ Kontakt: <strong>${esc(c.firma1)}</strong>${CRM.mailAblage._detectedMail ? ` <span style="color:var(--text-dim);font-size:12px">(${esc(CRM.mailAblage._detectedMail)})</span>` : ''}</span>
+        <button class="btn btn-sm" onclick="CRM.mailAblage._contactId=null;CRM.mailAblage.renderMatch(true)">Ändern</button>
+      </div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div style="border:1px solid var(--orange);border-radius:8px;padding:8px 12px">
+      <div style="margin-bottom:6px;font-size:13px">${showPicker ? '⚠ Kein Kontakt mit dieser Adresse gefunden — bitte wählen:' : 'Kontakt wählen (oder oben „▼ Zuordnen" für automatische Erkennung):'}</div>
+      <input id="ma-contact-search" placeholder="Firma, Ort, PLZ suchen..." autocomplete="off">
+      <div id="ma-contact-results" style="margin-top:6px"></div>
+      ${showPicker && CRM.mailAblage._detectedMail ? `<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.closeModal();CRM.emailParser.openDialog()">➕ Als neuen Kontakt anlegen</button>` : ''}
+    </div>`;
+  const input = document.getElementById('ma-contact-search');
+  const results = document.getElementById('ma-contact-results');
+  const render = () => {
+    const q = input.value.trim();
+    if (!q) { results.innerHTML = ''; return; }
+    const matches = CRM.db.getContacts().filter((c2) => CRM.contactQueryMatch(q, c2)).slice(0, 6);
+    results.innerHTML = matches.map((c2) => `
+      <div class="header-search-item" data-id="${c2.id}"><strong>${esc(c2.firma1)}</strong>
+        <span style="color:var(--text-dim);font-size:12px"> · ${esc(c2.plz)} ${esc(c2.ort)}</span></div>`).join('')
+      || '<div class="header-search-empty">Keine Treffer</div>';
+    results.querySelectorAll('.header-search-item').forEach((row) => {
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        CRM.mailAblage._contactId = row.dataset.id;
+        CRM.mailAblage.renderMatch();
+      });
+    });
+  };
+  input.addEventListener('input', render);
+};
+
+CRM.mailAblage.save = function () {
+  const c = CRM.mailAblage._contactId ? CRM.db.getContact(CRM.mailAblage._contactId) : null;
+  if (!c) { CRM.toast('Bitte zuerst einen Kontakt zuordnen.', 'error'); return; }
+  const body = document.getElementById('ma-input').value.trim();
+  if (!body) { CRM.toast('Die E-Mail selbst fehlt noch — bitte oben einfügen.', 'error'); return; }
+  const comm = CRM.makeEmptyComm();
+  comm.direction = document.getElementById('ma-direction').value;
+  comm.date = document.getElementById('ma-date').value || new Date().toISOString().slice(0, 10);
+  comm.subject = document.getElementById('ma-subject').value.trim();
+  comm.body = body;
+  comm.from = comm.direction === 'in' ? (CRM.mailAblage._detectedMail || '') : '';
+  comm.to = comm.direction === 'out' ? (CRM.mailAblage._detectedMail || '') : '';
+  comm.contactIds = [c.id];
+  const pid = document.getElementById('ma-project').value;
+  if (pid) comm.projectIds = [pid];
+  CRM.db.addComm(comm);
+  CRM.closeModal();
+  CRM.toast(`✓ E-Mail bei „${c.firma1}" abgelegt${pid ? ' (+ Projekt)' : ''}.`, 'success');
+  if (CRM.renderDashboard && document.querySelector('#view-start.active')) CRM.renderDashboard();
+};
+
+/* ============================================================
    Dialog: Aus E-Mail/Text Kontakt anlegen
    ============================================================ */
 CRM.emailParser.FIELDS = [
