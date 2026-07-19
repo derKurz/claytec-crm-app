@@ -45,6 +45,8 @@ CRM.SOURCE_LABELS = {
 CRM.ABC = ['A', 'B', 'C'];
 
 CRM.PROJECT_STATUS = ['planung', 'ausschreibung', 'laufend', 'abgeschlossen'];
+CRM.PROJECT_KATEGORIEN = ['baustelle', 'gross'];
+CRM.PROJECT_KATEGORIE_LABELS = { baustelle: '🏠 Baustelle', gross: '🏢 Großprojekt' };
 CRM.PROJECT_STATUS_LABELS = {
   planung: 'Planung',
   ausschreibung: 'Ausschreibung',
@@ -199,6 +201,9 @@ CRM.db = {
   getTasksForContact(contactId) {
     return this._tasks.filter((t) => t.contactId === contactId);
   },
+  getTasksForProject(projectId) {
+    return this._tasks.filter((t) => t.projectId === projectId);
+  },
   saveTasks() {
     CRM.storage.write(CRM.KEYS.TASKS, this._tasks);
     CRM._mirrorToDexie('tasks', this._tasks);
@@ -342,6 +347,7 @@ CRM.makeEmptyProject = function () {
     id: null,
     name: '',
     status: 'planung',
+    kategorie: 'baustelle', // 'baustelle' (EFH, normale Bauvorhaben) | 'gross' (Großprojekt)
     erpNr: '',
     ort: '',
     plz: '',

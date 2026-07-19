@@ -105,14 +105,16 @@ CRM.dashboardNextUpHtml = function (visits, tasks) {
     }
     const t = it.t;
     const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
+    const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
     const label = it.diff < 0 ? `${-it.diff} Tage überfällig` : 'heute fällig';
-    const open = c ? `CRM.openContactDetail('${c.id}')` : `CRM.switchTab('agenda')`;
+    const open = c ? `CRM.openContactDetail('${c.id}')` : (p ? `CRM.openProjectDetail('${p.id}')` : `CRM.switchTab('agenda')`);
+    const who = [c && c.firma1, p && (((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ') + p.name)].filter(Boolean).join(' · ');
     return `
       <div class="dash-next" onclick="${open}">
         <span class="dash-next-icon">✓</span>
         <div class="dash-next-main">
           <div class="dash-next-title">${esc(t.title)}</div>
-          <div class="dash-next-sub">${c ? esc(c.firma1) + ' · ' : ''}${label}</div>
+          <div class="dash-next-sub">${who ? esc(who) + ' · ' : ''}${label}</div>
         </div>
         <span class="dash-next-chev">›</span>
       </div>`;
@@ -157,10 +159,12 @@ CRM.dashboardTodayHtml = function () {
 
   CRM.db.getTasks().forEach((t) => {
     const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
+    const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
+    const who = [c && c.firma1, p && (((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ') + p.name)].filter(Boolean).join(' · ') || 'Allgemein';
     if (isToday(t.doneAt)) {
-      items.push({ ts: t.doneAt, icon: '✅', title: `Aufgabe erledigt: ${t.title}`, sub: c ? c.firma1 : 'Allgemein', contactId: t.contactId });
+      items.push({ ts: t.doneAt, icon: '✅', title: `Aufgabe erledigt: ${t.title}`, sub: who, contactId: t.contactId, projectId: t.projectId });
     } else if (isToday(t.createdAt)) {
-      items.push({ ts: t.createdAt, icon: '➕', title: `Aufgabe angelegt: ${t.title}`, sub: (c ? c.firma1 + ' · ' : '') + 'fällig ' + (t.due || '–'), contactId: t.contactId });
+      items.push({ ts: t.createdAt, icon: '➕', title: `Aufgabe angelegt: ${t.title}`, sub: who + ' · fällig ' + (t.due || '–'), contactId: t.contactId, projectId: t.projectId });
     }
   });
 
@@ -170,7 +174,7 @@ CRM.dashboardTodayHtml = function () {
 
   const time = (iso) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   return top.map((it) => `
-    <div class="dash-next" onclick="${it.contactId ? `CRM.openContactDetail('${it.contactId}')` : `CRM.switchTab('agenda')`}">
+    <div class="dash-next" onclick="${it.contactId ? `CRM.openContactDetail('${it.contactId}')` : (it.projectId ? `CRM.openProjectDetail('${it.projectId}')` : `CRM.switchTab('agenda')`)}">
       <span class="dash-next-icon">${it.icon}</span>
       <div class="dash-next-main">
         <div class="dash-next-title">${esc(it.title)}</div>

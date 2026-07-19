@@ -403,8 +403,9 @@ CRM.mailAblage = { _contactId: null };
 /* Eigene Adressen: Mails VON diesen Adressen sind ausgehend */
 CRM.mailAblage.OWN_PATTERNS = ['claytec.com', 'kurz.christian78@gmail.com'];
 
-CRM.mailAblage.open = function (prefContactId) {
+CRM.mailAblage.open = function (prefContactId, prefProjectId) {
   CRM.mailAblage._contactId = prefContactId || null;
+  CRM.mailAblage._prefProjectId = prefProjectId || '';
   const projectOpts = CRM.db.getProjects().map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   CRM.openModal(`
     <h2>📧 E-Mail ablegen</h2>
@@ -428,6 +429,7 @@ CRM.mailAblage.open = function (prefContactId) {
       <button class="btn btn-primary" onclick="CRM.mailAblage.save()">💾 Am Kontakt ablegen</button>
     </div>
   `, { dismissible: false });
+  if (CRM.mailAblage._prefProjectId) document.getElementById('ma-project').value = CRM.mailAblage._prefProjectId;
   CRM.mailAblage.renderMatch();
 };
 

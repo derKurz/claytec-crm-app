@@ -121,12 +121,16 @@ CRM.visitRow = function (c, due) {
 
 CRM.taskRow = function (t, st) {
   const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
-  const sub = c ? `${esc(c.firma1)} · ${esc(c.plz)} ${esc(c.ort)}` : 'Allgemeine Aufgabe';
+  const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
+  const parts = [];
+  if (c) parts.push(`${esc(c.firma1)} · ${esc(c.plz)} ${esc(c.ort)}`);
+  if (p) parts.push(`${(p.kategorie || 'baustelle') === 'gross' ? '🏢' : '🏠'} ${esc(p.name)}`);
+  const sub = parts.join(' · ') || 'Allgemeine Aufgabe';
   const dueLabel = st.diffDays < 0 ? `${-st.diffDays} Tage überfällig` : (st.diffDays === 0 ? 'heute' : `in ${st.diffDays} Tagen`);
   return `
     <div class="list-item">
       <input type="checkbox" style="width:auto;margin-right:10px" onchange="CRM.toggleTaskDone('${t.id}')">
-      <div class="li-main" ${c ? `onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"` : ''}>
+      <div class="li-main" ${c ? `onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"` : (p ? `onclick="CRM.openProjectDetail('${p.id}')" style="cursor:pointer"` : '')}>
         <div class="li-title">✓ ${esc(t.title)}</div>
         <div class="li-sub">${sub} · fällig ${esc(t.due)} (${dueLabel})</div>
       </div>
