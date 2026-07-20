@@ -578,3 +578,9 @@ body.theme-hell .nearby-row:hover{background:var(--bg-elev2)}
 body.theme-hell .combo-list{box-shadow:0 8px 24px rgba(30,40,60,.18)}
 body.theme-hell #header-search-results,
 body.theme-hell .header-search-dropdown{box-shadow:0 8px 24px rgba(30,40,60,.18)}
+
+/* Suchort-Marker auf der Karte */
+.crm-suchort-pin{
+  font-size:24px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));
+  cursor:pointer;transform:translateY(-2px);
+}
