@@ -1034,3 +1034,15 @@ CRM.YOSIMA_FARBTOENE = [
 
 /* Artikel, die zwingend einen Farbton brauchen (laut Bestellliste) */
 CRM.YOSIMA_BEUTEL_ARTIKEL = { '60.40.999.BTL': { struktur: false }, '60.40.999.BTL.Z': { struktur: true } };
+
+/* Strukturzuschläge — Klartext laut Produktblatt YOSIMA Lehm-Designputz:
+   „Strohfasern (Stroh), Granit (Red-Stone), Glitter (Flash), Perlmut (Pearl),
+   Sisal (Japan), Kräuter (Herbs)." (Quelle: Yosima_PDF_Alle.pdf) */
+CRM.YOSIMA_STRUKTUR_LABELS = {
+  ST: 'Stroh (Strohfasern)',
+  RS: 'Red-Stone (Granit)',
+  FL: 'Flash (Glitter)',
+  PE: 'Pearl (Perlmut)',
+  JA: 'Japan (Sisal)',
+  HE: 'Herbs (Kräuter)',
+};

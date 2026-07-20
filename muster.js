@@ -165,9 +165,10 @@ CRM.muster.openFarbwahl = function (artikelNr) {
   strukturen.sort();
 
   CRM._musterModalBackup = document.querySelector('#active-modal-overlay .modal').innerHTML;
+  const lbl = (s) => (CRM.YOSIMA_STRUKTUR_LABELS || {})[s] || s;
   const strukturChips = braucht.struktur
     ? '<div class="quick-filters" style="margin:8px 0">'
-      + strukturen.map((s) => '<button class="qf-btn" data-st="' + s + '" onclick="CRM.muster.setStrukturFilter(\'' + s + '\')">' + s + '</button>').join('')
+      + strukturen.map((s) => '<button class="qf-btn" data-st="' + s + '" title="' + escAttr(lbl(s)) + '" onclick="CRM.muster.setStrukturFilter(\'' + s + '\')">' + s + ' · ' + esc2(lbl(s).split(' (')[0]) + '</button>').join('')
       + '</div>'
     : '';
 
@@ -252,7 +253,11 @@ CRM.muster._collect = function () {
       if (!ton) fehlendeFarbe.push(it.name);
       else {
         const tonNr = (CRM.muster._farbtonNr || {})[it.nr];
+        // Strukturzuschlag im Klartext ergänzen (Kürzel steht am Farbton-Ende)
+        const stCode = (ton.match(/\b(ST|RS|FL|PE|JA|HE)$/) || [])[1];
+        const stLabel = stCode ? (CRM.YOSIMA_STRUKTUR_LABELS || {})[stCode] : '';
         zeile += '\n    Farbton: ' + ton + (tonNr ? '  (Art.-Nr. ' + tonNr + ')' : '');
+        if (stLabel) zeile += '\n    Strukturzuschlag: ' + stLabel;
       }
     }
     zeilen.push(zeile);
