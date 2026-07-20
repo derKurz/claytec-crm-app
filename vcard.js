@@ -102,26 +102,64 @@ CRM.vcard.autoSave = async function (contactId) {
   if (!c) return;
   try {
     const rel = await CRM.vcard.saveToCustomerFolder(c);
-    if (rel) CRM.toast('📇 vCard im Kundenordner gespeichert.', 'success');
+    // Kein Dialog beim automatischen Anlegen (zu aufdringlich) — aber der
+    // Ordner wird genannt, damit die Datei auffindbar ist.
+    if (rel) CRM.toast('📇 vCard gespeichert: ' + rel, 'success');
   } catch (e) {
     // Ablage nicht verbunden / Ordnerstruktur fehlt — kein Fehler wert,
     // der 📇-Button im Kontaktprofil bleibt als manueller Weg.
   }
 };
 
-/* Manuell aus dem Kontaktprofil: Laptop → Kundenordner, Handy → Download */
+/* Manuell aus dem Kontaktprofil: Laptop → Kundenordner, Handy → Download.
+   Zeigt danach einen Dialog mit dem konkreten Speicherort und dem Weg
+   nach Google Kontakte — eine flüchtige Toast-Meldung reicht dafür nicht. */
 CRM.vcard.exportContact = async function (contactId) {
   const c = CRM.db.getContact(contactId);
   if (!c) return;
   try {
     const rel = await CRM.vcard.saveToCustomerFolder(c);
-    if (rel) {
-      CRM.toast('📇 vCard gespeichert: ' + rel, 'success');
-      return;
-    }
+    if (rel) { CRM.vcard.showResult(c, rel); return; }
   } catch (e) {
-    // Fallback: Download
+    // Ablage nicht verbunden → Download-Weg
   }
   CRM.vcard.download(c);
-  CRM.toast('📇 vCard heruntergeladen — am Handy zum Importieren antippen.', 'success');
+  CRM.vcard.showResult(c, null);
+};
+
+CRM.vcard.showResult = function (c, rel) {
+  const dateiname = CRM.vcard.fileName(c);
+  const voll = rel && CRM.ablage ? CRM.ablage.fullPath(rel) : null;
+  const hatBasis = !!((CRM.db.getSettings().onedrivePath || '').trim());
+
+  const ortHtml = rel
+    ? `
+      <p style="margin:0 0 6px"><strong>Gespeichert im Kundenordner:</strong></p>
+      <p style="font-family:monospace;font-size:12px;background:var(--bg);padding:8px 10px;border-radius:6px;word-break:break-all;margin:0 0 8px">${esc(voll || rel)}</p>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        ${voll ? `<a class="btn btn-sm" href="${esc(CRM.ablage.fileUrl(voll))}" target="_blank" rel="noopener">📂 Ordner öffnen</a>` : ''}
+        <button class="btn btn-sm" onclick="CRM.ablage.copyPath('${escAttr(voll || rel)}')">📋 Pfad kopieren</button>
+        <button class="btn btn-sm" onclick="CRM.vcard.downloadFromDialog('${c.id}')">⬇ Zusätzlich herunterladen</button>
+      </div>
+      ${hatBasis ? '' : '<p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">Hinterlege deinen Claytec-Ordnerpfad in den Einstellungen, dann führt „Ordner öffnen" direkt in den Explorer.</p>'}`
+    : `
+      <p style="margin:0 0 6px"><strong>Heruntergeladen als:</strong></p>
+      <p style="font-family:monospace;font-size:12px;background:var(--bg);padding:8px 10px;border-radius:6px;word-break:break-all;margin:0 0 8px">${esc(dateiname)}</p>
+      <p style="font-size:13px;margin:0">Die Datei liegt in deinem <strong>Download-Ordner</strong> (am Handy: „Downloads", am Laptop meist <code>C:\\Users\\...\\Downloads</code>).</p>`;
+
+  CRM.openModal(`
+    <h2>📇 vCard erstellt</h2>
+    ${ortHtml}
+    <hr style="border-color:var(--border);margin:14px 0">
+    <p style="margin:0 0 6px"><strong>So kommt der Kontakt zu Google Kontakte:</strong></p>
+    <p style="font-size:13px;margin:0 0 4px"><strong>Am Handy:</strong> Datei in den Downloads antippen → Android bietet „Zu Kontakten hinzufügen" an.</p>
+    <p style="font-size:13px;margin:0 0 10px"><strong>Am Laptop:</strong> Google Kontakte öffnen → links <em>Importieren</em> → <em>Datei auswählen</em> → die <code>.vcf</code> auswählen.</p>
+    <a class="btn btn-primary btn-sm" href="https://contacts.google.com/" target="_blank" rel="noopener">🌐 Google Kontakte öffnen</a>
+    <div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>
+  `);
+};
+
+CRM.vcard.downloadFromDialog = function (contactId) {
+  const c = CRM.db.getContact(contactId);
+  if (c) { CRM.vcard.download(c); CRM.toast('vCard zusätzlich in den Download-Ordner gelegt.', 'success'); }
 };
