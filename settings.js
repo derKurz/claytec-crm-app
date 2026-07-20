@@ -15,6 +15,25 @@ CRM.renderSettings = function () {
     <h2 style="margin-top:0">Einstellungen</h2>
 
     <div class="card">
+      <h3 style="margin-top:0">🎨 Design</h3>
+      <label>Farbschema</label>
+      <select id="set-theme" style="max-width:200px" onchange="CRM.saveTheme()">
+        <option value="hell" ${(s.theme || 'hell') === 'hell' ? 'selected' : ''}>☀️ Hell</option>
+        <option value="dunkel" ${s.theme === 'dunkel' ? 'selected' : ''}>🌙 Dunkel</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">📦 Musterversand</h3>
+      <label>Empfänger der Bestell-Mail (z.B. Innendienst)</label>
+      <input id="set-muster-mail" value="${escAttr(s.musterEmail || '')}" placeholder="muster@claytec.com" style="max-width:320px">
+      <label style="margin-top:10px">Muster-/Prospektliste (ein Eintrag pro Zeile — deine Auswahl aus der Werbemittel-Liste)</label>
+      <textarea id="set-muster-liste" rows="7" placeholder="z.B.:&#10;YOSIMA Farbtonfächer&#10;Produktkatalog&#10;...">${esc(s.musterListe || '')}</textarea>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="CRM.saveMusterSettings()">Speichern</button>
+      <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Diese Liste erscheint als Auswahl beim „📦 Muster schicken"-Button im Kontaktprofil.</p>
+    </div>
+
+    <div class="card">
       <h3 style="margin-top:0">Außendienst & Excel-Ablage</h3>
       <label>AD-Kürzel (Spalte „AD Kürzel" im Besuchsprotokoll)</label>
       <input id="set-ad-kuerzel" value="${escAttr(s.adKuerzel || 'CK')}" placeholder="z.B. CK" style="max-width:120px">
@@ -304,4 +323,20 @@ CRM.saveSpeechSettings = function () {
     whisperApiKey: document.getElementById('set-whisper-key').value.trim(),
   });
   CRM.toast('Einstellungen gespeichert.', 'success');
+};
+
+/* ---------- Design + Musterversand ---------- */
+CRM.saveTheme = function () {
+  const t = document.getElementById('set-theme').value;
+  CRM.db.saveSettings({ theme: t });
+  CRM.applyTheme();
+  CRM.toast(t === 'hell' ? 'Helles Design aktiviert. ☀️' : 'Dunkles Design aktiviert. 🌙', 'success');
+};
+
+CRM.saveMusterSettings = function () {
+  CRM.db.saveSettings({
+    musterEmail: document.getElementById('set-muster-mail').value.trim(),
+    musterListe: document.getElementById('set-muster-liste').value,
+  });
+  CRM.toast('Musterversand-Einstellungen gespeichert.', 'success');
 };

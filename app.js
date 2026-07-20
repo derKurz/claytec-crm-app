@@ -412,8 +412,18 @@ CRM.importFlow = {
   defaults: { source: 'eigene', type: 'sonstige', isPartner: false, abc: 'C' },
 };
 
+/* Farbschema anwenden — Standard ist HELL (bessere Lesbarkeit),
+   Dunkel bleibt in den Einstellungen wählbar. */
+CRM.applyTheme = function () {
+  const t = (CRM.db.getSettings().theme) || 'hell';
+  document.body.classList.toggle('theme-hell', t === 'hell');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t === 'hell' ? '#f3f5f8' : '#11151c';
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   CRM.db.init();
+  CRM.applyTheme();
   if (CRM.migrateToIndexedDB) CRM.migrateToIndexedDB();
   if (CRM.initSupabase) CRM.initSupabase();
   CRM.renderContactList();

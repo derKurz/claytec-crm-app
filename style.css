@@ -545,3 +545,36 @@ tr:hover td{background:rgba(255,255,255,.03)}
   max-height:280px;overflow-y:auto;z-index:300;box-shadow:0 8px 24px rgba(0,0,0,.4);
 }
 .combo-item{white-space:nowrap}
+
+/* ============================================================
+   Helles Design (Standard) — Dunkel bleibt als Option in den
+   Einstellungen. Umschaltung über body.theme-hell.
+   ============================================================ */
+body.theme-hell{
+  --bg:#f3f5f8;
+  --bg-elev:#ffffff;
+  --bg-elev2:#e9edf2;
+  --border:#c8d0db;
+  --text:#1a2230;
+  --text-dim:#5a6474;
+  --accent:#1668b0;
+  --accent-2:#0e8f7e;
+  --gold:#a97e17;
+  --blue:#1668b0;
+  --green:#1e8e50;
+  --orange:#c86b09;
+  --red:#c93c3c;
+  --shadow:0 4px 16px rgba(30,40,60,.14);
+}
+body.theme-hell .btn:hover{background:#dbe2ea;border-color:#b6c1cf}
+body.theme-hell .btn-primary{color:#fff}
+body.theme-hell .btn-primary:hover{background:#2a7cc4}
+body.theme-hell .btn-danger{color:#fff}
+body.theme-hell .dash-action:hover{background:#dbe2ea}
+body.theme-hell .dash-action-primary{color:#fff}
+body.theme-hell .dash-action-primary:hover{background:#2a7cc4}
+body.theme-hell .header-search-item:hover{background:var(--bg-elev2)}
+body.theme-hell .nearby-row:hover{background:var(--bg-elev2)}
+body.theme-hell .combo-list{box-shadow:0 8px 24px rgba(30,40,60,.18)}
+body.theme-hell #header-search-results,
+body.theme-hell .header-search-dropdown{box-shadow:0 8px 24px rgba(30,40,60,.18)}

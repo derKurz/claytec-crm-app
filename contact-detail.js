@@ -321,6 +321,7 @@ CRM.renderContactDetailModal = function (id) {
         <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
         <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
         <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
+        <button class="btn" onclick="CRM.muster.open('${c.id}')">📦 Muster schicken</button>
       </div>
       <details style="margin-bottom:10px">
         <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Eintrag mit Datum/Notiz manuell hinzufügen</summary>
@@ -694,4 +695,105 @@ CRM.pickLink = function (otherId) {
   CRM.linkContacts(CRM._linkPicker.contactId, otherId);
   CRM.toast('Verknüpfung hinzugefügt.', 'success');
   CRM.openContactDetail(CRM._linkPicker.contactId);
+};
+
+/* ============================================================
+   Musterversand: Muster/Prospekte für einen Kontakt auswählen und
+   als fertige Bestell-Mail öffnen. Die Auswahlliste pflegst du in
+   den Einstellungen (aus deiner Werbemittel-Liste).
+   Zusätzlich wird der Versand im Kontaktjournal dokumentiert.
+   ============================================================ */
+CRM.muster = { _contactId: null };
+
+CRM.muster.getListe = function () {
+  return String(CRM.db.getSettings().musterListe || '')
+    .split('\n').map((z) => z.trim()).filter(Boolean);
+};
+
+CRM.muster.open = function (contactId) {
+  CRM.muster._contactId = contactId;
+  const c = CRM.db.getContact(contactId);
+  if (!c) return;
+  const liste = CRM.muster.getListe();
+
+  if (!liste.length) {
+    CRM.openModal(`
+      <h2>📦 Muster schicken</h2>
+      <p>Es ist noch keine Muster-/Prospektliste hinterlegt.</p>
+      <p style="color:var(--text-dim);font-size:13px">Trag deine Auswahl einmalig unter <strong>Einstellungen → 📦 Musterversand</strong> ein (ein Eintrag pro Zeile) — danach steht sie hier immer als Auswahl bereit.</p>
+      <div class="modal-footer">
+        <button class="btn" onclick="CRM.closeModal()">Schließen</button>
+        <button class="btn btn-primary" onclick="CRM.closeModal();CRM.switchTab('einstellungen')">Zu den Einstellungen</button>
+      </div>`);
+    return;
+  }
+
+  const ap = c.ansprechpartner || {};
+  const empfName = [ap.vorname, ap.name].filter(Boolean).join(' ');
+  const checks = liste.map((item, i) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--border);cursor:pointer;min-height:44px">
+      <input type="checkbox" class="muster-item" value="${escAttr(item)}" style="width:auto">
+      <span>${esc2(item)}</span>
+    </label>`).join('');
+
+  CRM.openModal(`
+    <h2>📦 Muster schicken — ${esc2(c.firma1)}</h2>
+    <p style="color:var(--text-dim);font-size:13px">Auswählen, was der Kunde braucht — daraus wird eine fertige Bestell-Mail.</p>
+    <div style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 8px;margin-bottom:10px">${checks}</div>
+    <label>Zusätzliche Anmerkung (optional)</label>
+    <input id="muster-note" placeholder="z.B. bitte an Baustelle senden, eilt">
+    <div class="row" style="margin-top:10px">
+      <div class="col"><label>Lieferanschrift</label>
+        <textarea id="muster-adresse" rows="3">${esc2([c.firma1, empfName ? 'z.Hd. ' + empfName : '', c.strasse, [c.plz, c.ort].filter(Boolean).join(' ')].filter(Boolean).join('\n'))}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn" onclick="CRM.muster.copy()">📋 Kopieren</button>
+      <button class="btn btn-primary" onclick="CRM.muster.send()">✉ Bestell-Mail öffnen</button>
+    </div>
+  `, { dismissible: false });
+};
+
+CRM.muster._collect = function () {
+  const c = CRM.db.getContact(CRM.muster._contactId);
+  const items = Array.from(document.querySelectorAll('.muster-item:checked')).map((el) => el.value);
+  const note = (document.getElementById('muster-note') || {}).value || '';
+  const adresse = (document.getElementById('muster-adresse') || {}).value || '';
+  const betreff = `Musterversand: ${c ? c.firma1 : ''}${c && c.erpNr ? ' (ERP ' + c.erpNr + ')' : ''}`;
+  const body = [
+    'Hallo zusammen,',
+    '',
+    'bitte folgende Muster/Unterlagen versenden:',
+    '',
+    ...items.map((i) => '- ' + i),
+    '',
+    'Lieferanschrift:',
+    adresse,
+    ...(note ? ['', 'Anmerkung: ' + note] : []),
+    '',
+    'Danke und Grüße',
+  ].join('\n');
+  return { c, items, betreff, body };
+};
+
+CRM.muster.send = function () {
+  const { c, items, betreff, body } = CRM.muster._collect();
+  if (!items.length) { CRM.toast('Bitte mindestens ein Muster auswählen.', 'error'); return; }
+  const to = CRM.db.getSettings().musterEmail || '';
+  const link = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(betreff)}&body=${encodeURIComponent(body)}`;
+  // Versand im Journal dokumentieren (kein Excel-Export, wie beim Journal üblich)
+  CRM.db.addJournalEntry({ contactId: c.id, type: 'mail', text: 'Muster angefordert: ' + items.join(', ') });
+  CRM.closeModal();
+  window.location.href = link;
+  CRM.toast(`✓ Bestell-Mail vorbereitet (${items.length} Positionen) — im Journal vermerkt.`, 'success');
+};
+
+CRM.muster.copy = function () {
+  const { c, items, betreff, body } = CRM.muster._collect();
+  if (!items.length) { CRM.toast('Bitte mindestens ein Muster auswählen.', 'error'); return; }
+  CRM._copyRichText(`<pre>${esc2(betreff)}\n\n${esc2(body)}</pre>`, betreff + '\n\n' + body).then(() => {
+    CRM.db.addJournalEntry({ contactId: c.id, type: 'mail', text: 'Muster angefordert: ' + items.join(', ') });
+    CRM.closeModal();
+    CRM.toast(`✓ Kopiert (${items.length} Positionen) — im Journal vermerkt.`, 'success');
+  }).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
 };
