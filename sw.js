@@ -35,6 +35,8 @@ var APP_SHELL = [
   './excel-ablage.js?v=' + VERSION,
   './vcard.js?v=' + VERSION,
   './email-parser.js?v=' + VERSION,
+  './werbemittel.js?v=' + VERSION,
+  './muster.js?v=' + VERSION,
   './app.js?v=' + VERSION,
   './icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',

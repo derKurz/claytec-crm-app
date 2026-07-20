@@ -27,10 +27,16 @@ CRM.renderSettings = function () {
       <h3 style="margin-top:0">📦 Musterversand</h3>
       <label>Empfänger der Bestell-Mail (z.B. Innendienst)</label>
       <input id="set-muster-mail" value="${escAttr(s.musterEmail || '')}" placeholder="muster@claytec.com" style="max-width:320px">
-      <label style="margin-top:10px">Muster-/Prospektliste (ein Eintrag pro Zeile — deine Auswahl aus der Werbemittel-Liste)</label>
-      <textarea id="set-muster-liste" rows="7" placeholder="z.B.:&#10;YOSIMA Farbtonfächer&#10;Produktkatalog&#10;...">${esc(s.musterListe || '')}</textarea>
       <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="CRM.saveMusterSettings()">Speichern</button>
-      <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Diese Liste erscheint als Auswahl beim „📦 Muster schicken"-Button im Kontaktprofil.</p>
+      <hr style="border-color:var(--border);margin:14px 0">
+      <label>Artikelkatalog</label>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">
+        ${(CRM.WERBEMITTEL || []).length} Artikel aus der ClayTec-Werbemittelbestellliste (Stand 06/2026) sind hinterlegt —
+        Auswahl und Stückzahl setzt du direkt beim „📦 Muster schicken"-Button im Kontaktprofil.
+        Deine Favoriten (★) erscheinen dort vorgefiltert.
+      </p>
+      <p style="font-size:13px;margin:0">⭐ Als meine Auswahl markiert: <strong>${((s.musterFavoriten || []).length)}</strong> Artikel
+        ${((s.musterFavoriten || []).length) ? `<button class="btn btn-sm" style="margin-left:8px" onclick="CRM.db.saveSettings({musterFavoriten:[]});CRM.renderSettings();CRM.toast('Favoriten zurückgesetzt.','success')">Zurücksetzen</button>` : ''}</p>
     </div>
 
     <div class="card">
@@ -334,9 +340,6 @@ CRM.saveTheme = function () {
 };
 
 CRM.saveMusterSettings = function () {
-  CRM.db.saveSettings({
-    musterEmail: document.getElementById('set-muster-mail').value.trim(),
-    musterListe: document.getElementById('set-muster-liste').value,
-  });
-  CRM.toast('Musterversand-Einstellungen gespeichert.', 'success');
+  CRM.db.saveSettings({ musterEmail: document.getElementById('set-muster-mail').value.trim() });
+  CRM.toast('Empfänger für Werbemittelbestellungen gespeichert.', 'success');
 };
