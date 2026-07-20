@@ -584,3 +584,10 @@ body.theme-hell .header-search-dropdown{box-shadow:0 8px 24px rgba(30,40,60,.18)
   font-size:24px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45));
   cursor:pointer;transform:translateY(-2px);
 }
+
+/* Hervorgehobener Pin (Hover/Tap in der „In der Nähe"-Liste) */
+.crm-marker-hl{animation:hlpulse 1.1s ease-in-out infinite}
+@keyframes hlpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+/* Trefferzeile, die bereits in der Tour ist */
+.nearby-row.nearby-intour{border-left-color:var(--accent-2);background:rgba(94,230,196,.10)}
+body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}

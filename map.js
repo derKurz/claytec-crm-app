@@ -287,6 +287,45 @@ CRM.map.nearbyAbSuchort = function () {
 CRM.map._nearbyRadius = CRM.map._nearbyRadius || 10;
 CRM.map._nearbyOverdueOnly = CRM.map._nearbyOverdueOnly || false;
 CRM.map._nearbyExpandedId = null;
+CRM.map._nearbyType = CRM.map._nearbyType || ''; // '' = alle Typen
+
+CRM.map.setNearbyType = function (t) {
+  CRM.map._nearbyType = (CRM.map._nearbyType === t) ? '' : t;
+  CRM.map.renderNearbyPanel();
+};
+
+/* Kontakt in der Trefferliste überfahren/antippen → zugehörigen Pin auf
+   der Karte hervorheben. Bei Hover nur Hervorhebung (keine Kartenbewegung),
+   beim Antippen zusätzlich aus dem Cluster herauszoomen. */
+CRM.map.highlightContact = function (id, on) {
+  const m = CRM.map._markerById && CRM.map._markerById[id];
+  const c = CRM.db.getContact(id);
+  if (!m || !c) return;
+  if (on) {
+    m.setIcon(CRM.map.makeIcon(c, true));
+    m.setZIndexOffset(3000);
+    if (m._map) m.openTooltip();
+  } else {
+    m.setIcon(CRM.map.makeIcon(c));
+    m.setZIndexOffset(CRM.map.selectedIds.has(id) ? 1000 : 0);
+    if (m._map) m.closeTooltip();
+  }
+};
+
+/* Beim Antippen einer Trefferzeile: Pin sichtbar machen (auch wenn er in
+   einem Cluster steckt) und hervorheben — bewusste Aktion, daher darf
+   sich die Kartenansicht ändern. */
+CRM.map.focusNearby = function (id) {
+  const m = CRM.map._markerById && CRM.map._markerById[id];
+  if (!m) return;
+  const done = () => CRM.map.highlightContact(id, true);
+  if (CRM.map.markersLayer && CRM.map.markersLayer.zoomToShowLayer) {
+    CRM.map.markersLayer.zoomToShowLayer(m, done);
+  } else {
+    CRM.map.instance.setView(m.getLatLng(), Math.max(CRM.map.instance.getZoom(), 14));
+    done();
+  }
+};
 
 CRM.map.distKm = function (lat1, lng1, lat2, lng2) {
   const rad = Math.PI / 180;
@@ -340,11 +379,13 @@ CRM.map.renderNearbyPanel = function () {
     .map((c) => ({ c, dist: CRM.map.distKm(pos.lat, pos.lng, c.lat, c.lng), due: CRM.getDueStatus(c) }))
     .filter((h) => h.dist <= radius);
   if (CRM.map._nearbyOverdueOnly) hits = hits.filter((h) => h.due.status === 'overdue' || h.due.status === 'today');
+  if (CRM.map._nearbyType) hits = hits.filter((h) => h.c.type === CRM.map._nearbyType);
   hits.sort((a, b) => a.dist - b.dist);
   const total = hits.length;
   hits = hits.slice(0, 30);
 
   const chip = (km) => `<button class="qf-btn ${CRM.map._nearbyRadius === km ? 'active' : ''}" onclick="CRM.map.setNearbyRadius(${km})">${km} km</button>`;
+  const typChip = (t, label) => `<button class="qf-btn ${CRM.map._nearbyType === t ? 'active' : ''}" onclick="CRM.map.setNearbyType('${t}')">${label}</button>`;
 
   const rows = hits.map(({ c, dist, due }) => {
     const overdue = due.status === 'overdue' || due.status === 'today';
@@ -353,16 +394,21 @@ CRM.map.renderNearbyPanel = function () {
     const expanded = CRM.map._nearbyExpandedId === c.id;
     const tel = c.telFirma || (c.ansprechpartner && c.ansprechpartner.telefon);
     const addr = CRM.formatAddress(c);
+    const inTour = CRM.map.selectedIds.has(c.id);
     const actions = expanded ? `
       <div class="nearby-actions">
+        <button class="btn btn-sm ${inTour ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.map.toggleSelect('${c.id}');CRM.map.renderNearbyPanel()">${inTour ? '✓ In Tour' : '➕ Zur Tour'}</button>
         ${tel ? `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 Anrufen</a>` : ''}
         ${addr ? `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()">🚗 Hinfahren</a>` : ''}
         <button class="btn btn-sm" onclick="event.stopPropagation();CRM.openContactDetail('${c.id}')">Profil</button>
       </div>` : '';
     return `
-      <div class="nearby-row ${overdue ? 'nearby-overdue' : ''}" onclick="CRM.map.toggleNearbyExpand('${c.id}')">
+      <div class="nearby-row ${overdue ? 'nearby-overdue' : ''} ${inTour ? 'nearby-intour' : ''}"
+           onmouseenter="CRM.map.highlightContact('${c.id}',true)"
+           onmouseleave="CRM.map.highlightContact('${c.id}',false)"
+           onclick="CRM.map.focusNearby('${c.id}');CRM.map.toggleNearbyExpand('${c.id}')">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
-          <div class="nearby-title">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
+          <div class="nearby-title">${inTour ? '✓ ' : ''}${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
           <div class="nearby-dist">${dist < 10 ? dist.toFixed(1).replace('.', ',') : Math.round(dist)} km</div>
         </div>
         <div class="nearby-sub">${c.abc} · ${CRM.TYPE_LABELS[c.type] || ''} · ${dueLabel}</div>
@@ -382,16 +428,32 @@ CRM.map.renderNearbyPanel = function () {
       ${chip(5)}${chip(10)}${chip(25)}${chip(50)}
       <button class="qf-btn ${CRM.map._nearbyOverdueOnly ? 'active' : ''}" onclick="CRM.map.toggleNearbyOverdue()" style="margin-left:auto">nur überfällige</button>
     </div>
+    <div class="nearby-chips" style="margin-top:-4px">
+      ${typChip('', 'Alle Typen')}${typChip('haendler', 'Händler')}${typChip('verarbeiter', 'Verarbeiter')}${typChip('architekt', 'Architekt')}${typChip('bauherr', 'Bauherr')}
+    </div>
     <div class="nearby-list">
-      ${rows || '<p style="color:var(--text-dim);font-size:13px;margin:10px 0">Keine Kontakte in diesem Radius' + (CRM.map._nearbyOverdueOnly ? ' (Filter „nur überfällige" aktiv)' : '') + '.</p>'}
+      ${rows || '<p style="color:var(--text-dim);font-size:13px;margin:10px 0">Keine Kontakte in diesem Radius'
+        + (CRM.map._nearbyType ? ` (Typ „${CRM.TYPE_LABELS[CRM.map._nearbyType]}")` : '')
+        + (CRM.map._nearbyOverdueOnly ? ' (Filter „nur überfällige" aktiv)' : '') + '.</p>'}
       ${total > 30 ? `<p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">${total - 30} weitere — Radius verkleinern oder Filter nutzen.</p>` : ''}
     </div>
-    <p style="color:var(--text-dim);font-size:11px;margin:8px 0 0">Entfernung = Luftlinie ab GPS-Position.</p>
+    <p style="color:var(--text-dim);font-size:11px;margin:8px 0 0">Entfernung = Luftlinie ab ${esc(pos.label || 'meinem Standort')}. Zeile antippen zeigt den Pin auf der Karte.</p>
   `;
   panel.classList.add('open');
 };
 
-CRM.map.makeIcon = function (c) {
+CRM.map.makeIcon = function (c, highlight) {
+  // Hervorhebung beim Überfahren/Antippen in der „In der Nähe"-Liste:
+  // größer, weißer Ring, Pulsieren — hebt sich klar von allen anderen ab.
+  if (highlight) {
+    const color = c.isPartner ? '#e6b94d' : (CRM.TYPE_COLORS[c.type] || '#9aa4b5');
+    return L.divIcon({
+      className: 'crm-marker crm-marker-hl',
+      html: `<div style="background:${color};width:32px;height:32px;border-radius:50%;border:4px solid #fff;box-shadow:0 0 0 3px ${color}88,0 2px 8px rgba(0,0,0,.5)"></div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+  }
   const selected = CRM.map.selectedIds.has(c.id);
   if (selected) {
     // Ausgewählte Kontakte stark hervorheben: größer, leuchtend cyan, weißer Rand, ✓, Puls
