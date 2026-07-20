@@ -10,7 +10,12 @@
 var CRM = window.CRM || {};
 window.CRM = CRM;
 
-CRM.muster = { _contactId: null, _mengen: {}, _nurFav: false };
+CRM.muster = { _contactId: null, _mengen: {}, _nurFav: false, _farbton: {} };
+
+/* Braucht dieser Artikel eine Farbtonangabe? (YOSIMA-Beutel) */
+CRM.muster.brauchtFarbton = function (nr) {
+  return !!(CRM.YOSIMA_BEUTEL_ARTIKEL && CRM.YOSIMA_BEUTEL_ARTIKEL[nr]);
+};
 
 CRM.muster.getFavoriten = function () {
   return CRM.db.getSettings().musterFavoriten || [];
@@ -28,6 +33,7 @@ CRM.muster.toggleFavorit = function (nr) {
 CRM.muster.open = function (contactId) {
   CRM.muster._contactId = contactId;
   CRM.muster._mengen = {};
+  CRM.muster._farbton = {};
   const c = CRM.db.getContact(contactId);
   if (!c) return;
   const ap = c.ansprechpartner || {};
@@ -111,6 +117,19 @@ CRM.muster.renderListe = function () {
       '  </div>',
       '</div>',
     ].join('');
+    // YOSIMA-Beutel: Farbton ist Pflicht — Auswahlzeile direkt darunter
+    if (menge && CRM.muster.brauchtFarbton(it.nr)) {
+      const gew = CRM.muster._farbton[it.nr];
+      const brauchtStruktur = CRM.YOSIMA_BEUTEL_ARTIKEL[it.nr].struktur;
+      html += [
+        '<div style="padding:8px 10px 10px 46px;border-bottom:1px solid var(--border);background:' + (gew ? 'rgba(30,142,80,.10)' : 'rgba(200,107,9,.12)') + '">',
+        '  <div style="font-size:12px;margin-bottom:6px;' + (gew ? '' : 'color:var(--orange);font-weight:600') + '">',
+        gew ? ('✓ Farbton: <strong>' + esc2(gew) + '</strong>') : ('⚠ Farbton' + (brauchtStruktur ? ' + Strukturzuschlag' : '') + ' erforderlich'),
+        '  </div>',
+        '  <button class="btn btn-sm" onclick="CRM.muster.openFarbwahl(\'' + escAttr(it.nr) + '\')">🎨 ' + (gew ? 'Farbton ändern' : 'Farbton wählen') + '</button>',
+        '</div>',
+      ].join('');
+    }
   });
   el.innerHTML = html;
   CRM.muster.updateSumme();
@@ -135,6 +154,82 @@ CRM.muster.updateSumme = function () {
   el.style.color = nrs.length ? 'var(--accent-2)' : 'var(--text-dim)';
 };
 
+/* ---------- YOSIMA-Farbtonwahl (1022 Töne, durchsuchbar) ---------- */
+CRM.muster.openFarbwahl = function (artikelNr) {
+  CRM.muster._farbwahlFuer = artikelNr;
+  const braucht = CRM.YOSIMA_BEUTEL_ARTIKEL[artikelNr];
+  const strukturen = [];
+  (CRM.YOSIMA_FARBTOENE || []).forEach((f) => {
+    if (f.st && strukturen.indexOf(f.st) < 0) strukturen.push(f.st);
+  });
+  strukturen.sort();
+
+  CRM._musterModalBackup = document.querySelector('#active-modal-overlay .modal').innerHTML;
+  const strukturChips = braucht.struktur
+    ? '<div class="quick-filters" style="margin:8px 0">'
+      + strukturen.map((s) => '<button class="qf-btn" data-st="' + s + '" onclick="CRM.muster.setStrukturFilter(\'' + s + '\')">' + s + '</button>').join('')
+      + '</div>'
+    : '';
+
+  document.querySelector('#active-modal-overlay .modal').innerHTML = [
+    '<h2>🎨 Farbton wählen</h2>',
+    '<p style="color:var(--text-dim);font-size:13px">Bezeichnungen exakt wie in der ClayTec-Bestellliste.'
+      + (braucht.struktur ? ' Für diesen Artikel ist ein <strong>Strukturzuschlag</strong> nötig — bitte einen der Kürzel-Filter wählen.' : '') + '</p>',
+    strukturChips,
+    '<input id="fw-suche" placeholder="🔍 Farbton suchen, z.B. GR 2 oder Weiss..." oninput="CRM.muster.renderFarbliste()" autocomplete="off">',
+    '<div id="fw-liste" style="max-height:46vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px"></div>',
+    '<div class="modal-footer">',
+    '  <button class="btn" onclick="CRM.muster.closeFarbwahl()">Zurück ohne Auswahl</button>',
+    '</div>',
+  ].join('\n');
+  CRM.muster._strukturFilter = braucht.struktur ? (strukturen[0] || '') : null;
+  if (braucht.struktur) CRM.muster.setStrukturFilter(CRM.muster._strukturFilter);
+  else CRM.muster.renderFarbliste();
+  setTimeout(() => { const s = document.getElementById('fw-suche'); if (s) s.focus(); }, 60);
+};
+
+CRM.muster.setStrukturFilter = function (st) {
+  CRM.muster._strukturFilter = st;
+  document.querySelectorAll('#active-modal-overlay .qf-btn[data-st]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.st === st);
+  });
+  CRM.muster.renderFarbliste();
+};
+
+CRM.muster.renderFarbliste = function () {
+  const el = document.getElementById('fw-liste');
+  if (!el) return;
+  const q = ((document.getElementById('fw-suche') || {}).value || '').trim().toLowerCase();
+  const nurStruktur = CRM.muster._strukturFilter;
+
+  let list = CRM.YOSIMA_FARBTOENE || [];
+  // Ohne Struktur-Artikel: nur Grundtöne. Mit Struktur: nur das gewählte Kürzel.
+  list = (nurStruktur === null) ? list.filter((f) => !f.st) : list.filter((f) => f.st === nurStruktur);
+  if (q) list = list.filter((f) => (f.ton + ' ' + f.nr).toLowerCase().indexOf(q) >= 0);
+
+  if (!list.length) { el.innerHTML = '<p style="color:var(--text-dim);font-size:13px;padding:12px">Kein Farbton gefunden.</p>'; return; }
+  el.innerHTML = list.slice(0, 300).map((f) => [
+    '<div class="header-search-item" style="min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px"',
+    ' onclick="CRM.muster.waehleFarbton(\'' + escAttr(f.ton) + '\',\'' + escAttr(f.nr) + '\')">',
+    '<strong>' + esc2(f.ton) + '</strong>',
+    '<span style="color:var(--text-dim);font-size:11px">' + esc2(f.nr) + '</span>',
+    '</div>',
+  ].join('')).join('')
+    + (list.length > 300 ? '<p style="color:var(--text-dim);font-size:12px;padding:8px 12px">' + (list.length - 300) + ' weitere — bitte Suche verfeinern.</p>' : '');
+};
+
+CRM.muster.waehleFarbton = function (ton, nr) {
+  CRM.muster._farbton[CRM.muster._farbwahlFuer] = ton;
+  CRM.muster._farbtonNr = CRM.muster._farbtonNr || {};
+  CRM.muster._farbtonNr[CRM.muster._farbwahlFuer] = nr;
+  CRM.muster.closeFarbwahl();
+};
+
+CRM.muster.closeFarbwahl = function () {
+  document.querySelector('#active-modal-overlay .modal').innerHTML = CRM._musterModalBackup;
+  CRM.muster.renderListe();
+};
+
 CRM.muster._collect = function () {
   const c = CRM.db.getContact(CRM.muster._contactId);
   const val = (id) => ((document.getElementById(id) || {}).value || '').trim();
@@ -145,12 +240,22 @@ CRM.muster._collect = function () {
   const anlass = val('mu-anlass');
 
   const zeilen = [];
+  const fehlendeFarbe = [];
   (CRM.WERBEMITTEL || []).forEach((it) => {
     const m = CRM.muster._mengen[it.nr];
     if (!m) return;
     // Bei VE > 1 ausdrücklich klarstellen, dass NUR Teilmenge gewünscht ist
     const veHinweis = it.ve > 1 ? ' (VE ' + it.ve + ' Stk — bitte nur ' + m + ' Stk)' : '';
-    zeilen.push('- ' + it.nr + '  ' + it.name + ': ' + m + ' Stück' + veHinweis);
+    let zeile = '- ' + it.nr + '  ' + it.name + ': ' + m + ' Stück' + veHinweis;
+    if (CRM.muster.brauchtFarbton(it.nr)) {
+      const ton = CRM.muster._farbton[it.nr];
+      if (!ton) fehlendeFarbe.push(it.name);
+      else {
+        const tonNr = (CRM.muster._farbtonNr || {})[it.nr];
+        zeile += '\n    Farbton: ' + ton + (tonNr ? '  (Art.-Nr. ' + tonNr + ')' : '');
+      }
+    }
+    zeilen.push(zeile);
   });
 
   const betreff = 'Werbemittelbestellung: ' + kunde + (knr ? ' (Kd-Nr. ' + knr + ')' : '');
@@ -162,20 +267,35 @@ CRM.muster._collect = function () {
   if (anlass) teile.push('', 'Anlass/Bemerkung: ' + anlass);
   teile.push('', 'Danke und Grüße');
 
-  return { c, zeilen, betreff, body: teile.join('\n') };
+  return { c, zeilen, fehlendeFarbe, betreff, body: teile.join('\n') };
+};
+
+/* Pflichtprüfung: YOSIMA-Beutel ohne Farbton darf nicht rausgehen
+   („BITTE GEWÜNSCHTEN FARBTON ANGEBEN!" laut Bestellliste) */
+CRM.muster._pruefe = function (res) {
+  if (!res.zeilen.length) {
+    CRM.toast('Bitte mindestens einen Artikel mit Stückzahl wählen.', 'error');
+    return false;
+  }
+  if (res.fehlendeFarbe.length) {
+    CRM.toast('⚠ Farbton fehlt bei: ' + res.fehlendeFarbe.join(', ') + ' — bitte „🎨 Farbton wählen" antippen.', 'error');
+    return false;
+  }
+  return true;
 };
 
 CRM.muster._journal = function (c) {
   const txt = Object.keys(CRM.muster._mengen).map((nr) => {
     const it = (CRM.WERBEMITTEL || []).find((x) => x.nr === nr);
-    return CRM.muster._mengen[nr] + '× ' + (it ? it.name : nr);
+    const ton = CRM.muster._farbton[nr];
+    return CRM.muster._mengen[nr] + '× ' + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
   }).join(', ');
   CRM.db.addJournalEntry({ contactId: c.id, type: 'mail', text: 'Werbemittel bestellt: ' + txt });
 };
 
 CRM.muster.send = function () {
   const res = CRM.muster._collect();
-  if (!res.zeilen.length) { CRM.toast('Bitte mindestens einen Artikel mit Stückzahl wählen.', 'error'); return; }
+  if (!CRM.muster._pruefe(res)) return;
   const to = CRM.db.getSettings().musterEmail || '';
   CRM.muster._journal(res.c);
   CRM.closeModal();
@@ -187,7 +307,7 @@ CRM.muster.send = function () {
 
 CRM.muster.copy = function () {
   const res = CRM.muster._collect();
-  if (!res.zeilen.length) { CRM.toast('Bitte mindestens einen Artikel mit Stückzahl wählen.', 'error'); return; }
+  if (!CRM.muster._pruefe(res)) return;
   CRM._copyRichText('<pre>' + esc2(res.betreff) + '\n\n' + esc2(res.body) + '</pre>', res.betreff + '\n\n' + res.body)
     .then(() => {
       CRM.muster._journal(res.c);
