@@ -17,8 +17,11 @@ CRM.KEYS = {
 /* Kontaktjournal (PRODUCT_VISION.md): fortlaufende, NIE als Besuchsbericht
    gewertete Notizen (Telefon/Mail/Info/...). Getrennt von visits[], die der
    offizielle, exportierbare Besuchsbericht sind. */
-CRM.JOURNAL_TYPES = ['info', 'telefon', 'mail', 'whatsapp', 'teams'];
-CRM.JOURNAL_TYPE_LABELS = { info: '📝 Info', telefon: '📞 Telefon', mail: '✉ Mail', whatsapp: '💬 WhatsApp', teams: '👥 Teams' };
+CRM.JOURNAL_TYPES = ['info', 'telefon', 'mail', 'whatsapp', 'teams', 'muster', 'angebot'];
+CRM.JOURNAL_TYPE_LABELS = {
+  info: '📝 Info', telefon: '📞 Telefon', mail: '✉ Mail', whatsapp: '💬 WhatsApp',
+  teams: '👥 Teams', muster: '📦 Muster/Werbemittel', angebot: '📄 Angebot',
+};
 
 CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'sonstige'];
 CRM.TYPE_LABELS = {
@@ -127,6 +130,23 @@ CRM.db = {
     this._journal = CRM.storage.read(CRM.KEYS.JOURNAL, []);
     this._settings = Object.assign({}, CRM.DEFAULT_SETTINGS, CRM.storage.read(CRM.KEYS.SETTINGS, {}));
     this._meta = CRM.storage.read(CRM.KEYS.META, { importedFiles: [] });
+    this._repairJournal();
+  },
+
+  /* Reparatur: Musterbestellungen wurden zeitweise mit den falschen
+     Feldnamen (type/text statt entryType/content) gespeichert und daher
+     im Kontakt leer angezeigt. Betroffene Einträge einmalig umschreiben. */
+  _repairJournal() {
+    let fixed = 0;
+    this._journal.forEach((j) => {
+      if (!j.entryType && j.type) {
+        j.entryType = (j.type === 'mail' && /Werbemittel bestellt/i.test(j.text || '')) ? 'muster' : j.type;
+        delete j.type;
+        fixed++;
+      }
+      if (!j.content && j.text) { j.content = j.text; delete j.text; fixed++; }
+    });
+    if (fixed) this.saveJournal();
   },
 
   /* ---- Kontaktjournal (fortlaufend, nie Besuchsbericht/Excel) ---- */

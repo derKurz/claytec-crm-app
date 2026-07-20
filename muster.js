@@ -295,7 +295,9 @@ CRM.muster._journal = function (c) {
     const ton = CRM.muster._farbton[nr];
     return CRM.muster._mengen[nr] + '× ' + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
   }).join(', ');
-  CRM.db.addJournalEntry({ contactId: c.id, type: 'mail', text: 'Werbemittel bestellt: ' + txt });
+  // Feldnamen müssen zum Journal-Datenmodell passen (entryType/content) —
+  // sonst wird der Eintrag zwar gespeichert, aber leer angezeigt.
+  CRM.db.addJournalEntry({ contactId: c.id, entryType: 'muster', content: 'Werbemittel bestellt: ' + txt, inputMethod: 'muster' });
 };
 
 CRM.muster.send = function () {
