@@ -17,10 +17,11 @@ CRM.KEYS = {
 /* Kontaktjournal (PRODUCT_VISION.md): fortlaufende, NIE als Besuchsbericht
    gewertete Notizen (Telefon/Mail/Info/...). Getrennt von visits[], die der
    offizielle, exportierbare Besuchsbericht sind. */
-CRM.JOURNAL_TYPES = ['info', 'telefon', 'mail', 'whatsapp', 'teams', 'muster', 'angebot'];
+CRM.JOURNAL_TYPES = ['info', 'telefon', 'mail', 'whatsapp', 'teams', 'muster', 'angebot', 'reklamation', 'schulung'];
 CRM.JOURNAL_TYPE_LABELS = {
   info: '📝 Info', telefon: '📞 Telefon', mail: '✉ Mail', whatsapp: '💬 WhatsApp',
   teams: '👥 Teams', muster: '📦 Muster/Werbemittel', angebot: '📄 Angebot',
+  reklamation: '⚠️ Reklamation', schulung: '🎓 Schulung/Workshop',
 };
 
 CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'sonstige'];

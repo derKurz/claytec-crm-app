@@ -306,32 +306,22 @@ CRM.renderContactDetailModal = function (id) {
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">📓 Kontaktjournal <span style="font-size:11px;color:var(--text-dim);font-weight:400">(fortlaufend, kein Besuchsbericht, kein Export)</span></h3>
-      <div class="row" style="margin-bottom:10px;align-items:flex-end">
-        <div class="col" style="max-width:140px"><label>Art</label><select id="cd-journal-type">${CRM.JOURNAL_TYPES.map((t) => `<option value="${t}">${CRM.JOURNAL_TYPE_LABELS[t]}</option>`).join('')}</select></div>
-        <div class="col"><label>Notiz</label><input id="cd-journal-text" placeholder="z.B. kurzes Telefonat, Zwischenstand..."></div>
-        <button class="btn btn-sm" onclick="CRM.addJournalEntryFromDetail('${c.id}')">+ Eintrag</button>
-      </div>
-      <div id="cd-journal-list">${CRM.renderJournalForContact(c.id)}</div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin-top:0">Besuche & E-Mails</h3>
-      <div class="row" style="margin-bottom:10px">
+      <h3 style="margin-top:0">Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span></h3>
+      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
         <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
         <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
         <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
         <button class="btn" onclick="CRM.muster.open('${c.id}')">📦 Muster schicken</button>
       </div>
       <details style="margin-bottom:10px">
-        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Eintrag mit Datum/Notiz manuell hinzufügen</summary>
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Besuch mit Datum/Notiz manuell nachtragen</summary>
         <div class="row" style="margin-top:8px">
           <div class="col" style="max-width:160px"><label>Datum</label><input type="date" id="cd-visit-date" value="${new Date().toISOString().slice(0, 10)}"></div>
           <div class="col"><label>Notiz</label><textarea id="cd-visit-note" placeholder="Was wurde besprochen?"></textarea></div>
         </div>
         <button class="btn btn-sm" onclick="CRM.saveManualVisit('${c.id}')">Eintrag speichern</button>
       </details>
-      <div id="cd-timeline">${timelineHtml}</div>
+      ${CRM.activities.render(c.id)}
     </div>
   `;
 

@@ -132,11 +132,13 @@ CRM.dashboardTodayHtml = function () {
   CRM.db.getContacts().forEach((c) => {
     (c.visits || []).forEach((v) => {
       if (isToday(v.createdAt)) {
-        items.push({ ts: v.createdAt, icon: '📍', title: `Besuch erfasst: ${c.firma1}`, sub: v.note ? v.note.slice(0, 60) : ('Besuchsdatum ' + v.date), contactId: c.id });
+        items.push({ ts: v.createdAt, icon: '📍', title: `Besuch erfasst: ${c.firma1}`, sub: v.note ? v.note.slice(0, 60) : ('Besuchsdatum ' + v.date), contactId: c.id, del: { quelle: 'visit', id: v.id, contactId: c.id } });
       } else if (isToday(v.updatedAt)) {
-        items.push({ ts: v.updatedAt, icon: '✏️', title: `Besuch geändert: ${c.firma1}`, sub: 'Besuchsdatum ' + v.date, contactId: c.id });
+        items.push({ ts: v.updatedAt, icon: '✏️', title: `Besuch geändert: ${c.firma1}`, sub: 'Besuchsdatum ' + v.date, contactId: c.id, del: { quelle: 'visit', id: v.id, contactId: c.id } });
       }
     });
+    // „Kontakt angelegt" bewusst OHNE Löschen — ein Klick würde hier einen
+    // kompletten Kontakt samt Historie entfernen. Das gehört ins Profil.
     if (isToday(c.createdAt)) {
       items.push({ ts: c.createdAt, icon: '👤', title: `Kontakt angelegt: ${c.firma1}`, sub: [c.plz, c.ort].filter(Boolean).join(' '), contactId: c.id });
     }
@@ -145,8 +147,8 @@ CRM.dashboardTodayHtml = function () {
   CRM.db.getJournalEntries().forEach((j) => {
     if (!isToday(j.createdAt)) return;
     const c = j.contactId ? CRM.db.getContact(j.contactId) : null;
-    const typeLabel = (CRM.JOURNAL_TYPE_LABELS && CRM.JOURNAL_TYPE_LABELS[j.type]) || 'Notiz';
-    items.push({ ts: j.createdAt, icon: '📓', title: `${typeLabel}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (j.text || '').slice(0, 60), contactId: j.contactId });
+    const typeLabel = (CRM.JOURNAL_TYPE_LABELS && CRM.JOURNAL_TYPE_LABELS[j.entryType]) || '📝 Notiz';
+    items.push({ ts: j.createdAt, icon: typeLabel.split(' ')[0], title: `${typeLabel.replace(/^\S+\s/, '')}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (j.content || '').slice(0, 60), contactId: j.contactId, del: { quelle: 'journal', id: j.id, contactId: j.contactId } });
   });
 
   CRM.db.getComms().forEach((m) => {
@@ -154,7 +156,7 @@ CRM.dashboardTodayHtml = function () {
     const c = (m.contactIds || []).length ? CRM.db.getContact(m.contactIds[0]) : null;
     const dirLabel = m.direction === 'out' ? 'ausgehend' : 'eingehend';
     const label = m.type === 'email' ? `E-Mail (${dirLabel})` : (CRM.COMM_TYPE_LABELS[m.type] || 'Kommunikation').replace(/^[^\w]+/, '');
-    items.push({ ts: m.createdAt, icon: '✉️', title: `${label}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (m.subject || '').slice(0, 60), contactId: c ? c.id : null });
+    items.push({ ts: m.createdAt, icon: '✉️', title: `${label}: ${c ? c.firma1 : 'Ohne Kontakt'}`, sub: (m.subject || '').slice(0, 60), contactId: c ? c.id : null, del: { quelle: 'comm', id: m.id, contactId: c ? c.id : null } });
   });
 
   CRM.db.getTasks().forEach((t) => {
@@ -162,9 +164,9 @@ CRM.dashboardTodayHtml = function () {
     const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
     const who = [c && c.firma1, p && (((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ') + p.name)].filter(Boolean).join(' · ') || 'Allgemein';
     if (isToday(t.doneAt)) {
-      items.push({ ts: t.doneAt, icon: '✅', title: `Aufgabe erledigt: ${t.title}`, sub: who, contactId: t.contactId, projectId: t.projectId });
+      items.push({ ts: t.doneAt, icon: '✅', title: `Aufgabe erledigt: ${t.title}`, sub: who, contactId: t.contactId, projectId: t.projectId, del: { quelle: 'task', id: t.id, contactId: t.contactId } });
     } else if (isToday(t.createdAt)) {
-      items.push({ ts: t.createdAt, icon: '➕', title: `Aufgabe angelegt: ${t.title}`, sub: who + ' · fällig ' + (t.due || '–'), contactId: t.contactId, projectId: t.projectId });
+      items.push({ ts: t.createdAt, icon: '➕', title: `Aufgabe angelegt: ${t.title}`, sub: who + ' · fällig ' + (t.due || '–'), contactId: t.contactId, projectId: t.projectId, del: { quelle: 'task', id: t.id, contactId: t.contactId } });
     }
   });
 
@@ -180,9 +182,23 @@ CRM.dashboardTodayHtml = function () {
         <div class="dash-next-title">${esc(it.title)}</div>
         <div class="dash-next-sub">${time(it.ts)} Uhr${it.sub ? ' · ' + esc(it.sub) : ''}</div>
       </div>
-      <span class="dash-next-chev">›</span>
+      ${it.del
+        ? `<button class="btn btn-sm dash-del" title="Eintrag löschen" onclick="event.stopPropagation();CRM.dashboardDelete('${it.del.quelle}','${it.del.id}','${it.del.contactId || ''}')">✕</button>`
+        : '<span class="dash-next-chev">›</span>'}
     </div>`).join('')
     + (items.length > 15 ? `<div class="dash-empty">+ ${items.length - 15} weitere Einträge</div>` : '');
+};
+
+/* Eintrag direkt von der Startseite löschen — mit Undo, da sonst endgültig.
+   Kontakte selbst sind hier bewusst nicht löschbar (siehe oben). */
+CRM.dashboardDelete = function (quelle, id, contactId) {
+  CRM.takeSnapshot('Vor Löschen eines Eintrags (Heute erfasst)');
+  if (quelle === 'visit' && contactId) CRM._removeVisit(contactId, id);
+  else if (quelle === 'comm') CRM.db.deleteComm(id);
+  else if (quelle === 'journal') CRM.db.deleteJournalEntry(id);
+  else if (quelle === 'task') CRM.db.deleteTask(id);
+  CRM.renderDashboard();
+  CRM.toastUndo('Eintrag gelöscht.');
 };
 
 /* Sprachnotiz vom Dashboard: erst Kontakt wählen (Suche wie Header-Suche),

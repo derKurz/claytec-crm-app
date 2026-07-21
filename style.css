@@ -591,3 +591,21 @@ body.theme-hell .header-search-dropdown{box-shadow:0 8px 24px rgba(30,40,60,.18)
 /* Trefferzeile, die bereits in der Tour ist */
 .nearby-row.nearby-intour{border-left-color:var(--accent-2);background:rgba(94,230,196,.10)}
 body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
+
+/* ============================================================
+   Aktivitäten-Zeitstrahl im Kontaktprofil
+   ============================================================ */
+.act-list{border-left:2px solid var(--border);padding-left:14px;margin-left:5px}
+.act-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:8px 0 10px}
+.act-row+.act-row{border-top:1px solid var(--border)}
+.act-dot{position:absolute;left:-21px;top:12px;width:12px;height:12px;border-radius:50%;
+  border:2px solid var(--bg-elev);flex-shrink:0}
+.act-main{flex:1;min-width:0}
+.act-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px}
+.act-date{color:var(--text-dim);font-size:12px;white-space:nowrap}
+.act-text{font-size:12px;color:var(--text-dim);margin-top:2px;word-break:break-word}
+.act-del{flex-shrink:0;min-height:32px;opacity:.55}
+.act-del:hover{opacity:1;color:var(--red);border-color:var(--red)}
+/* Löschen-Knopf in „Heute erfasst" */
+.dash-del{flex-shrink:0;min-height:34px;min-width:34px;opacity:.5}
+.dash-del:hover{opacity:1;color:var(--red);border-color:var(--red)}
