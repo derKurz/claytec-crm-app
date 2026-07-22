@@ -64,6 +64,8 @@ CRM.activities.build = function (contactId) {
       label: istMail ? ('E-Mail ' + richtung) : (CRM.COMM_TYPE_LABELS[m.type] || 'Kommunikation').replace(/^\S+\s/, ''),
       datum: m.date, text: m.subject || (m.body || '').slice(0, 80) || '(ohne Betreff)',
       projectId: (m.projectIds || [])[0] || null, quelle: 'comm', id: m.id,
+      // Eingegangene Mails bekommen die Antwort-Aktionen (siehe renderInner)
+      eingehendeMail: istMail && m.direction !== 'out',
     });
   });
 
@@ -144,6 +146,11 @@ CRM.activities.renderInner = function (contactId) {
           </div>
           <div class="act-text">${esc2(a.text)}</div>
           ${projChip}
+          ${a.eingehendeMail ? `
+            <div class="act-actions">
+              <button class="btn btn-sm" onclick="event.stopPropagation();CRM.mailAntwort.prepare('${contactId}','${a.id}')">🤖 Antwort vorbereiten</button>
+              <button class="btn btn-sm" onclick="event.stopPropagation();CRM.mailAntwort.dokumentieren('${contactId}','${a.id}')">✉ Antwort dokumentieren</button>
+            </div>` : ''}
         </div>
         <button class="btn btn-sm act-del" title="Eintrag löschen"
           onclick="CRM.activities.remove('${contactId}','${a.quelle}','${a.id}')">✕</button>

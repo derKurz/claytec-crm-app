@@ -403,9 +403,10 @@ CRM.mailAblage = { _contactId: null };
 /* Eigene Adressen: Mails VON diesen Adressen sind ausgehend */
 CRM.mailAblage.OWN_PATTERNS = ['claytec.com', 'kurz.christian78@gmail.com'];
 
-CRM.mailAblage.open = function (prefContactId, prefProjectId) {
+CRM.mailAblage.open = function (prefContactId, prefProjectId, prefill) {
   CRM.mailAblage._contactId = prefContactId || null;
   CRM.mailAblage._prefProjectId = prefProjectId || '';
+  CRM.mailAblage._prefill = prefill || null;
   const projectOpts = CRM.db.getProjects().map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   CRM.openModal(`
     <h2>📧 E-Mail ablegen</h2>
@@ -430,6 +431,12 @@ CRM.mailAblage.open = function (prefContactId, prefProjectId) {
     </div>
   `, { dismissible: false });
   if (CRM.mailAblage._prefProjectId) document.getElementById('ma-project').value = CRM.mailAblage._prefProjectId;
+  // Vorbelegung beim Dokumentieren einer gesendeten Antwort
+  if (CRM.mailAblage._prefill) {
+    const pf = CRM.mailAblage._prefill;
+    if (pf.direction) document.getElementById('ma-direction').value = pf.direction;
+    if (pf.subject) document.getElementById('ma-subject').value = pf.subject;
+  }
   CRM.mailAblage.renderMatch();
 };
 
@@ -710,4 +717,106 @@ CRM.emailParser._forceAdd = function (c) {
   // vCard automatisch im Kundenordner ablegen (nur am Laptop mit
   // verbundenem Claytec-Ordner; sonst still — 📇-Button im Profil bleibt)
   if (CRM.vcard) CRM.vcard.autoSave(saved.id);
+};
+
+/* ============================================================
+   Antwort-Vorbereitung — Brücke CRM → Claude Code
+   Das CRM kann selbst nicht antworten (keine KI, kein Server).
+   Es liefert stattdessen den Kontext, den die Korrespondenz-Skills
+   für eine adressatengerechte Antwort brauchen: Adressatentyp,
+   Einstufung, Vorgeschichte, Bauvorhaben.
+
+   Datenschutz: „datensparsam" (Standard) lässt Klarnamen, Telefon,
+   Mailadressen und Straße weg. Firma und Projekt bleiben IMMER
+   erhalten — sonst ist die Antwort nicht mehr zuzuordnen.
+   ============================================================ */
+CRM.mailAntwort = {};
+
+CRM.mailAntwort.buildBlock = function (contactId, commId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return null;
+  const m = commId ? CRM.db.getComm(commId) : null;
+  const sparsam = CRM.db.getSettings().antwortDatensparsam !== false;
+  const ap = c.ansprechpartner || {};
+  const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
+
+  // Projekt: bevorzugt das an der Mail hängende, sonst ein verknüpftes
+  let proj = null;
+  if (m && (m.projectIds || []).length) proj = CRM.db.getProject(m.projectIds[0]);
+  if (!proj) {
+    const pid = ((c.links || {}).projektIds || [])[0];
+    if (pid) proj = CRM.db.getProject(pid);
+  }
+
+  const z = [];
+  // Referenzzeile — immer mit Firma und Projekt, damit zuordenbar
+  z.push('Bitte Antwort auf diese Kundenanfrage entwerfen.');
+  z.push('');
+  z.push('Referenz: ' + c.firma1 + (proj ? '  ·  Projekt: ' + proj.name : ''));
+  z.push('Adressat: ' + (CRM.TYPE_LABELS[c.type] || c.type) + '  ·  Einstufung ' + c.abc
+    + (c.isPartner ? '  ·  Claytec-Partner' : ''));
+  if (!sparsam && apName) z.push('Ansprechpartner: ' + apName + (ap.funktion ? ' (' + ap.funktion + ')' : ''));
+  z.push('Ort: ' + [c.plz, c.ort].filter(Boolean).join(' ') + (sparsam ? '' : (c.strasse ? '  ·  ' + c.strasse : '')));
+
+  const letzter = CRM.getLastVisit(c);
+  if (letzter) z.push('Letzter Besuch: ' + letzter.date + (letzter.note ? ' — ' + letzter.note.slice(0, 90) : ''));
+
+  // Kurze Vorgeschichte aus den Aktivitäten (max. 4, ohne Kontaktdaten)
+  const vor = (CRM.activities ? CRM.activities.build(contactId) : [])
+    .filter((a) => !(m && a.quelle === 'comm' && a.id === m.id))
+    .slice(0, 4)
+    .map((a) => '  - ' + a.datum + ' ' + a.label + ': ' + a.text.slice(0, 70));
+  if (vor.length) { z.push('Bisheriger Verlauf:'); vor.forEach((v) => z.push(v)); }
+
+  z.push('');
+  z.push('--- Anfrage ---');
+  if (m) {
+    if (m.subject) z.push('Betreff: ' + m.subject);
+    let body = m.body || '';
+    // Kopfzeilen (inkl. Betreff) immer entfernen — Betreff steht schon oben,
+    // der Rest ist Meta und lenkt vom fachlichen Text ab.
+    body = body.split('\n').filter((l) => !/^\s*(Von|An|From|To|Cc|Gesendet|Sent|Datum|Date|Betreff|Subject)\s*:/i.test(l)).join('\n');
+    if (sparsam) {
+      body = body.replace(/[\w.+-]+@[\w.-]+\.\w+/g, '[E-Mail-Adresse]');
+      // Namen des Ansprechpartners (auch in Grußformeln) maskieren
+      [apName, ap.vorname, ap.name].filter((n) => n && n.length > 2).forEach((n) => {
+        body = body.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[Name]');
+      });
+    }
+    z.push(body.replace(/\n{3,}/g, '\n\n').trim());
+  } else {
+    z.push('(Anfragetext hier einfügen)');
+  }
+  return z.join('\n');
+};
+
+CRM.mailAntwort.prepare = function (contactId, commId) {
+  const block = CRM.mailAntwort.buildBlock(contactId, commId);
+  if (!block) return;
+  const sparsam = CRM.db.getSettings().antwortDatensparsam !== false;
+  CRM._copyRichText('<pre>' + esc(block) + '</pre>', block).then(() => {
+    CRM.openModal(`
+      <h2>🤖 Antwort vorbereiten</h2>
+      <p style="color:var(--text-dim);font-size:13px">Der Block liegt in der Zwischenablage — in Claude Code einfügen, dort entsteht die fachliche Antwort (Korrespondenz-Skill + Technische Regeln).</p>
+      <pre style="background:var(--bg);padding:10px;border-radius:6px;font-size:11px;max-height:34vh;overflow:auto;white-space:pre-wrap">${esc(block)}</pre>
+      <p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">
+        ${sparsam
+          ? '🔒 Datensparsam: Klarnamen, Telefon, Mailadressen und Straße wurden entfernt — Firma und Projekt bleiben als Referenz erhalten.'
+          : '⚠️ Vollständig: enthält auch Ansprechpartner und Kontaktdaten. Umschaltbar in den Einstellungen.'}
+      </p>
+      <div class="modal-footer">
+        <button class="btn" onclick="CRM.renderContactDetailModal('${contactId}')">Zurück zum Kontakt</button>
+        <button class="btn btn-primary" onclick="CRM.closeModal()">Erledigt</button>
+      </div>
+    `, { dismissible: false });
+  }).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+};
+
+/* Gesendete Antwort dokumentieren: Ablage-Dialog vorausgefüllt öffnen
+   (ausgehend, gleicher Kontakt, Betreff „AW: ..."). */
+CRM.mailAntwort.dokumentieren = function (contactId, commId) {
+  const m = commId ? CRM.db.getComm(commId) : null;
+  const betreff = m && m.subject ? (/^AW:/i.test(m.subject) ? m.subject : 'AW: ' + m.subject) : '';
+  const projektId = m && (m.projectIds || [])[0];
+  CRM.mailAblage.open(contactId, projektId || '', { direction: 'out', subject: betreff });
 };

@@ -24,6 +24,19 @@ CRM.renderSettings = function () {
     </div>
 
     <div class="card">
+      <h3 style="margin-top:0">🤖 Antwort vorbereiten</h3>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Steuert, welche Daten der „🤖 Antwort vorbereiten"-Block enthält, den du in Claude Code einfügst.</p>
+      <label style="display:flex;align-items:center;gap:8px;color:var(--text);min-height:44px">
+        <input type="checkbox" id="set-antwort-sparsam" style="width:auto" ${s.antwortDatensparsam !== false ? 'checked' : ''} onchange="CRM.saveAntwortSetting()">
+        <span>🔒 Datensparsam (empfohlen)</span>
+      </label>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 0">
+        Aktiv: <strong>Firma und Projekt bleiben als Referenz</strong> erhalten — Klarnamen, Telefon, Mailadressen und Straße werden entfernt.<br>
+        Inaktiv: alle Kontaktdaten werden mitgegeben.
+      </p>
+    </div>
+
+    <div class="card">
       <h3 style="margin-top:0">📦 Musterversand</h3>
       <label>Empfänger der Bestell-Mail (z.B. Innendienst)</label>
       <input id="set-muster-mail" value="${escAttr(s.musterEmail || '')}" placeholder="muster@claytec.com" style="max-width:320px">
@@ -342,4 +355,10 @@ CRM.saveTheme = function () {
 CRM.saveMusterSettings = function () {
   CRM.db.saveSettings({ musterEmail: document.getElementById('set-muster-mail').value.trim() });
   CRM.toast('Empfänger für Werbemittelbestellungen gespeichert.', 'success');
+};
+
+CRM.saveAntwortSetting = function () {
+  const on = document.getElementById('set-antwort-sparsam').checked;
+  CRM.db.saveSettings({ antwortDatensparsam: on });
+  CRM.toast(on ? '🔒 Datensparsam aktiv.' : 'Vollständige Daten werden mitgegeben.', 'success');
 };

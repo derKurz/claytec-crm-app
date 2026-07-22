@@ -609,3 +609,7 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 /* Löschen-Knopf in „Heute erfasst" */
 .dash-del{flex-shrink:0;min-height:34px;min-width:34px;opacity:.5}
 .dash-del:hover{opacity:1;color:var(--red);border-color:var(--red)}
+
+/* Antwort-Aktionen an eingegangenen Mails in der Aktivitäten-Liste */
+.act-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.act-actions .btn{min-height:34px}

@@ -80,6 +80,9 @@ CRM.DEFAULT_SETTINGS = {
   lastBackupPromptAt: null,
   supabaseUrl: '', // Phase 3 (OFFLINE_SYNC.md) — Cloud-Sync, opt-in
   supabasePublishableKey: '', // "anon"/"public" Key — bewusst NICHT der secret/service_role Key
+  // Antwort-Vorbereitung: datensparsam lässt Klarnamen/Telefon/Mail/Straße weg.
+  // Firma und Projekt bleiben IMMER als Referenz erhalten (Zuordnung nötig).
+  antwortDatensparsam: true,
 };
 
 /* ---------- low-level storage helpers ---------- */
