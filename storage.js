@@ -946,8 +946,8 @@ CRM.buildGoogleMapsLegs = function (contacts, maxStops) {
    JSON Backup / Restore
    ============================================================ */
 CRM.backup = {
-  exportJSON() {
-    const data = {
+  _buildData() {
+    return {
       version: 4,
       exportedAt: new Date().toISOString(),
       contacts: CRM.db.getContacts(),
@@ -958,12 +958,64 @@ CRM.backup = {
       settings: CRM.db.getSettings(),
       meta: CRM.db.getMeta(),
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  },
+
+  /* Backup-Zielordner (einmalig verbunden) holen — ohne Auswahl-Dialog,
+     nur wenn Berechtigung noch gilt. Rückgabe: DirectoryHandle oder null. */
+  async getFolder() {
+    if (!CRM.ablage || !CRM.ablage.supported()) return null;
+    const stored = await CRM.ablage.idbGet('backupFolder');
+    if (stored && (await CRM.ablage.verifyPermission(stored))) return stored;
+    return null;
+  },
+
+  /* Zielordner einmalig auswählen und dauerhaft merken. */
+  async connectFolder() {
+    if (!CRM.ablage || !CRM.ablage.supported()) {
+      CRM.toast('Backup-Ordner nur in Chrome/Edge am Laptop möglich.', 'error');
+      return null;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ id: 'claytec-backup', mode: 'readwrite' });
+      await CRM.ablage.idbSet('backupFolder', handle);
+      CRM.db.saveSettings({ backupFolderName: handle.name });
+      CRM.toast('Backup-Ordner verbunden: ' + handle.name, 'success');
+      if (CRM.renderSettings && document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
+      return handle;
+    } catch (e) {
+      if (e.name !== 'AbortError') CRM.toast('Ordner-Auswahl abgebrochen.', 'error');
+      return null;
+    }
+  },
+
+  /* Backup schreiben: bevorzugt direkt in den verbundenen Ordner (ein Klick,
+     kein Dialog), sonst normaler Download. Immer async. */
+  async exportJSON() {
+    const data = CRM.backup._buildData();
+    const json = JSON.stringify(data, null, 2);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const name = `claytec-crm-backup-${stamp}.json`;
+
+    const folder = await CRM.backup.getFolder();
+    if (folder) {
+      try {
+        const fh = await folder.getFileHandle(name, { create: true });
+        const w = await fh.createWritable();
+        await w.write(json);
+        await w.close();
+        CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
+        CRM.toast('💾 Backup gespeichert in „' + folder.name + '" (' + name + ').', 'success');
+        return data;
+      } catch (e) {
+        // Fällt auf Download zurück, falls Schreiben scheitert
+      }
+    }
+
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `claytec-crm-backup-${stamp}.json`;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -141,7 +141,7 @@ CRM.dashboardTodayHtml = function () {
     // „Kontakt angelegt" bewusst OHNE Löschen — ein Klick würde hier einen
     // kompletten Kontakt samt Historie entfernen. Das gehört ins Profil.
     if (isToday(c.createdAt)) {
-      items.push({ ts: c.createdAt, icon: '👤', title: `Kontakt angelegt: ${c.firma1}`, sub: [c.plz, c.ort].filter(Boolean).join(' '), contactId: c.id });
+      items.push({ ts: c.createdAt, icon: '👤', title: `Kontakt angelegt: ${c.firma1}`, sub: [c.plz, c.ort].filter(Boolean).join(' '), contactId: c.id, vcard: c.id });
     }
   });
 
@@ -183,9 +183,11 @@ CRM.dashboardTodayHtml = function () {
         <div class="dash-next-title">${esc(it.title)}</div>
         <div class="dash-next-sub">${time(it.ts)} Uhr${it.sub ? ' · ' + esc(it.sub) : ''}</div>
       </div>
-      ${it.del
-        ? `<button class="btn btn-sm dash-del" title="Eintrag löschen" onclick="event.stopPropagation();CRM.dashboardDelete('${it.del.quelle}','${it.del.id}','${it.del.contactId || ''}')">✕</button>`
-        : '<span class="dash-next-chev">›</span>'}
+      ${it.vcard
+        ? `<button class="btn btn-sm dash-vcard" title="vCard erstellen / zu Google Kontakte" onclick="event.stopPropagation();CRM.vcard.exportContact('${it.vcard}')">📇</button>`
+        : (it.del
+          ? `<button class="btn btn-sm dash-del" title="Eintrag löschen" onclick="event.stopPropagation();CRM.dashboardDelete('${it.del.quelle}','${it.del.id}','${it.del.contactId || ''}')">✕</button>`
+          : '<span class="dash-next-chev">›</span>')}
     </div>`).join('')
     + (items.length > 15 ? `<div class="dash-empty">+ ${items.length - 15} weitere Einträge</div>` : '');
 };

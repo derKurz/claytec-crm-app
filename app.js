@@ -446,8 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btn-backup-export').addEventListener('click', () => {
-    CRM.backup.exportJSON();
-    CRM.toast('Backup wurde heruntergeladen.', 'success');
+    CRM.backup.exportJSON(); // zeigt eigene Meldung (Ordner ODER Download)
   });
   document.getElementById('btn-backup-import').addEventListener('click', () => {
     document.getElementById('file-input-backup').click();
@@ -523,7 +522,6 @@ CRM.initMobileNav = function () {
   document.getElementById('more-sheet-backup').addEventListener('click', () => {
     closeSheet();
     CRM.backup.exportJSON();
-    CRM.toast('Backup wurde heruntergeladen.', 'success');
   });
   document.getElementById('more-sheet-restore').addEventListener('click', () => {
     closeSheet();
@@ -1050,7 +1048,7 @@ CRM.showBackupReminder = function (daysSince) {
     <button class="btn btn-sm" style="margin-left:10px">💾 Jetzt sichern</button>
     <button class="btn btn-sm" style="margin-left:6px">Später</button>`;
   const [saveBtn, laterBtn] = el.querySelectorAll('button');
-  saveBtn.addEventListener('click', () => { CRM.backup.exportJSON(); CRM.toast('Backup gesichert.', 'success'); el.remove(); });
+  saveBtn.addEventListener('click', () => { CRM.backup.exportJSON(); el.remove(); });
   laterBtn.addEventListener('click', () => el.remove());
   host.appendChild(el);
   setTimeout(() => el.remove(), 15000);

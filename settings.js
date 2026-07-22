@@ -148,10 +148,19 @@ CRM.renderSettings = function () {
         Das JSON-Backup enthält <em>alles</em> (Kontakte, Notizen, Besuche, Koordinaten, Verknüpfungen, Projekte, E-Mails, Kontaktjournal) und dient auch dem Sync zwischen PC und Handy.
       </p>
       <div class="row" style="flex-wrap:wrap;gap:8px">
-        <button class="btn btn-primary btn-sm" onclick="CRM.backup.exportJSON();CRM.toast('JSON-Backup heruntergeladen.','success');CRM.renderSettings()">💾 JSON-Backup exportieren</button>
+        <button class="btn btn-primary btn-sm" onclick="CRM.backup.exportJSON().then(()=>CRM.renderSettings())">💾 JSON-Backup exportieren</button>
         <button class="btn btn-sm" onclick="document.getElementById('btn-backup-import').click()">📂 JSON wiederherstellen</button>
         <button class="btn btn-sm" onclick="CRM.exportExcelFromSettings()">📊 Excel-Export (mit Notizen & Historie)</button>
       </div>
+      <hr style="border-color:var(--border);margin:12px 0">
+      <label>Backup-Zielordner (direkt speichern statt Download)</label>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">
+        ${CRM.ablage && CRM.ablage.supported()
+          ? 'Einmalig deinen Backup-Ordner verbinden (z.B. <code>…\\Claytec\\KI\\Claytec CRM</code>). Danach schreibt „💾 Backup" direkt dorthin, ohne Speichern-Dialog. Nur Chrome/Edge am Laptop.'
+          : '⚠️ Direktes Speichern nur in Chrome/Edge am Laptop — am Handy bleibt der normale Download.'}
+      </p>
+      <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.backup.connectFolder()">📁 Backup-Ordner verbinden</button>
+      <span style="font-size:12px;color:var(--text-dim);margin-left:8px">${s.backupFolderName ? '✓ verbunden: ' + esc(s.backupFolderName) : 'noch nicht verbunden (Download)'}</span>
       <p style="color:var(--orange);font-size:12px;margin:10px 0 0">
         ⚠️ LocalStorage kann durch Browser-Reset/Cache-Löschen verloren gehen — sichere regelmäßig ein JSON-Backup!
       </p>

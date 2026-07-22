@@ -613,3 +613,5 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 /* Antwort-Aktionen an eingegangenen Mails in der Aktivitäten-Liste */
 .act-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .act-actions .btn{min-height:34px}
+.dash-vcard{flex-shrink:0;min-height:34px;min-width:34px}
+.dash-vcard:hover{border-color:var(--accent);color:var(--accent)}
