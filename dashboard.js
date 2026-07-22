@@ -64,6 +64,7 @@ CRM.renderDashboard = function () {
 
       <div class="dash-actions">
         <button class="dash-action dash-action-primary" onclick="CRM.dashboardVoiceNote()">🎤 Sprachnotiz aufnehmen</button>
+        <button class="dash-action" onclick="CRM.mailAblage.open()">📧 E-Mail ablegen</button>
         <div class="dash-actions-row">
           <button class="dash-action" onclick="CRM.createNewContact()">➕ Neuer Kontakt</button>
           <button class="dash-action" onclick="CRM.switchTab('karte')">🚗 Tour planen</button>

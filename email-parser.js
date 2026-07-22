@@ -371,6 +371,7 @@ CRM.emailParser.toContact = function (data, type, source) {
   c.type = type || 'sonstige';
   c.source = source || 'eigene';
   c.firma1 = data.company || data.name || 'Neuer Kontakt';
+  c.firma2 = data.company2 || '';
   c.erpNr = data.erpNr || '';
   const nameParts = splitWs(data.name || '');
   if (nameParts.length >= 2) { c.ansprechpartner.name = nameParts[nameParts.length - 1]; c.ansprechpartner.vorname = nameParts.slice(0, -1).join(' '); }
@@ -438,6 +439,9 @@ CRM.mailAblage.open = function (prefContactId, prefProjectId, prefill) {
     if (pf.subject) document.getElementById('ma-subject').value = pf.subject;
   }
   CRM.mailAblage.renderMatch();
+  // Cursor direkt ins Einfügefeld — man kann sofort die Mail einfügen (Strg+V),
+  // ohne erst hineinzuklicken. Bei Vorbelegung (Antwort dokumentieren) entfällt das.
+  if (!prefill) setTimeout(() => { const t = document.getElementById('ma-input'); if (t) t.focus(); }, 60);
 };
 
 /* Kopfzeilen der eingefügten Mail auswerten (deutsch + englisch) */
@@ -513,6 +517,9 @@ CRM.mailAblage.renderMatch = function (showPicker) {
     </div>`;
   const input = document.getElementById('ma-contact-search');
   const results = document.getElementById('ma-contact-results');
+  // Beim manuellen Auswählen (kein Treffer / „Ändern") direkt in die Suchzeile —
+  // sofort losschreiben, ohne erst hineinzuklicken.
+  if (showPicker) setTimeout(() => input.focus(), 40);
   const render = () => {
     const q = input.value.trim();
     if (!q) { results.innerHTML = ''; return; }
@@ -557,7 +564,7 @@ CRM.mailAblage.save = function () {
    Dialog: Aus E-Mail/Text Kontakt anlegen
    ============================================================ */
 CRM.emailParser.FIELDS = [
-  ['Firma', 'company'], ['ERP-/Kundennr.', 'erpNr'], ['Name', 'name'], ['Akad. Titel', 'academic_title'], ['Funktion', 'title'],
+  ['Firma', 'company'], ['Firma 2 / Zusatz', 'company2'], ['ERP-/Kundennr.', 'erpNr'], ['Name', 'name'], ['Akad. Titel', 'academic_title'], ['Funktion', 'title'],
   ['Straße', 'street'], ['PLZ', 'postal'], ['Ort', 'city'],
   ['E-Mail 1', 'email'], ['E-Mail 2', 'email2'], ['Mobil', 'phone_mobile'], ['Festnetz', 'phone_work'],
   ['Website', 'website'], ['Social', 'social'],
