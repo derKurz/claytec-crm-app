@@ -79,6 +79,10 @@ CRM.renderSettings = function () {
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Liest Besuche/Kontakte, die du am Handy über „📤 Eingang exportieren" (Mehr-Menü) in den OneDrive-Ordner <code>Eingang</code> geteilt hast, übernimmt sie hier und legt neue Besuche automatisch in Excel ab. Läuft auch automatisch im Hintergrund, wenn du die App öffnest.</p>
       <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.ablage.processEingang(false)">📥 Eingang jetzt verarbeiten</button>
       <hr style="border-color:var(--border);margin:14px 0">
+      <label>Notion-Feierabend-Notizen</label>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Bündelt Besuche, Notizen und neue Aufgaben je Kontakt mit hinterlegtem Notion-Link zu einem kopierfertigen Block. Den bei Claude einfügen: „übertrage die Feierabend-Notizen nach Notion" — Claude schreibt sie über den Notion-Konnektor in die Seiten. (Kein Notion-Zugriff aus der App selbst — die App ist öffentlich gehostet.)</p>
+      <button class="btn btn-sm" onclick="CRM.notion.openDialog()">📓 Notion-Block erzeugen</button>
+      <hr style="border-color:var(--border);margin:14px 0">
       <label>Pfad des Claytec-Ordners (für „Ordner öffnen"-Buttons nach der Ablage)</label>
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Der Browser gibt aus Sicherheitsgründen keine echten Dateipfade heraus — trag den vollen Pfad einmalig hier ein, z.B. <code>C:\\Users\\Name\\OneDrive - Claytec GmbH + Co. KG\\Claytec</code></p>
       <input id="set-onedrive-path" value="${escAttr(s.onedrivePath || '')}" placeholder="C:\\Users\\...\\OneDrive - Claytec GmbH + Co. KG\\Claytec">
