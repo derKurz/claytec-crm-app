@@ -30,8 +30,9 @@ CRM.muster.toggleFavorit = function (nr) {
   CRM.muster.renderListe();
 };
 
-CRM.muster.open = function (contactId) {
+CRM.muster.open = function (contactId, taskId) {
   CRM.muster._contactId = contactId;
+  CRM.muster._taskId = taskId || null; // wird nach dem Versand als erledigt markiert
   CRM.muster._mengen = {};
   CRM.muster._farbton = {};
   const c = CRM.db.getContact(contactId);
@@ -303,13 +304,26 @@ CRM.muster._journal = function (c) {
 CRM.muster.send = function () {
   const res = CRM.muster._collect();
   if (!CRM.muster._pruefe(res)) return;
-  const to = CRM.db.getSettings().musterEmail || '';
+  const to = CRM.db.getSettings().musterEmail || 'auftrag@claytec.com';
   CRM.muster._journal(res.c);
+  // Wurde der Versand aus einer Aufgabe heraus gestartet, gilt sie mit dem
+  // Verschicken als erledigt.
+  const taskId = CRM.muster._taskId;
+  let taskInfo = '';
+  if (taskId) {
+    const t = CRM.db.getTask(taskId);
+    if (t && !t.done) { CRM.db.updateTask(taskId, { done: true, doneAt: new Date().toISOString() }); taskInfo = ' Aufgabe erledigt.'; }
+    CRM.muster._taskId = null;
+  }
   CRM.closeModal();
   window.location.href = 'mailto:' + encodeURIComponent(to)
     + '?subject=' + encodeURIComponent(res.betreff)
     + '&body=' + encodeURIComponent(res.body);
-  CRM.toast('✓ Bestell-Mail vorbereitet (' + res.zeilen.length + ' Positionen) — im Journal vermerkt.', 'success');
+  CRM.toast('✓ Bestell-Mail vorbereitet (' + res.zeilen.length + ' Positionen) — im Journal vermerkt.' + taskInfo, 'success');
+  // betroffene Ansichten aktualisieren
+  if (document.querySelector('#view-agenda.active') && CRM.renderAgenda) CRM.renderAgenda();
+  if (document.querySelector('#view-kontakte.active') && CRM.renderContactList) CRM.renderContactList();
+  if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
 };
 
 CRM.muster.copy = function () {

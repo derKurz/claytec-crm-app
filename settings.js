@@ -38,8 +38,8 @@ CRM.renderSettings = function () {
 
     <div class="card">
       <h3 style="margin-top:0">📦 Musterversand</h3>
-      <label>Empfänger der Bestell-Mail (z.B. Innendienst)</label>
-      <input id="set-muster-mail" value="${escAttr(s.musterEmail || '')}" placeholder="muster@claytec.com" style="max-width:320px">
+      <label>Empfänger der Bestell-Mail (Standard: auftrag@claytec.com)</label>
+      <input id="set-muster-mail" value="${escAttr(s.musterEmail || '')}" placeholder="auftrag@claytec.com" style="max-width:320px">
       <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="CRM.saveMusterSettings()">Speichern</button>
       <hr style="border-color:var(--border);margin:14px 0">
       <label>Artikelkatalog</label>

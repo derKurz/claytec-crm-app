@@ -134,6 +134,7 @@ CRM.taskRow = function (t, st) {
         <div class="li-title">✓ ${esc(t.title)}</div>
         <div class="li-sub">${sub} · fällig ${esc(t.due)} (${dueLabel})</div>
       </div>
+      ${c ? `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.muster.open('${c.id}','${t.id}')" title="Muster/Musterbuch bestellen und Aufgabe erledigen">📦 Muster</button>` : ''}
       <button class="btn btn-sm" onclick="event.stopPropagation();CRM.exportTaskICS('${t.id}')" title="In Kalender">📅</button>
       <button class="btn btn-sm" onclick="event.stopPropagation();CRM.db.deleteTask('${t.id}');CRM.renderAgenda()" title="Löschen">🗑</button>
     </div>`;
