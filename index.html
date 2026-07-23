@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260723d">
+<link rel="stylesheet" href="style.css?v=20260723f">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -60,6 +60,10 @@
 
   <section id="view-karte" class="view">
     <div id="map-container"></div>
+    <!-- Schmale Streifen links/rechts: hier wischt man den Reiter weiter,
+         ohne dass die Karte den Finger abfängt. -->
+    <div class="map-swipe-zone links" title="Wischen: Reiter zurück"></div>
+    <div class="map-swipe-zone rechts" title="Wischen: Reiter weiter"></div>
     <div id="map-controls" class="card"></div>
     <div id="map-side-panel"></div>
   </section>
@@ -167,28 +171,28 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260723d"></script>
-<script src="db-indexeddb.js?v=20260723d"></script>
-<script src="supabase-client.js?v=20260723d"></script>
-<script src="sync.js?v=20260723d"></script>
-<script src="import.js?v=20260723d"></script>
-<script src="activities.js?v=20260723d"></script>
-<script src="contact-detail.js?v=20260723d"></script>
-<script src="agenda.js?v=20260723d"></script>
-<script src="dashboard.js?v=20260723d"></script>
-<script src="geocoding.js?v=20260723d"></script>
-<script src="map.js?v=20260723d"></script>
-<script src="speech.js?v=20260723d"></script>
-<script src="settings.js?v=20260723d"></script>
-<script src="projects.js?v=20260723d"></script>
-<script src="network.js?v=20260723d"></script>
-<script src="regions.js?v=20260723d"></script>
-<script src="excel-ablage.js?v=20260723d"></script>
-<script src="vcard.js?v=20260723d"></script>
-<script src="email-parser.js?v=20260723d"></script>
-<script src="werbemittel.js?v=20260723d"></script>
-<script src="yosima-farbtoene.js?v=20260723d"></script>
-<script src="muster.js?v=20260723d"></script>
-<script src="app.js?v=20260723d"></script>
+<script src="storage.js?v=20260723f"></script>
+<script src="db-indexeddb.js?v=20260723f"></script>
+<script src="supabase-client.js?v=20260723f"></script>
+<script src="sync.js?v=20260723f"></script>
+<script src="import.js?v=20260723f"></script>
+<script src="activities.js?v=20260723f"></script>
+<script src="contact-detail.js?v=20260723f"></script>
+<script src="agenda.js?v=20260723f"></script>
+<script src="dashboard.js?v=20260723f"></script>
+<script src="geocoding.js?v=20260723f"></script>
+<script src="map.js?v=20260723f"></script>
+<script src="speech.js?v=20260723f"></script>
+<script src="settings.js?v=20260723f"></script>
+<script src="projects.js?v=20260723f"></script>
+<script src="network.js?v=20260723f"></script>
+<script src="regions.js?v=20260723f"></script>
+<script src="excel-ablage.js?v=20260723f"></script>
+<script src="vcard.js?v=20260723f"></script>
+<script src="email-parser.js?v=20260723f"></script>
+<script src="werbemittel.js?v=20260723f"></script>
+<script src="yosima-farbtoene.js?v=20260723f"></script>
+<script src="muster.js?v=20260723f"></script>
+<script src="app.js?v=20260723f"></script>
 </body>
 </html>

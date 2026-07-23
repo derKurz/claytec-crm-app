@@ -1114,13 +1114,15 @@ CRM.nav.init = function () {
    ============================================================ */
 CRM.swipe = {
   REIHENFOLGE: ['start', 'karte', 'kontakte', 'agenda', 'projekte', 'netzwerk', 'regionen', 'einstellungen'],
-  MIN_X: 60,       // Mindeststrecke, damit ein Tippen nicht auslöst
-  MAX_ZEIT: 700,   // längeres Ziehen ist eher Scrollen als Wischen
+  MIN_X: 55,     // Mindeststrecke, damit ein Tippen nicht auslöst
+  ENTSCHEID: 10, // ab hier wird entschieden: waagrecht (Reiter) oder senkrecht (Scrollen)
 };
 
 /* Darf an dieser Stelle gewischt werden? */
 CRM.swipe._erlaubt = function (el) {
   if (!el || !el.closest) return true;
+  // Die Wischstreifen am Rand der Karte sind ausdrücklich dafür da
+  if (el.closest('.map-swipe-zone')) return true;
   // Leaflet-Karte, Kanban, Dialoge, Eingaben und alles horizontal Scrollbare
   if (el.closest('#map-container, .leaflet-container, .kanban, #active-modal-overlay, input, textarea, select')) return false;
   // Nur INNERHALB der Seite nach horizontal Scrollbarem suchen. Die Seite
@@ -1137,27 +1139,44 @@ CRM.swipe._erlaubt = function (el) {
   return true;
 };
 
+/* Die Auswertung passiert WÄHREND des Ziehens, nicht erst beim Loslassen:
+   Sobald die Mindeststrecke erreicht ist, wird umgeschaltet. Das ist nicht
+   nur direkter, es ist auch robuster — bricht der Browser die Geste ab
+   (touchcancel statt touchend), ginge ein Wischer am Ende sonst verloren. */
 CRM.swipe.init = function () {
-  let x0 = 0, y0 = 0, t0 = 0, aktiv = false;
+  let x0 = 0, y0 = 0, aktiv = false, waagrecht = null;
+
+  const zuruecksetzen = () => { aktiv = false; waagrecht = null; };
 
   document.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) { aktiv = false; return; }
+    if (e.touches.length !== 1) { zuruecksetzen(); return; }
     const t = e.touches[0];
     aktiv = CRM.swipe._erlaubt(e.target);
-    x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+    waagrecht = null;
+    x0 = t.clientX; y0 = t.clientY;
   }, { passive: true });
 
-  document.addEventListener('touchend', (e) => {
-    if (!aktiv) return;
-    aktiv = false;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - x0;
-    const dy = t.clientY - y0;
-    if (Date.now() - t0 > CRM.swipe.MAX_ZEIT) return;
-    if (Math.abs(dx) < CRM.swipe.MIN_X) return;
-    if (Math.abs(dx) < Math.abs(dy) * 2) return; // zu schräg = Scrollen
-    CRM.swipe.wechsle(dx < 0 ? 1 : -1);
+  document.addEventListener('touchmove', (e) => {
+    if (!aktiv || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - x0;
+    const dy = e.touches[0].clientY - y0;
+
+    // Richtung einmalig festlegen und dann dabei bleiben — sonst kippt ein
+    // Wischer, der leicht schräg endet, mitten in der Bewegung um.
+    if (waagrecht === null) {
+      if (Math.abs(dx) < CRM.swipe.ENTSCHEID && Math.abs(dy) < CRM.swipe.ENTSCHEID) return;
+      waagrecht = Math.abs(dx) > Math.abs(dy);
+      if (!waagrecht) { aktiv = false; return; } // senkrecht = Scrollen, Finger gehört der Liste
+    }
+
+    if (Math.abs(dx) >= CRM.swipe.MIN_X) {
+      aktiv = false; // pro Berührung nur ein Reiterwechsel
+      CRM.swipe.wechsle(dx < 0 ? 1 : -1);
+    }
   }, { passive: true });
+
+  document.addEventListener('touchend', zuruecksetzen, { passive: true });
+  document.addEventListener('touchcancel', zuruecksetzen, { passive: true });
 };
 
 CRM.swipe.wechsle = function (richtung) {
