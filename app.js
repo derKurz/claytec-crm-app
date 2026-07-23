@@ -266,9 +266,9 @@ CRM.contactRowHtml = function (c, opts) {
       <td class="col-ort" data-label="Ort" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.plz)} ${esc(c.ort)}</td>
       <td class="col-region" data-label="Region"><button class="btn-link" title="Region im Regionen-Tab öffnen" onclick="CRM.goToRegion('${CRM.regionForPlz(c.plz)}')">${esc(CRM.regionNameForPlz(c.plz))}</button></td>
       <td class="col-abc" data-label="A/B/C" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"><span class="badge badge-${c.abc}">${c.abc}</span></td>
-      <td class="col-todo" data-label="To Do">${todo}</td>
-      <td data-label="Letzter Besuch" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(CRM.formatLastVisit(c))}</td>
-      <td data-label="Status" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${due.status === 'overdue' ? `<span class="badge badge-overdue">${dueLabel}</span>` : dueLabel}</td>
+      <td class="col-todo" data-label="To Do" onclick="CRM.openContactDetail('${c.id}')" style="${todoText ? 'cursor:pointer' : ''}">${todo}</td>
+      <td class="col-lastvisit" data-label="Letzter Besuch" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(CRM.formatLastVisit(c))}</td>
+      <td class="col-status" data-label="Status" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${due.status === 'overdue' ? `<span class="badge badge-overdue">${dueLabel}</span>` : dueLabel}</td>
       <td class="col-map" data-label=""><button class="btn btn-sm" title="Auf Karte zeigen" onclick="CRM.showContactOnMap('${c.id}')">📍</button></td>
       ${o.distanceHtml !== undefined ? `<td class="col-dist" data-label="Entfernung">${o.distanceHtml}</td>` : ''}
     </tr>`;

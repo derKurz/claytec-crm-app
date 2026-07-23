@@ -447,23 +447,34 @@ tr:hover td{background:rgba(255,255,255,.03)}
 @media (max-width:768px){
   .contact-table.mobile-cards thead{display:none}
   .contact-table.mobile-cards tbody{display:block}
+  /* Kompakte Listen-Zeile statt hoher Kachel: Firma (Zeile 1),
+     Ort · Typ · A/B/C (Zeile 2), To-do (Zeile 3, nur wenn vorhanden).
+     Der linke Farbrand zeigt weiterhin Überfällig (rot)/OK (grün). */
   .contact-table.mobile-cards tr{
     display:block;position:relative;background:var(--bg-elev2);border:1px solid var(--border);
-    border-left:3px solid var(--text-dim);border-radius:8px;margin-bottom:10px;padding:10px 12px 10px 14px;
+    border-left:3px solid var(--text-dim);border-radius:8px;margin-bottom:6px;
+    padding:8px 34px 8px 12px;
   }
   .contact-table.mobile-cards tr.due-overdue{border-left-color:var(--red)}
   .contact-table.mobile-cards tr.due-ok{border-left-color:var(--green)}
-  .contact-table.mobile-cards tr.note-row{border:none;background:none;padding:0 0 10px;margin-top:-6px}
-  .contact-table.mobile-cards td{
-    display:flex;justify-content:space-between;align-items:center;gap:10px;
-    padding:5px 0;border-bottom:none;white-space:normal;overflow:visible;max-width:none;min-height:32px;
-  }
-  .contact-table.mobile-cards td:before{content:attr(data-label);font-size:11px;color:var(--text-dim);flex-shrink:0}
-  .contact-table.mobile-cards td:empty:before{content:none}
-  .contact-table.mobile-cards td.col-check{position:absolute;top:8px;right:8px;width:auto;padding:0}
-  .contact-table.mobile-cards td.col-check:before{content:none}
-  .contact-table.mobile-cards td.mc-title{display:block;font-weight:600;font-size:15px;padding-right:34px}
-  .contact-table.mobile-cards td.mc-title:before{content:none}
+  /* Standard: Zelle unsichtbar + ohne Label. Nur die kompakten Felder
+     werden unten gezielt wieder eingeblendet. */
+  .contact-table.mobile-cards td{display:none;padding:0;border:none;min-height:0;max-width:none;white-space:normal}
+  .contact-table.mobile-cards td:before{content:none}
+  /* Zeile 1: Firma */
+  .contact-table.mobile-cards td.mc-title{display:block;font-weight:600;font-size:15px;line-height:1.25;margin-bottom:2px}
+  /* Zeile 2: Typ · Ort · A/B/C fließen nebeneinander (inline-block) */
+  .contact-table.mobile-cards td.col-typ,
+  .contact-table.mobile-cards td.col-ort,
+  .contact-table.mobile-cards td.col-abc{display:inline-block;width:auto;vertical-align:middle;font-size:12px;margin-right:6px}
+  .contact-table.mobile-cards td.col-ort{color:var(--text-dim)}
+  /* Zeile 3: To-do, nur wenn Inhalt */
+  .contact-table.mobile-cards td.col-todo:not(:empty){display:block;font-size:12px;margin-top:3px}
+  /* Auswahl-Checkbox oben rechts */
+  .contact-table.mobile-cards td.col-check{display:block;position:absolute;top:8px;right:8px;padding:0}
+  /* Notiz-Zeile (📝-Modus) weiterhin sichtbar */
+  .contact-table.mobile-cards tr.note-row{display:block;border:none;background:none;padding:0 0 8px;margin-top:-2px}
+  .contact-table.mobile-cards tr.note-row td{display:block;margin:0}
 }
 
 /* ============================================================
