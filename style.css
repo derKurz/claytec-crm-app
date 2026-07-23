@@ -68,13 +68,18 @@ button{font-family:inherit}
 }
 .tab-btn.active{color:var(--accent-2);border-bottom-color:var(--accent-2);background:var(--bg-elev2)}
 
-/* touch-action: Waagrechtes Ziehen gehoert uns (Reiterwechsel), senkrechtes
-   Scrollen und Zoomen bleibt beim Browser. Ohne das deutet Chrome ein
-   Ziehen nach links als "vorwaerts" und schluckt die Geste — dann wischt
-   nur eine Richtung. Die Leaflet-Karte setzt selbst touch-action:none und
-   behaelt dadurch ihre volle Steuerung. */
-#main{flex:1;overflow:hidden;position:relative;touch-action:pan-y pinch-zoom}
-.view{display:none;height:100%;overflow-y:auto;overflow-x:hidden;padding:14px 16px}
+/* touch-action:manipulation = pan-x + pan-y + pinch-zoom, nur ohne
+   Doppeltipp-Zoom (spart die 300ms Klickverzögerung).
+   WICHTIG: Hier darf NICHT pan-y stehen. Chrome vererbt touch-action an alle
+   Kindelemente — pan-y hier hätte dem Kanban-Board sein eigenes seitliches
+   Scrollen genommen. Chromes Vor/Zurück-Geste wird stattdessen über
+   overscroll-behavior abgeschaltet (siehe body und .view). */
+#main{flex:1;overflow:hidden;position:relative;touch-action:manipulation}
+/* overscroll-behavior-x:contain: Läuft ein waagrechtes Ziehen hier ins Leere,
+   reicht die Seite es NICHT als Vor/Zurück an Chrome weiter — genau das hat
+   den Wischer nach links geschluckt. */
+.view{display:none;height:100%;overflow-y:auto;overflow-x:hidden;padding:14px 16px;
+  overscroll-behavior-x:contain}
 .view.active{display:block}
 #view-karte.active{display:flex;padding:0;position:relative}
 #view-netzwerk.active{display:flex;flex-direction:column}
@@ -320,7 +325,9 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .qf-btn.active{background:var(--accent);color:#06121c;border-color:var(--accent)}
 .mobile-only-filter{display:none}
 
-.kanban{display:flex;gap:10px;overflow-x:auto;height:100%}
+/* contain: Ist das Board am Anschlag, wandert die Geste nicht an Chrome
+   weiter — sie gehört dann dem Reiterwechsel (siehe CRM.swipe). */
+.kanban{display:flex;gap:10px;overflow-x:auto;height:100%;overscroll-behavior-x:contain}
 .kanban-col{flex:1;min-width:230px;background:var(--bg-elev);border:1px solid var(--border);
   border-radius:var(--radius);padding:10px;display:flex;flex-direction:column}
 .kanban-col h3{font-size:13px;margin:0 0 8px;color:var(--text-dim)}

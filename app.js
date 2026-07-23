@@ -1118,25 +1118,33 @@ CRM.swipe = {
   ENTSCHEID: 10, // ab hier wird entschieden: waagrecht (Reiter) oder senkrecht (Scrollen)
 };
 
-/* Darf an dieser Stelle gewischt werden? */
+/* Darf an dieser Stelle überhaupt gewischt werden? Nur harte Sperren —
+   Bereiche, die den Finger grundsätzlich selbst brauchen. */
 CRM.swipe._erlaubt = function (el) {
   if (!el || !el.closest) return true;
   // Die Wischstreifen am Rand der Karte sind ausdrücklich dafür da
   if (el.closest('.map-swipe-zone')) return true;
-  // Leaflet-Karte, Kanban, Dialoge, Eingaben und alles horizontal Scrollbare
-  if (el.closest('#map-container, .leaflet-container, .kanban, #active-modal-overlay, input, textarea, select')) return false;
-  // Nur INNERHALB der Seite nach horizontal Scrollbarem suchen. Die Seite
-  // selbst (.view) ist oft ein paar Pixel überbreit — das darf das Wischen
-  // nicht für den ganzen Reiter abschalten.
+  return !el.closest('#map-container, .leaflet-container, #active-modal-overlay, input, textarea, select');
+};
+
+/* Liegt unter dem Finger etwas, das in DIESER Richtung noch weiterscrollen
+   kann (Kanban-Board, breite Tabelle)? Dann gehört die Geste dem Inhalt.
+   Früher waren solche Bereiche pauschal gesperrt — dadurch endete das
+   Wischen auf „Projekte", weil das Kanban die ganze Seite ausfüllt. Jetzt
+   scrollt erst das Board, und am Anschlag geht es zum nächsten Reiter.
+   richtung: 1 = weiter (Finger nach links), -1 = zurück. */
+CRM.swipe._inhaltScrolltNoch = function (el, richtung) {
   let n = el;
   while (n && n !== document.body && !n.classList.contains('view') && n.id !== 'main') {
-    if (n.scrollWidth > n.clientWidth + 4) {
-      const st = getComputedStyle(n);
-      if (/(auto|scroll)/.test(st.overflowX)) return false;
+    const rest = n.scrollWidth - n.clientWidth;
+    if (rest > 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) {
+      // 2px Toleranz: Browser runden scrollLeft bei Zoomstufen ungenau
+      if (richtung > 0 && n.scrollLeft < rest - 2) return true;
+      if (richtung < 0 && n.scrollLeft > 2) return true;
     }
     n = n.parentElement;
   }
-  return true;
+  return false;
 };
 
 /* Die Auswertung passiert WÄHREND des Ziehens, nicht erst beim Loslassen:
@@ -1144,14 +1152,15 @@ CRM.swipe._erlaubt = function (el) {
    nur direkter, es ist auch robuster — bricht der Browser die Geste ab
    (touchcancel statt touchend), ginge ein Wischer am Ende sonst verloren. */
 CRM.swipe.init = function () {
-  let x0 = 0, y0 = 0, aktiv = false, waagrecht = null;
+  let x0 = 0, y0 = 0, aktiv = false, waagrecht = null, start = null;
 
-  const zuruecksetzen = () => { aktiv = false; waagrecht = null; };
+  const zuruecksetzen = () => { aktiv = false; waagrecht = null; start = null; };
 
   document.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) { zuruecksetzen(); return; }
     const t = e.touches[0];
-    aktiv = CRM.swipe._erlaubt(e.target);
+    start = e.target;
+    aktiv = CRM.swipe._erlaubt(start);
     waagrecht = null;
     x0 = t.clientX; y0 = t.clientY;
   }, { passive: true });
@@ -1170,8 +1179,11 @@ CRM.swipe.init = function () {
     }
 
     if (Math.abs(dx) >= CRM.swipe.MIN_X) {
-      aktiv = false; // pro Berührung nur ein Reiterwechsel
-      CRM.swipe.wechsle(dx < 0 ? 1 : -1);
+      aktiv = false; // pro Berührung nur eine Aktion
+      const richtung = dx < 0 ? 1 : -1;
+      // Kanban & Co. dürfen erst zu Ende scrollen, bevor der Reiter wechselt
+      if (CRM.swipe._inhaltScrolltNoch(start, richtung)) return;
+      CRM.swipe.wechsle(richtung);
     }
   }, { passive: true });
 
