@@ -1012,6 +1012,23 @@ CRM.backup = {
     }
 
     const blob = new Blob([json], { type: 'application/json' });
+
+    // Handy: Android-Teilen-Dialog öffnen — dort stehen Google Drive,
+    // OneDrive, Mail usw. zur Auswahl. Löst das Problem, dass ein Browser
+    // den Zielspeicher nicht selbst wählen darf.
+    const file = new File([blob], name, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Claytec CRM Backup', text: 'Backup speichern (z.B. Google Drive)' });
+        CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
+        CRM.toast('💾 Backup geteilt — Zielordner in der App wählen.', 'success');
+        return data;
+      } catch (e) {
+        if (e.name === 'AbortError') return data; // Nutzer hat abgebrochen
+        // sonstiger Fehler → normaler Download unten
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1021,6 +1038,7 @@ CRM.backup = {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
+    CRM.toast('💾 Backup heruntergeladen: ' + name, 'success');
     return data;
   },
 

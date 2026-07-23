@@ -157,7 +157,7 @@ CRM.renderSettings = function () {
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">
         ${CRM.ablage && CRM.ablage.supported()
           ? 'Einmalig deinen Backup-Ordner verbinden (z.B. <code>…\\Claytec\\KI\\Claytec CRM</code>). Danach schreibt „💾 Backup" direkt dorthin, ohne Speichern-Dialog. Nur Chrome/Edge am Laptop.'
-          : '⚠️ Direktes Speichern nur in Chrome/Edge am Laptop — am Handy bleibt der normale Download.'}
+          : '📱 Am Handy öffnet „💾 Backup" den Teilen-Dialog — dort <strong>Google Drive</strong>, OneDrive oder Mail als Ziel wählen.'}
       </p>
       <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.backup.connectFolder()">📁 Backup-Ordner verbinden</button>
       <span style="font-size:12px;color:var(--text-dim);margin-left:8px">${s.backupFolderName ? '✓ verbunden: ' + esc(s.backupFolderName) : 'noch nicht verbunden (Download)'}</span>

@@ -429,6 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
   CRM.db.init();
   CRM.applyTheme();
   CRM.nav.init();
+  CRM.swipe.init();
   if (CRM.migrateToIndexedDB) CRM.migrateToIndexedDB();
   if (CRM.initSupabase) CRM.initSupabase();
   CRM.renderContactList();
@@ -1102,4 +1103,69 @@ CRM.nav.init = function () {
     }
     // 4) Startseite ohne Dialog → App darf schließen (kein pushState mehr)
   });
+};
+
+/* ============================================================
+   Wischen zwischen den Reitern (Android/Touch).
+   Bewusst zurückhaltend: Nur klar horizontale, ausreichend lange
+   Wischer zählen. Ausgenommen sind Bereiche, die selbst horizontal
+   bedient werden — sonst kämpft die Geste gegen die Karte oder das
+   Kanban-Board.
+   ============================================================ */
+CRM.swipe = {
+  REIHENFOLGE: ['start', 'karte', 'kontakte', 'agenda', 'projekte', 'netzwerk', 'regionen', 'einstellungen'],
+  MIN_X: 60,       // Mindeststrecke, damit ein Tippen nicht auslöst
+  MAX_ZEIT: 700,   // längeres Ziehen ist eher Scrollen als Wischen
+};
+
+/* Darf an dieser Stelle gewischt werden? */
+CRM.swipe._erlaubt = function (el) {
+  if (!el || !el.closest) return true;
+  // Leaflet-Karte, Kanban, Dialoge, Eingaben und alles horizontal Scrollbare
+  if (el.closest('#map-container, .leaflet-container, .kanban, #active-modal-overlay, input, textarea, select')) return false;
+  // Nur INNERHALB der Seite nach horizontal Scrollbarem suchen. Die Seite
+  // selbst (.view) ist oft ein paar Pixel überbreit — das darf das Wischen
+  // nicht für den ganzen Reiter abschalten.
+  let n = el;
+  while (n && n !== document.body && !n.classList.contains('view') && n.id !== 'main') {
+    if (n.scrollWidth > n.clientWidth + 4) {
+      const st = getComputedStyle(n);
+      if (/(auto|scroll)/.test(st.overflowX)) return false;
+    }
+    n = n.parentElement;
+  }
+  return true;
+};
+
+CRM.swipe.init = function () {
+  let x0 = 0, y0 = 0, t0 = 0, aktiv = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { aktiv = false; return; }
+    const t = e.touches[0];
+    aktiv = CRM.swipe._erlaubt(e.target);
+    x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!aktiv) return;
+    aktiv = false;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - x0;
+    const dy = t.clientY - y0;
+    if (Date.now() - t0 > CRM.swipe.MAX_ZEIT) return;
+    if (Math.abs(dx) < CRM.swipe.MIN_X) return;
+    if (Math.abs(dx) < Math.abs(dy) * 2) return; // zu schräg = Scrollen
+    CRM.swipe.wechsle(dx < 0 ? 1 : -1);
+  }, { passive: true });
+};
+
+CRM.swipe.wechsle = function (richtung) {
+  const aktuell = (document.querySelector('.view.active') || {}).id || 'view-start';
+  const key = aktuell.replace('view-', '');
+  const i = CRM.swipe.REIHENFOLGE.indexOf(key);
+  if (i < 0) return;
+  const ziel = CRM.swipe.REIHENFOLGE[i + richtung];
+  if (!ziel) return; // an den Enden nicht umbrechen — sonst verliert man die Orientierung
+  CRM.switchTab(ziel);
 };
