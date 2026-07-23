@@ -585,8 +585,19 @@ CRM.map.closeSidePanel = function () {
 
 /* ---------- Steuerungsleiste: Filter + Tour-Modus ---------- */
 CRM.map.renderControls = function () {
+  // Zustand merken; am Handy standardmäßig EINGEKLAPPT, damit die Karte frei bleibt
+  if (CRM.map._panelOffen === undefined) {
+    let gespeichert = null;
+    try { gespeichert = localStorage.getItem('crmMapPanel'); } catch (e) { /* privat */ }
+    CRM.map._panelOffen = gespeichert !== null ? gespeichert === '1' : window.innerWidth > 768;
+  }
   const el = document.getElementById('map-controls');
   el.innerHTML = `
+    <div class="map-panel-head" onclick="CRM.map.togglePanel()">
+      <span><span id="map-panel-arrow">${CRM.map._panelOffen === false ? '▸' : '▾'}</span> Suche &amp; Filter</span>
+      <span id="map-panel-hint" style="font-size:11px;color:var(--text-dim)"></span>
+    </div>
+    <div id="map-panel-body" class="${CRM.map._panelOffen === false ? 'hidden' : ''}">
     <div style="font-weight:600;margin-bottom:6px">Ort / Adresse auf der Karte</div>
     <div class="row" style="gap:6px;margin-bottom:4px">
       <input id="map-ort-suche" placeholder="z.B. Velburg oder Hauptstr. 12, 92355 Velburg" style="flex:1"
@@ -614,6 +625,7 @@ CRM.map.renderControls = function () {
       <button class="btn btn-sm" style="width:100%" onclick="CRM.map.clearTourSelection()">Auswahl leeren</button>
     </div>
     <div style="font-size:11px;color:var(--text-dim);margin-top:10px" id="map-status-line"></div>
+    </div>
   `;
   document.getElementById('map-filter-query').addEventListener('input', (e) => {
     CRM.map.filters.query = e.target.value;
@@ -629,6 +641,30 @@ CRM.map.renderControls = function () {
   });
   document.getElementById('map-btn-toggle-filter').addEventListener('click', CRM.map.toggleFilterPanel);
   CRM.map.updateTourCount();
+  CRM.map.updatePanelHint();
+};
+
+CRM.map.togglePanel = function () {
+  CRM.map._panelOffen = (CRM.map._panelOffen === false);
+  const body = document.getElementById('map-panel-body');
+  const arrow = document.getElementById('map-panel-arrow');
+  if (body) body.classList.toggle('hidden', !CRM.map._panelOffen);
+  if (arrow) arrow.textContent = CRM.map._panelOffen ? '▾' : '▸';
+  CRM.map.updatePanelHint();
+  try { localStorage.setItem('crmMapPanel', CRM.map._panelOffen ? '1' : '0'); } catch (e) { /* voll */ }
+};
+
+/* Zusammenfassung in der Kopfzeile, wenn eingeklappt — man sieht auf einen
+   Blick, ob ein Suchort/Filter aktiv ist, ohne aufzuklappen. */
+CRM.map.updatePanelHint = function () {
+  const el = document.getElementById('map-panel-hint');
+  if (!el) return;
+  if (CRM.map._panelOffen !== false) { el.textContent = ''; return; }
+  const teile = [];
+  if (CRM.map._suchort) teile.push('📍 ' + CRM.map._suchort.name);
+  const n = CRM.map.selectedIds.size + (CRM.map._suchortInTour ? 1 : 0);
+  if (n) teile.push(n + ' Stopps');
+  el.textContent = teile.join(' · ') || 'eingeklappt';
 };
 
 CRM.map.toggleFilterPanel = function () {

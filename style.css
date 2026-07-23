@@ -615,3 +615,21 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .act-actions .btn{min-height:34px}
 .dash-vcard{flex-shrink:0;min-height:34px;min-width:34px}
 .dash-vcard:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Einklappbare Abschnitte im Kontaktprofil */
+.cd-sec-head{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;margin:0;min-height:34px}
+.cd-sec-head:hover{color:var(--accent-2)}
+.cd-sec-arrow{font-size:12px;color:var(--text-dim);width:12px}
+.cd-sec-body{margin-top:10px}
+/* Ansprechpartner + Nächster Schritt im Kopf */
+.cd-ap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:14px}
+.cd-nextstep{margin-top:8px}
+.cd-nextstep label{font-size:11px;color:var(--text-dim)}
+/* Bearbeiten/Löschen in der Aktivitätenzeile */
+.act-btns{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.act-edit{min-height:32px;opacity:.55}
+.act-edit:hover{opacity:1;color:var(--accent);border-color:var(--accent)}
+/* Karten-Panel: gesamte Box einklappbar */
+.map-panel-head{cursor:pointer;user-select:none;display:flex;justify-content:space-between;
+  align-items:center;gap:8px;font-weight:600;min-height:34px}
+.map-panel-head:hover{color:var(--accent-2)}

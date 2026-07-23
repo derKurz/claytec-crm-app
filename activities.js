@@ -152,8 +152,12 @@ CRM.activities.renderInner = function (contactId) {
               <button class="btn btn-sm" onclick="event.stopPropagation();CRM.mailAntwort.dokumentieren('${contactId}','${a.id}')">✉ Antwort dokumentieren</button>
             </div>` : ''}
         </div>
-        <button class="btn btn-sm act-del" title="Eintrag löschen"
-          onclick="CRM.activities.remove('${contactId}','${a.quelle}','${a.id}')">✕</button>
+        <div class="act-btns">
+          <button class="btn btn-sm act-edit" title="Eintrag bearbeiten"
+            onclick="CRM.activities.edit('${contactId}','${a.quelle}','${a.id}')">✏️</button>
+          <button class="btn btn-sm act-del" title="Eintrag löschen"
+            onclick="CRM.activities.remove('${contactId}','${a.quelle}','${a.id}')">✕</button>
+        </div>
       </div>`;
   }).join('');
 
@@ -222,4 +226,77 @@ CRM.activities.saveEintrag = function (contactId, typ) {
   });
   CRM.renderContactDetailModal(contactId);
   CRM.toast('✓ ' + (CRM.JOURNAL_TYPE_LABELS[typ] || typ) + ' gespeichert.', 'success');
+};
+
+/* ============================================================
+   Eintrag bearbeiten — Besuche, Journal-Einträge und Mails.
+   Wichtig: „📍 Besuch heute" legt einen Eintrag OHNE Notiz an;
+   diese muss nachtragbar sein, sonst ist der Vorgang wertlos.
+   ============================================================ */
+CRM.activities.edit = function (contactId, quelle, id) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return;
+  let datum = '', text = '', betreff = null, titel = 'Eintrag bearbeiten';
+
+  if (quelle === 'visit') {
+    const v = (c.visits || []).find((x) => x.id === id);
+    if (!v) return;
+    datum = v.date || ''; text = v.note || ''; titel = '📍 Besuch bearbeiten';
+  } else if (quelle === 'journal') {
+    const j = CRM.db.getJournalEntries().find((x) => x.id === id);
+    if (!j) return;
+    datum = (j.createdAt || '').slice(0, 10); text = j.content || '';
+    titel = (CRM.JOURNAL_TYPE_LABELS[j.entryType] || 'Eintrag') + ' bearbeiten';
+  } else if (quelle === 'comm') {
+    const m = CRM.db.getComm(id);
+    if (!m) return;
+    datum = m.date || ''; text = m.body || ''; betreff = m.subject || '';
+    titel = '✉ E-Mail bearbeiten';
+  } else if (quelle === 'task') {
+    const t = CRM.db.getTask(id);
+    if (!t) return;
+    datum = (t.doneAt || t.due || '').slice(0, 10); text = t.title || '';
+    titel = '✓ Aufgabe bearbeiten';
+  }
+
+  CRM.openModal(`
+    <h2>${titel}</h2>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <div class="col" style="max-width:170px"><label>Datum</label>
+        <input type="date" id="ae-datum" value="${escAttr(datum)}"></div>
+      ${betreff !== null ? `<div class="col" style="min-width:200px"><label>Betreff</label>
+        <input id="ae-betreff" value="${escAttr(betreff)}"></div>` : ''}
+    </div>
+    <label style="margin-top:8px">${quelle === 'task' ? 'Aufgabe' : (quelle === 'comm' ? 'Text' : 'Notiz')}</label>
+    <textarea id="ae-text" rows="${quelle === 'comm' ? 8 : 4}" placeholder="Was wurde besprochen / notiert?">${esc2(text)}</textarea>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.renderContactDetailModal('${contactId}')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="CRM.activities.saveEdit('${contactId}','${quelle}','${id}')">💾 Speichern</button>
+    </div>
+  `, { dismissible: false });
+  setTimeout(() => { const t = document.getElementById('ae-text'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 60);
+};
+
+CRM.activities.saveEdit = function (contactId, quelle, id) {
+  const datum = (document.getElementById('ae-datum') || {}).value || '';
+  const text = (document.getElementById('ae-text') || {}).value || '';
+  const betreffEl = document.getElementById('ae-betreff');
+
+  if (quelle === 'visit') {
+    CRM.updateVisit(contactId, id, { date: datum, note: text });
+    CRM.renderContactList();
+  } else if (quelle === 'journal') {
+    const j = CRM.db.getJournalEntries().find((x) => x.id === id);
+    if (j) {
+      j.content = text;
+      if (datum) j.createdAt = new Date(datum + 'T12:00:00').toISOString();
+      CRM.db.saveJournal();
+    }
+  } else if (quelle === 'comm') {
+    CRM.db.updateComm(id, { date: datum, body: text, subject: betreffEl ? betreffEl.value : undefined });
+  } else if (quelle === 'task') {
+    CRM.db.updateTask(id, { title: text, due: datum });
+  }
+  CRM.renderContactDetailModal(contactId);
+  CRM.toast('✓ Eintrag aktualisiert.', 'success');
 };

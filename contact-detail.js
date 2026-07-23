@@ -145,6 +145,43 @@ CRM.openNotion = function (id) {
   window.open(url, '_blank', 'noopener');
 };
 
+/* ============================================================
+   Einklappbare Abschnitte im Kontaktprofil.
+   Zustand wird gemerkt (localStorage), damit das Profil bei jedem
+   Kontakt gleich aussieht — im Außendienst zählt Wiedererkennbarkeit.
+   ============================================================ */
+CRM._cdOpen = null;
+CRM.cdSectionState = function () {
+  if (!CRM._cdOpen) {
+    try { CRM._cdOpen = JSON.parse(localStorage.getItem('crmCdSections') || '{}'); }
+    catch (e) { CRM._cdOpen = {}; }
+  }
+  return CRM._cdOpen;
+};
+
+CRM.cdSection = function (key, titel, inhalt, defaultOpen) {
+  const st = CRM.cdSectionState();
+  const offen = (st[key] === undefined) ? !!defaultOpen : !!st[key];
+  return `
+    <div class="card cd-sec" data-sec="${key}">
+      <h3 class="cd-sec-head" onclick="CRM.cdToggle('${key}')">
+        <span class="cd-sec-arrow">${offen ? '▾' : '▸'}</span> ${titel}
+      </h3>
+      <div class="cd-sec-body${offen ? '' : ' hidden'}">${inhalt}</div>
+    </div>`;
+};
+
+CRM.cdToggle = function (key) {
+  const st = CRM.cdSectionState();
+  const card = document.querySelector('.cd-sec[data-sec="' + key + '"]');
+  if (!card) return;
+  const body = card.querySelector('.cd-sec-body');
+  const offen = body.classList.toggle('hidden') === false;
+  card.querySelector('.cd-sec-arrow').textContent = offen ? '▾' : '▸';
+  st[key] = offen;
+  try { localStorage.setItem('crmCdSections', JSON.stringify(st)); } catch (e) { /* voll/privat */ }
+};
+
 CRM.renderContactDetailModal = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) {
@@ -216,6 +253,24 @@ CRM.renderContactDetailModal = function (id) {
           <span class="badge ${due.status === 'overdue' ? 'badge-overdue' : ''}">${dueLabelMap[due.status]}</span>
           <button class="badge" style="cursor:pointer;border-color:var(--accent);color:var(--accent)" title="Region im Regionen-Tab öffnen" onclick="CRM.closeModal();CRM.goToRegion('${CRM.regionForPlz(c.plz)}')">📍 ${esc2(CRM.regionNameForPlz(c.plz))}</button>
         </div>
+        ${(() => {
+          // Ansprechpartner gehört in den Kopf — im Außendienst die zweitwichtigste
+          // Information nach dem Firmennamen, bisher nur tief in den Stammdaten.
+          const ap = c.ansprechpartner || {};
+          const n = [ap.vorname, ap.name].filter(Boolean).join(' ');
+          if (!n) return '';
+          const tel = ap.telefon || c.telFirma;
+          const mail = ap.email || c.emailFirma;
+          return `<div class="cd-ap">
+            <span>👤 <strong>${esc2(n)}</strong>${ap.funktion ? ' · ' + esc2(ap.funktion) : ''}</span>
+            ${tel ? `<a class="btn btn-sm" href="tel:${escAttr(tel)}" title="Anrufen">📞</a>` : ''}
+            ${mail ? `<a class="btn btn-sm" href="mailto:${escAttr(mail)}" title="E-Mail">✉</a>` : ''}
+          </div>`;
+        })()}
+        <div class="cd-nextstep">
+          <label style="margin:0">Nächster Schritt</label>
+          <input data-field="nextStep" value="${escAttr(c.nextStep || '')}" placeholder="z.B. Angebot nachfassen, Muster vorbeibringen...">
+        </div>
         <div class="li-badges" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
       </div>
       <div style="display:flex;gap:6px">
@@ -226,7 +281,43 @@ CRM.renderContactDetailModal = function (id) {
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Stammdaten</h3>
+      <h3 style="margin-top:0">Aufgaben</h3>
+      <div id="cd-tasks">${CRM.renderContactTasks(c.id)}</div>
+      <div class="row" style="margin-top:8px;align-items:flex-end">
+        <div class="col"><input id="cd-task-title" placeholder="Neue Aufgabe für diesen Kontakt" onkeydown="if(event.key==='Enter')CRM.addContactTask('${c.id}')"></div>
+        <div class="col" style="max-width:160px"><input type="date" id="cd-task-due" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <button class="btn btn-primary" style="min-height:44px" onclick="CRM.addContactTask('${c.id}')">💾 Aufgabe speichern</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span></h3>
+      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
+        <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
+        <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
+        <button class="btn" onclick="CRM.muster.open('${c.id}')">📦 Muster schicken</button>
+      </div>
+      <details style="margin-bottom:10px">
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Besuch mit Datum/Notiz manuell nachtragen</summary>
+        <div class="row" style="margin-top:8px">
+          <div class="col" style="max-width:160px"><label>Datum</label><input type="date" id="cd-visit-date" value="${new Date().toISOString().slice(0, 10)}"></div>
+          <div class="col"><label>Notiz</label><textarea id="cd-visit-note" placeholder="Was wurde besprochen?"></textarea></div>
+        </div>
+        <button class="btn btn-sm" onclick="CRM.saveManualVisit('${c.id}')">Eintrag speichern</button>
+      </details>
+      ${CRM.activities.render(c.id)}
+    </div>
+
+    ${CRM.cdSection('links', 'Verknüpfungen', `
+      <div id="cd-links">${linksHtml}</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn btn-sm" onclick="CRM.openLinkPicker('${c.id}')">+ Kontakt verknüpfen</button>
+        <button class="btn btn-sm" onclick="CRM.openContactProjectPicker('${c.id}')">+ Projekt verknüpfen</button>
+      </div>
+    `, false)}
+
+    ${CRM.cdSection('stammdaten', 'Stammdaten', `
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;padding:6px 10px;background:var(--bg);border-radius:6px">
         ℹ️ Datenherkunft: ${CRM.formatProvenance(c)}
       </div>
@@ -264,65 +355,26 @@ CRM.renderContactDetailModal = function (id) {
           </label>
         </div>
       </div>
-    </div>
+    `, false)}
 
-    <div class="card">
-      <h3 style="margin-top:0">Beziehung</h3>
-      <label>Nächster Schritt</label>
-      <input data-field="nextStep" value="${escAttr(c.nextStep || '')}" placeholder="z.B. Angebot nachfassen, Muster vorbeibringen...">
-      <label style="margin-top:12px">Tags</label>
+    ${CRM.cdSection('beziehung', 'Beziehung / Tags', `
       <div class="li-badges" id="cd-tags">${tagsHtml}</div>
       <input id="cd-new-tag" placeholder="Tag eingeben + Enter" style="margin-top:6px">
-    </div>
+    `, false)}
 
-    <div class="card">
-      <h3 style="margin-top:0">📓 Notion</h3>
+    ${CRM.cdSection('notion', '📓 Notion', `
       <label>Link zur Notion-Seite</label>
       <div class="row" style="align-items:flex-end">
         <div class="col"><input data-field="notionUrl" value="${escAttr(c.notionUrl || '')}" placeholder="Notion-Seite verlinken (URL einfügen)"></div>
         <button class="btn" style="min-height:44px" onclick="CRM.openNotion('${c.id}')">↗ In Notion öffnen</button>
       </div>
-      <button class="btn btn-sm" style="margin-top:8px" onclick="CRM.copyForNotion('${c.id}')">📋 Steckbrief für Notion kopieren</button>
+      <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="CRM.copyForNotion('${c.id}')">📋 Steckbrief für Notion kopieren</button>
+        <button class="btn btn-sm" onclick="CRM.copyCrmLink('${c.id}')">🔗 CRM-Link kopieren</button>
+      </div>
       <p style="color:var(--text-dim);font-size:12px;margin:6px 0 0">Kopiert Firma, Kontakt und Besuchshistorie als Notion-fähigen Text — in Notion mit Strg+V (Handy: Einfügen) als neue Seite ablegen. Kundendaten bleiben lokal; Notion ist nur für Wissen/Doku.</p>
-    </div>
+    `, false)}
 
-    <div class="card">
-      <h3 style="margin-top:0">Verknüpfungen</h3>
-      <div id="cd-links">${linksHtml}</div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn btn-sm" onclick="CRM.openLinkPicker('${c.id}')">+ Kontakt verknüpfen</button>
-        <button class="btn btn-sm" onclick="CRM.openContactProjectPicker('${c.id}')">+ Projekt verknüpfen</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin-top:0">Aufgaben</h3>
-      <div id="cd-tasks">${CRM.renderContactTasks(c.id)}</div>
-      <div class="row" style="margin-top:8px;align-items:flex-end">
-        <div class="col"><input id="cd-task-title" placeholder="Neue Aufgabe für diesen Kontakt" onkeydown="if(event.key==='Enter')CRM.addContactTask('${c.id}')"></div>
-        <div class="col" style="max-width:160px"><input type="date" id="cd-task-due" value="${new Date().toISOString().slice(0, 10)}"></div>
-        <button class="btn btn-primary" style="min-height:44px" onclick="CRM.addContactTask('${c.id}')">💾 Aufgabe speichern</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin-top:0">Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span></h3>
-      <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
-        <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
-        <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
-        <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
-        <button class="btn" onclick="CRM.muster.open('${c.id}')">📦 Muster schicken</button>
-      </div>
-      <details style="margin-bottom:10px">
-        <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Besuch mit Datum/Notiz manuell nachtragen</summary>
-        <div class="row" style="margin-top:8px">
-          <div class="col" style="max-width:160px"><label>Datum</label><input type="date" id="cd-visit-date" value="${new Date().toISOString().slice(0, 10)}"></div>
-          <div class="col"><label>Notiz</label><textarea id="cd-visit-note" placeholder="Was wurde besprochen?"></textarea></div>
-        </div>
-        <button class="btn btn-sm" onclick="CRM.saveManualVisit('${c.id}')">Eintrag speichern</button>
-      </details>
-      ${CRM.activities.render(c.id)}
-    </div>
   `;
 
   const overlay = CRM.openModal(html);
@@ -509,10 +561,18 @@ CRM.removeTag = function (id, tag) {
 
 /* ---------- Besuchshistorie ---------- */
 CRM.quickVisitToday = function (id) {
-  CRM.addVisit(id, new Date().toISOString().slice(0, 10), '');
-  CRM.toast('Besuch heute erfasst.', 'success');
-  CRM.renderContactDetailModal(id);
+  // Besuch anlegen UND sofort das Notizfeld öffnen — ein Besuch ohne Notiz
+  // ist im Außendienst ein halber Vorgang; das Nachtragen darf nicht
+  // in einem zweiten Suchschritt untergehen.
+  const v = CRM.addVisit(id, new Date().toISOString().slice(0, 10), '');
   CRM.renderContactList();
+  if (v && CRM.activities && CRM.activities.edit) {
+    CRM.renderContactDetailModal(id);
+    setTimeout(() => CRM.activities.edit(id, 'visit', v.id), 60);
+  } else {
+    CRM.toast('Besuch heute erfasst.', 'success');
+    CRM.renderContactDetailModal(id);
+  }
 };
 CRM.saveManualVisit = function (id) {
   const date = document.getElementById('cd-visit-date').value || new Date().toISOString().slice(0, 10);
@@ -687,3 +747,44 @@ CRM.pickLink = function (otherId) {
   CRM.openContactDetail(CRM._linkPicker.contactId);
 };
 
+
+/* ============================================================
+   Deep-Link: von außen (z.B. Notion) direkt auf einen Kontakt.
+   Format:  <App-URL>?kontakt=<id>   oder   ?erp=<ERP-Nr.>
+   Die ERP-Variante ist stabiler und lesbarer; die ID funktioniert
+   auch ohne ERP-Nummer. Beides wird beim Start ausgewertet.
+   ============================================================ */
+CRM.crmLinkFor = function (contactId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return '';
+  const basis = location.origin + location.pathname;
+  return basis + (c.erpNr ? '?erp=' + encodeURIComponent(c.erpNr) : '?kontakt=' + encodeURIComponent(c.id));
+};
+
+CRM.copyCrmLink = function (contactId) {
+  const url = CRM.crmLinkFor(contactId);
+  if (!url) return;
+  const c = CRM.db.getContact(contactId);
+  navigator.clipboard.writeText(url).then(() => {
+    CRM.toast('🔗 CRM-Link kopiert — in Notion einfügen, führt direkt zu „' + c.firma1 + '".', 'success');
+  }).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+};
+
+/* Beim App-Start prüfen, ob ein Kontakt direkt geöffnet werden soll. */
+CRM.openFromUrl = function () {
+  const p = new URLSearchParams(location.search);
+  const erp = p.get('erp');
+  const kid = p.get('kontakt');
+  if (!erp && !kid) return false;
+  let c = null;
+  if (erp) c = CRM.db.getContacts().find((x) => String(x.erpNr || '').trim() === erp.trim());
+  if (!c && kid) c = CRM.db.getContact(kid);
+  // URL wieder säubern, damit ein Neuladen nicht erneut aufspringt
+  history.replaceState({}, '', location.origin + location.pathname);
+  if (!c) {
+    CRM.toast('Kontakt aus dem Link nicht gefunden (' + esc2(erp || kid) + ') — evtl. auf diesem Gerät nicht vorhanden.', 'error');
+    return false;
+  }
+  setTimeout(() => CRM.openContactDetail(c.id), 250);
+  return true;
+};

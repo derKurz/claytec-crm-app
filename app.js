@@ -55,6 +55,8 @@ CRM.openModal = function (innerHTML, opts) {
     downOnOverlay = false;
   });
   document.body.appendChild(overlay);
+  // Verlaufseintrag, damit die Zurück-Taste am Handy den Dialog schließt
+  if (CRM.nav && CRM.nav.push) CRM.nav.push('modal');
   return overlay;
 };
 CRM.closeModal = function () {
@@ -122,6 +124,8 @@ CRM.switchTab = function (tabId) {
   // Letzten Tab merken: Wenn Android die PWA im Hintergrund beendet,
   // startet sie wieder dort, wo man war (Wiederherstellung beim App-Start).
   try { localStorage.setItem('crmLastTab', JSON.stringify({ tab: tabId, ts: Date.now() })); } catch (e) { /* voll/privat */ }
+  // Tab-Wechsel im Verlauf vermerken (außer Startseite = Wurzel)
+  if (tabId !== 'start' && CRM.nav && CRM.nav.push) CRM.nav.push('tab:' + tabId);
 };
 
 /* Nach einem Hintergrund-Kill der PWA den letzten Tab wiederherstellen —
@@ -424,12 +428,14 @@ CRM.applyTheme = function () {
 document.addEventListener('DOMContentLoaded', () => {
   CRM.db.init();
   CRM.applyTheme();
+  CRM.nav.init();
   if (CRM.migrateToIndexedDB) CRM.migrateToIndexedDB();
   if (CRM.initSupabase) CRM.initSupabase();
   CRM.renderContactList();
   if (CRM.renderDashboard) CRM.renderDashboard();
   if (CRM.map && CRM.map.init) CRM.map.init();
-  CRM.restoreLastTab();
+  // Deep-Link (?erp= / ?kontakt=) hat Vorrang vor dem zuletzt offenen Tab
+  if (!(CRM.openFromUrl && CRM.openFromUrl())) CRM.restoreLastTab();
   // Browser bitten, den Speicher als „dauerhaft" zu markieren — verhindert,
   // dass Android/Chrome die CRM-Daten bei Speicherdruck still löscht.
   if (navigator.storage && navigator.storage.persist) {
@@ -1052,4 +1058,48 @@ CRM.showBackupReminder = function (daysSince) {
   laterBtn.addEventListener('click', () => el.remove());
   host.appendChild(el);
   setTimeout(() => el.remove(), 15000);
+};
+
+/* ============================================================
+   Zurück-Taste am Handy (Android) — schließt nicht mehr die App.
+   Jedes Öffnen eines Dialogs und jeder Tab-Wechsel legt einen
+   Verlaufseintrag an; „Zurück" macht genau EINEN Schritt rückgängig:
+     offener Dialog  → Dialog schließen
+     anderer Tab     → zurück zur Startseite
+     Startseite      → App darf schließen (zweites Drücken)
+   ============================================================ */
+CRM.nav = { _tief: 0 };
+
+CRM.nav.push = function (typ) {
+  CRM.nav._tief++;
+  try { history.pushState({ crm: typ, tief: CRM.nav._tief }, ''); } catch (e) { /* ignorieren */ }
+};
+
+CRM.nav.init = function () {
+  // Basiseintrag, damit das erste „Zurück" bei uns landet und nicht draußen
+  try { history.replaceState({ crm: 'start', tief: 0 }, ''); } catch (e) { /* ignorieren */ }
+
+  window.addEventListener('popstate', () => {
+    // 1) Offener Dialog? → nur den schließen
+    if (document.getElementById('active-modal-overlay')) {
+      CRM.closeModal();
+      CRM.nav.push('nachDialog'); // Eintrag ersetzen, damit weiter zurück möglich bleibt
+      return;
+    }
+    // 2) Offenes Karten-Seitenpanel? → schließen
+    const panel = document.getElementById('map-side-panel');
+    if (panel && panel.classList.contains('open')) {
+      CRM.map.closeSidePanel();
+      CRM.nav.push('nachPanel');
+      return;
+    }
+    // 3) Nicht auf der Startseite? → dorthin zurück
+    const aktiv = document.querySelector('.view.active');
+    if (aktiv && aktiv.id !== 'view-start') {
+      CRM.switchTab('start');
+      CRM.nav.push('start');
+      return;
+    }
+    // 4) Startseite ohne Dialog → App darf schließen (kein pushState mehr)
+  });
 };
