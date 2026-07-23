@@ -64,6 +64,14 @@ CRM.renderSettings = function () {
           ? 'Wähle einmalig deinen <strong>Claytec</strong>-Ordner (enthält <code>.Kunden</code> und <code>Berichte - Reisekosten - Spesen</code>). Nur Chrome/Edge am Laptop.'
           : '⚠️ Dieser Browser unterstützt keinen direkten Ordnerzugriff. Nutze Chrome oder Edge am Laptop.'}
       </p>
+      ${CRM.ablage && CRM.ablage.supported() ? `
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:var(--text-dim)">
+        <strong>OneDrive statt Google Drive im Dialog?</strong> Der Windows-Dialog zeigt zuerst den zuletzt benutzten Ort.
+        Oben in die <strong>Adressleiste</strong> des Dialogs den OneDrive-Pfad einfügen und Enter drücken — dann bist du direkt am richtigen Ort.
+        ${s.onedrivePath ? `<div style="margin-top:6px">Dein hinterlegter Pfad (zum Kopieren):
+          <code id="ablage-copy-path" style="user-select:all;cursor:pointer" title="Klicken kopiert den Pfad" onclick="CRM.copyOnedrivePath()">${esc(s.onedrivePath)}</code></div>`
+          : `<div style="margin-top:6px">Tipp: Trag deinen OneDrive-Pfad weiter unten unter „Pfad des Claytec-Ordners" ein — dann steht er hier zum Kopieren bereit.</div>`}
+      </div>` : ''}
       <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.ablage.connectRoot()">📁 Claytec-Ordner verbinden</button>
       <span id="ablage-root-status" style="font-size:12px;color:var(--text-dim);margin-left:8px">${CRM.ablage && CRM.ablage.rootHandle ? '✓ verbunden: ' + esc(CRM.ablage.rootHandle.name) : 'noch nicht verbunden'}</span>
       <hr style="border-color:var(--border);margin:14px 0">
@@ -321,6 +329,23 @@ CRM.saveAdKuerzel = function () {
 CRM.saveOnedrivePath = function () {
   CRM.db.saveSettings({ onedrivePath: document.getElementById('set-onedrive-path').value.trim().replace(/[\\/]+$/, '') });
   CRM.toast('Pfad gespeichert.', 'success');
+  if (document.querySelector('#view-einstellungen.active')) CRM.renderSettings(); // Kopier-Hinweis oben aktualisieren
+};
+
+/* Klick auf den angezeigten Pfad kopiert ihn in die Zwischenablage —
+   zum Einfügen in die Adressleiste des Windows-Ordner-Dialogs. */
+CRM.copyOnedrivePath = function () {
+  const path = (CRM.db.getSettings().onedrivePath || '').trim();
+  if (!path) return;
+  const fertig = () => CRM.toast('📋 Pfad kopiert — im Ordner-Dialog oben in die Adressleiste einfügen (Strg+V) und Enter.', 'success');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(path).then(fertig).catch(() => CRM.toast('Kopieren nicht möglich — Pfad bitte markieren und mit Strg+C kopieren.', 'error'));
+  } else {
+    // Fallback für ältere/eingeschränkte Umgebungen
+    const el = document.getElementById('ablage-copy-path');
+    if (el) { const r = document.createRange(); r.selectNodeContents(el); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    try { document.execCommand('copy'); fertig(); } catch (e) { CRM.toast('Bitte den Pfad markieren und mit Strg+C kopieren.', 'error'); }
+  }
 };
 
 CRM.saveSupabaseConfig = function () {

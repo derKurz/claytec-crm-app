@@ -61,7 +61,11 @@ CRM.ablage.connectRoot = async function () {
     return null;
   }
   try {
-    const handle = await window.showDirectoryPicker({ id: 'claytec-root', mode: 'readwrite' });
+    // startIn:'documents' bringt den Dialog in den Dokumente-Ordner (liegt bei
+    // aktivierter OneDrive-Sicherung meist schon UNTER OneDrive) statt im zuletzt
+    // benutzten Ort (z.B. Google Drive). Zum eigentlichen Claytec-Ordner
+    // navigiert man dann über die Adressleiste des Windows-Dialogs.
+    const handle = await window.showDirectoryPicker({ id: 'claytec-root', mode: 'readwrite', startIn: 'documents' });
     CRM.ablage.rootHandle = handle;
     await CRM.ablage.idbSet('claytecRoot', handle);
     CRM.toast('Claytec-Ordner verbunden: ' + handle.name, 'success');
