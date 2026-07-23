@@ -32,7 +32,7 @@ CRM.renderProjects = function () {
 
   const columns = CRM.PROJECT_STATUS.map((status) => {
     const items = projects.filter((p) => p.status === status);
-    const cards = items.map((p) => CRM.projectCard(p)).join('') || '<p style="color:var(--text-dim);font-size:12px">—</p>';
+    const cards = items.map((p) => CRM.projectCard(p)).join('') || '<p class="kanban-leer">—</p>';
     return `<div class="kanban-col" data-status="${status}"
         ondragover="event.preventDefault()" ondrop="CRM.dropProject(event,'${status}')">
         <div class="kanban-head">${CRM.PROJECT_STATUS_LABELS[status]} <span class="badge">${items.length}</span></div>
