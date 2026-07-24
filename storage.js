@@ -625,6 +625,21 @@ CRM.contactSearchFields = function (c) {
     (c.tags || []).join(' ')];
 };
 
+/* Relevanz-Rang für die Trefferreihenfolge (kleiner = relevanter).
+   Ein Firmenname-Treffer soll VOR einem Treffer über Ansprechpartner/
+   Nebenfelder stehen — sonst verdrängen bei einem Kürzel wie „thiem"
+   viele „Thiemer"-Ansprechpartner den gesuchten „Atelier Thiemann". */
+CRM.contactSearchRank = function (qNorm, c) {
+  if (!qNorm) return 5;
+  const firma = CRM.searchNorm(c.firma1 || '');
+  if (firma.startsWith(qNorm)) return 0;
+  if ((' ' + firma).includes(' ' + qNorm)) return 1; // Wortanfang innerhalb des Namens
+  if (firma.includes(qNorm)) return 2;               // irgendwo im Namen
+  if (CRM.searchNorm([c.firma2, c.firma3].filter(Boolean).join(' ')).includes(qNorm)) return 3;
+  if (CRM.searchNorm([c.ort, c.plz, c.erpNr].filter(Boolean).join(' ')).includes(qNorm)) return 4;
+  return 5; // Ansprechpartner / sonstige Nebenfelder
+};
+
 CRM.getLastVisit = function (contact) {
   if (!contact.visits || !contact.visits.length) return null;
   return contact.visits.reduce((latest, v) => (!latest || v.date > latest.date ? v : latest), null);

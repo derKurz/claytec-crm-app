@@ -30,6 +30,11 @@ button{font-family:inherit}
   display:flex;align-items:center;justify-content:space-between;
   padding:10px 16px;background:var(--bg-elev);border-bottom:1px solid var(--border);
   flex-shrink:0;
+  /* Eigener Stacking-Kontext ueber der Karte: sonst ueberdecken Leaflet-
+     Marker/Popups/Controls (z-index bis 800) das Suchergebnis-Dropdown,
+     und auf dem Karten-Reiter sind nur die obersten Treffer sichtbar.
+     Unter den Dialogen (.modal-overlay z-index 1000). */
+  position:relative;z-index:900;
 }
 #app-header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px;flex-shrink:0}
 #app-header h1 span{color:var(--accent-2)}
@@ -38,7 +43,7 @@ button{font-family:inherit}
 #header-search-wrap{position:relative;flex:1;max-width:340px;margin:0 16px}
 #header-search{width:100%;background:var(--bg-elev2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px}
 #header-search:focus{outline:none;border-color:var(--accent)}
-#header-search-results,.header-search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-elev2);border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+#header-search-results,.header-search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-elev2);border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;z-index:900;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .header-search-item{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)}
 .header-search-item:last-child{border-bottom:none}
 .header-search-item:hover{background:var(--bg-elev)}

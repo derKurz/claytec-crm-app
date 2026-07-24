@@ -563,7 +563,15 @@ CRM.initHeaderSearch = function () {
   const render = () => {
     const q = norm(input.value).trim();
     if (!q) { results.classList.add('hidden'); results.innerHTML = ''; return; }
-    const matches = CRM.db.getContacts().filter((c) => CRM.contactQueryMatch(q, c)).slice(0, 8);
+    // Nach Relevanz sortieren (Firmenname-Treffer vor Nebenfeld-Treffern),
+    // dann erst begrenzen — sonst verdrängen Ansprechpartner-Treffer den
+    // gesuchten Firmennamen aus der Liste (Limit war zu niedrig + unsortiert).
+    const qn = CRM.searchNorm(q);
+    const matches = CRM.db.getContacts()
+      .filter((c) => CRM.contactQueryMatch(q, c))
+      .sort((a, b) => CRM.contactSearchRank(qn, a) - CRM.contactSearchRank(qn, b)
+        || String(a.firma1 || '').localeCompare(String(b.firma1 || '')))
+      .slice(0, 15);
     const projMatches = CRM.db.getProjects().filter((p) => CRM.smartMatch(q, [p.name, p.erpNr, p.ort])).slice(0, 4);
     if (!matches.length && !projMatches.length) {
       results.innerHTML = '<div class="header-search-empty">Keine Treffer</div>';
