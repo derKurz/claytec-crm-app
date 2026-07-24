@@ -237,6 +237,7 @@ CRM.activities.edit = function (contactId, quelle, id) {
   const c = CRM.db.getContact(contactId);
   if (!c) return;
   let datum = '', text = '', betreff = null, titel = 'Eintrag bearbeiten';
+  let richtung = null, projektId = ''; // nur für E-Mails (comm)
 
   if (quelle === 'visit') {
     const v = (c.visits || []).find((x) => x.id === id);
@@ -251,6 +252,7 @@ CRM.activities.edit = function (contactId, quelle, id) {
     const m = CRM.db.getComm(id);
     if (!m) return;
     datum = m.date || ''; text = m.body || ''; betreff = m.subject || '';
+    richtung = m.direction || 'in'; projektId = (m.projectIds || [])[0] || '';
     titel = '✉ E-Mail bearbeiten';
   } else if (quelle === 'task') {
     const t = CRM.db.getTask(id);
@@ -258,6 +260,10 @@ CRM.activities.edit = function (contactId, quelle, id) {
     datum = (t.doneAt || t.due || '').slice(0, 10); text = t.title || '';
     titel = '✓ Aufgabe bearbeiten';
   }
+
+  // Projekt-Auswahl (nur E-Mails): das aktuell zugeordnete vorwählen
+  const projektOpts = CRM.db.getProjects()
+    .map((p) => `<option value="${p.id}" ${p.id === projektId ? 'selected' : ''}>${((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ')}${esc2(p.name)}</option>`).join('');
 
   CRM.openModal(`
     <h2>${titel}</h2>
@@ -267,6 +273,15 @@ CRM.activities.edit = function (contactId, quelle, id) {
       ${betreff !== null ? `<div class="col" style="min-width:200px"><label>Betreff</label>
         <input id="ae-betreff" value="${escAttr(betreff)}"></div>` : ''}
     </div>
+    ${richtung !== null ? `<div class="row" style="flex-wrap:wrap;gap:8px;margin-top:8px">
+      <div class="col" style="max-width:170px"><label>Richtung</label>
+        <select id="ae-richtung">
+          <option value="in" ${richtung === 'in' ? 'selected' : ''}>Eingehend</option>
+          <option value="out" ${richtung === 'out' ? 'selected' : ''}>Ausgehend</option>
+        </select></div>
+      <div class="col" style="min-width:200px"><label>Bauvorhaben / Projekt</label>
+        <select id="ae-projekt"><option value="">Kein Projekt</option>${projektOpts}</select></div>
+    </div>` : ''}
     <label style="margin-top:8px">${quelle === 'task' ? 'Aufgabe' : (quelle === 'comm' ? 'Text' : 'Notiz')}</label>
     <textarea id="ae-text" rows="${quelle === 'comm' ? 8 : 4}" placeholder="Was wurde besprochen / notiert?">${esc2(text)}</textarea>
     <div class="modal-footer">
@@ -293,7 +308,12 @@ CRM.activities.saveEdit = function (contactId, quelle, id) {
       CRM.db.saveJournal();
     }
   } else if (quelle === 'comm') {
-    CRM.db.updateComm(id, { date: datum, body: text, subject: betreffEl ? betreffEl.value : undefined });
+    const patch = { date: datum, body: text, subject: betreffEl ? betreffEl.value : undefined };
+    const richtungEl = document.getElementById('ae-richtung');
+    if (richtungEl) patch.direction = richtungEl.value;
+    const projektEl = document.getElementById('ae-projekt');
+    if (projektEl) patch.projectIds = projektEl.value ? [projektEl.value] : [];
+    CRM.db.updateComm(id, patch);
   } else if (quelle === 'task') {
     CRM.db.updateTask(id, { title: text, due: datum });
   }
