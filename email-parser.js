@@ -739,6 +739,32 @@ CRM.emailParser._forceAdd = function (c) {
    ============================================================ */
 CRM.mailAntwort = {};
 
+/* Maskiert personenbezogene Daten im E-Mail-Text, bevor er das CRM
+   Richtung Claude verlässt: E-Mail-Adressen, Telefonnummern, IBANs und
+   den hinterlegten Ansprechpartner-Namen. Firma/Projekt bleiben (die
+   werden separat als Referenz mitgegeben). */
+CRM.mailAntwort.anonymisiere = function (text, ap) {
+  let t = String(text || '');
+  ap = ap || {};
+  // 1) E-Mail-Adressen
+  t = t.replace(/[\w.+-]+@[\w.-]+\.\w+/g, '[E-Mail-Adresse]');
+  // 2) IBAN (vor Telefon, damit die Ziffern nicht als Nummer gelten) —
+  //    2 Buchstaben + 2 Prüfziffern + 10–30 weitere Stellen (mit Leerzeichen)
+  t = t.replace(/\b[A-Za-z]{2}\d{2}(?:\s?\d){10,30}\b/g, '[IBAN]');
+  // 3) Telefonnummern: mit 0 oder +<Ländercode> beginnend, nur Ziffern und
+  //    einzelne Trennzeichen (keine Buchstaben/Zeilensprünge), 9–16 Ziffern.
+  //    Die Untergrenze 9 hält kurze Datumsangaben wie „01.02.2026" heraus.
+  t = t.replace(/\(?(?:\+\d{1,3}|0)(?:[ /.\-()]{0,2}\d){6,15}/g, (m) => {
+    const z = m.replace(/\D/g, '');
+    return (z.length >= 9 && z.length <= 16) ? '[Telefon]' : m;
+  });
+  // 4) Ansprechpartner-Name (auch in Grußformeln)
+  [[ap.vorname, ap.name].filter(Boolean).join(' '), ap.vorname, ap.name]
+    .filter((n) => n && n.length > 2)
+    .forEach((n) => { t = t.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[Name]'); });
+  return t;
+};
+
 CRM.mailAntwort.buildBlock = function (contactId, commId) {
   const c = CRM.db.getContact(contactId);
   if (!c) return null;
@@ -784,11 +810,7 @@ CRM.mailAntwort.buildBlock = function (contactId, commId) {
     // der Rest ist Meta und lenkt vom fachlichen Text ab.
     body = body.split('\n').filter((l) => !/^\s*(Von|An|From|To|Cc|Gesendet|Sent|Datum|Date|Betreff|Subject)\s*:/i.test(l)).join('\n');
     if (sparsam) {
-      body = body.replace(/[\w.+-]+@[\w.-]+\.\w+/g, '[E-Mail-Adresse]');
-      // Namen des Ansprechpartners (auch in Grußformeln) maskieren
-      [apName, ap.vorname, ap.name].filter((n) => n && n.length > 2).forEach((n) => {
-        body = body.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[Name]');
-      });
+      body = CRM.mailAntwort.anonymisiere(body, ap);
     }
     z.push(body.replace(/\n{3,}/g, '\n\n').trim());
   } else {
@@ -808,7 +830,7 @@ CRM.mailAntwort.prepare = function (contactId, commId) {
       <pre style="background:var(--bg);padding:10px;border-radius:6px;font-size:11px;max-height:34vh;overflow:auto;white-space:pre-wrap">${esc(block)}</pre>
       <p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">
         ${sparsam
-          ? '🔒 Datensparsam: Klarnamen, Telefon, Mailadressen und Straße wurden entfernt — Firma und Projekt bleiben als Referenz erhalten.'
+          ? '🔒 Datensparsam: Klarnamen, Telefonnummern, Mailadressen, IBANs und Straße wurden aus dem Text entfernt — Firma und Projekt bleiben als Referenz erhalten.'
           : '⚠️ Vollständig: enthält auch Ansprechpartner und Kontaktdaten. Umschaltbar in den Einstellungen.'}
       </p>
       <div class="modal-footer">
