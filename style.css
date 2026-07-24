@@ -444,6 +444,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
    kein zweites Mobile-Template). data-label macht jede Zelle
    selbstbeschriftend.
    ============================================================ */
+/* "Heute": kompakte Tageszeilen am Handy — Firma (Zeile 1), Ort + Grund
+   (Zeile 2). Die vielen Schnellaktions-Buttons und Kategorie-Badges
+   quetschten sonst den Firmennamen weg. Alles davon steckt im Kontakt,
+   den ein Tipp auf die Zeile oeffnet. */
+@media (max-width:768px){
+  #view-agenda .li-quick{display:none}
+  #view-agenda .list-item .li-badges{display:none}
+  #view-agenda .list-item .li-cal{display:none}
+  #view-agenda .list-item{padding:8px 10px}
+  #view-agenda .li-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+
 @media (max-width:768px){
   .contact-table.mobile-cards thead{display:none}
   .contact-table.mobile-cards tbody{display:block}

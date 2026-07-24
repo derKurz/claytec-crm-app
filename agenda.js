@@ -102,19 +102,20 @@ CRM.renderHeuteListe = function () {
 };
 
 CRM.visitRow = function (c, due) {
-  const label = due.diffDays < 0 ? `${-due.diffDays} Tage überfällig` : (due.diffDays === 0 ? 'heute' : `in ${due.diffDays} Tagen`);
+  const label = due.diffDays < 0 ? `${-due.diffDays} Tage überfällig` : (due.diffDays === 0 ? 'heute fällig' : `in ${due.diffDays} Tagen`);
+  const ort = [c.plz, c.ort].filter(Boolean).join(' ');
   return `
     <div class="list-item">
       <input type="checkbox" class="agenda-check" data-id="${c.id}" style="width:auto;margin-right:10px" ${CRM._agendaSelection.has(c.id) ? 'checked' : ''}>
       <div class="li-main" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">
-        <div class="li-title">📍 Besuch fällig: ${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
-        <div class="li-sub">${esc(c.plz)} ${esc(c.ort)} · letzter Besuch: ${CRM.formatLastVisit(c)} · ${label}</div>
+        <div class="li-title">📍 ${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
+        <div class="li-sub">${esc(ort)} · Besuch ${label}</div>
         <div class="li-badges">
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
         </div>
       </div>
-      ${CRM.quickActionButtons(c)}
+      <div class="li-quick">${CRM.quickActionButtons(c)}</div>
       <button class="btn btn-sm" onclick="event.stopPropagation();CRM.quickVisitFromAgenda('${c.id}')">📍 Besuch heute</button>
     </div>`;
 };
@@ -132,10 +133,10 @@ CRM.taskRow = function (t, st) {
       <input type="checkbox" style="width:auto;margin-right:10px" onchange="CRM.toggleTaskDone('${t.id}')">
       <div class="li-main" ${c ? `onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"` : (p ? `onclick="CRM.openProjectDetail('${p.id}')" style="cursor:pointer"` : '')}>
         <div class="li-title">✓ ${esc(t.title)}</div>
-        <div class="li-sub">${sub} · fällig ${esc(t.due)} (${dueLabel})</div>
+        <div class="li-sub">${sub} · ${dueLabel}</div>
       </div>
       ${c ? `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.muster.open('${c.id}','${t.id}')" title="Muster/Musterbuch bestellen und Aufgabe erledigen">📦 Muster</button>` : ''}
-      <button class="btn btn-sm" onclick="event.stopPropagation();CRM.exportTaskICS('${t.id}')" title="In Kalender">📅</button>
+      <button class="btn btn-sm li-cal" onclick="event.stopPropagation();CRM.exportTaskICS('${t.id}')" title="In Kalender">📅</button>
       <button class="btn btn-sm" onclick="event.stopPropagation();CRM.db.deleteTask('${t.id}');CRM.renderAgenda()" title="Löschen">🗑</button>
     </div>`;
 };
