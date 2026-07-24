@@ -104,12 +104,16 @@ CRM.renderHeuteListe = function () {
 CRM.visitRow = function (c, due) {
   const label = due.diffDays < 0 ? `${-due.diffDays} Tage überfällig` : (due.diffDays === 0 ? 'heute fällig' : `in ${due.diffDays} Tagen`);
   const ort = [c.plz, c.ort].filter(Boolean).join(' ');
+  // Dritte Zeile: der Betreff — was beim fälligen Besuch ansteht (offene
+  // Aufgaben + nächster Schritt). Nur wenn vorhanden.
+  const betreff = CRM.getOpenTodoText(c);
   return `
     <div class="list-item">
       <input type="checkbox" class="agenda-check" data-id="${c.id}" style="width:auto;margin-right:10px" ${CRM._agendaSelection.has(c.id) ? 'checked' : ''}>
       <div class="li-main" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">
         <div class="li-title">📍 ${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
         <div class="li-sub">${esc(ort)} · Besuch ${label}</div>
+        ${betreff ? `<div class="li-sub li-betreff">🎯 ${esc(betreff)}</div>` : ''}
         <div class="li-badges">
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>

@@ -455,6 +455,8 @@ tr:hover td{background:rgba(255,255,255,.03)}
   #view-agenda .list-item{padding:8px 10px}
   #view-agenda .li-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
+/* Betreff-Zeile (was beim faelligen Besuch ansteht) hervorheben */
+#view-agenda .li-betreff{color:var(--text);font-weight:600;margin-top:2px}
 
 @media (max-width:768px){
   .contact-table.mobile-cards thead{display:none}
