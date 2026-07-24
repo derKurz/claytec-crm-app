@@ -280,18 +280,16 @@ CRM.renderContactDetailModal = function (id) {
       </div>
     </div>
 
-    <div class="card">
-      <h3 style="margin-top:0">Aufgaben</h3>
+    ${CRM.cdSection('aufgaben', 'Aufgaben', `
       <div id="cd-tasks">${CRM.renderContactTasks(c.id)}</div>
       <div class="row" style="margin-top:8px;align-items:flex-end">
         <div class="col"><input id="cd-task-title" placeholder="Neue Aufgabe für diesen Kontakt" onkeydown="if(event.key==='Enter')CRM.addContactTask('${c.id}')"></div>
         <div class="col" style="max-width:160px"><input type="date" id="cd-task-due" value="${new Date().toISOString().slice(0, 10)}"></div>
         <button class="btn btn-primary" style="min-height:44px" onclick="CRM.addContactTask('${c.id}')">💾 Aufgabe speichern</button>
       </div>
-    </div>
+    `, true)}
 
-    <div class="card">
-      <h3 style="margin-top:0">Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span></h3>
+    ${CRM.cdSection('aktivitaeten', `Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span>`, `
       <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
         <button class="btn btn-primary" onclick="CRM.quickVisitToday('${c.id}')">📍 Besuch heute</button>
         <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
@@ -307,7 +305,7 @@ CRM.renderContactDetailModal = function (id) {
         <button class="btn btn-sm" onclick="CRM.saveManualVisit('${c.id}')">Eintrag speichern</button>
       </details>
       ${CRM.activities.render(c.id)}
-    </div>
+    `, true)}
 
     ${CRM.cdSection('links', 'Verknüpfungen', `
       <div id="cd-links">${linksHtml}</div>
