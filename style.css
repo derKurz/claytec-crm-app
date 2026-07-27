@@ -143,6 +143,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 }
 .modal h2{margin-top:0}
 .modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+@media (min-width:769px){
+  /* Am PC das Fenster mit der Maus vergrößerbar — Griff unten rechts.
+     Startbreite bleibt 640px, ziehbar bis fast Vollbild. */
+  .modal{width:min(640px,94vw);max-width:94vw;max-height:94vh;min-width:460px;min-height:300px;resize:both;overflow:auto}
+}
 
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--border)}
@@ -677,7 +682,9 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 /* ============================================================
    Aktivitäten-Zeitstrahl im Kontaktprofil
    ============================================================ */
-.act-list{border-left:2px solid var(--border);padding-left:14px;margin-left:5px}
+/* Bei vielen Aktivitäten scrollt die Liste in sich, statt den Dialog
+   endlos zu strecken. */
+.act-list{border-left:2px solid var(--border);padding-left:14px;margin-left:5px;max-height:46vh;overflow-y:auto;overflow-x:hidden}
 .act-row{position:relative;display:flex;align-items:flex-start;gap:8px;padding:8px 0 10px}
 .act-row+.act-row{border-top:1px solid var(--border)}
 .act-dot{position:absolute;left:-21px;top:12px;width:12px;height:12px;border-radius:50%;
