@@ -401,6 +401,36 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 }
 
+/* Tastatur-Navigation in Treffer-Dropdowns: ↑/↓ markiert einen Treffer,
+   Enter löst ihn aus. Gibt true zurück, wenn die Taste verarbeitet wurde
+   (dann soll der Aufrufer nichts weiter tun). */
+CRM.dropdownKeydown = function (e, containerId, itemSel) {
+  const box = document.getElementById(containerId);
+  if (!box || box.classList.contains('hidden')) return false;
+  const items = Array.prototype.slice.call(box.querySelectorAll(itemSel));
+  if (!items.length) return false;
+  let idx = items.findIndex((i) => i.classList.contains('kbd-active'));
+  if (e.key === 'ArrowDown') idx = (idx + 1) % items.length;
+  else if (e.key === 'ArrowUp') idx = (idx - 1 + items.length) % items.length;
+  else if (e.key === 'Enter') {
+    const target = items[idx >= 0 ? idx : 0];
+    if (target) {
+      e.preventDefault();
+      // Manche Dropdowns wählen per mousedown (Header/Mail), andere per
+      // click (Karte) — beides auslösen, damit Enter überall greift.
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      target.click();
+      return true;
+    }
+    return false;
+  } else return false;
+  e.preventDefault();
+  items.forEach((i) => i.classList.remove('kbd-active'));
+  items[idx].classList.add('kbd-active');
+  items[idx].scrollIntoView({ block: 'nearest' });
+  return true;
+};
+
 CRM.openContactDetail = function (id) {
   if (CRM.renderContactDetailModal) return CRM.renderContactDetailModal(id);
   CRM.toast('Kontaktprofil folgt in Schritt 6', 'error');
@@ -615,6 +645,7 @@ CRM.initHeaderSearch = function () {
   input.addEventListener('input', render);
   input.addEventListener('focus', render);
   input.addEventListener('keydown', (e) => {
+    if (CRM.dropdownKeydown(e, 'header-search-results', '.header-search-item')) return;
     if (e.key === 'Escape') { input.value = ''; results.classList.add('hidden'); input.blur(); }
   });
   document.addEventListener('click', (e) => {

@@ -316,8 +316,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .map-search-item{padding:7px 9px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .map-search-item:last-child{border-bottom:none}
 .map-search-item:hover{background:var(--bg-elev)}
-/* Tour-Stopp-Namen im Panel */
+/* Tastatur-Markierung in Treffer-Dropdowns (↑/↓) */
+.kbd-active{background:var(--accent) !important;color:#06121c !important}
+.kbd-active *{color:#06121c !important}
+/* Tour-Stopp-Zeilen im Panel: Nummer · Name · Sortier-/Entfernen-Buttons */
 .map-tour-name{font-size:12px;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.map-tour-row{display:flex;align-items:center;gap:4px;padding:3px 0;font-size:12px}
+.map-tour-num{flex-shrink:0;width:18px;height:18px;border-radius:50%;background:#1f7ae0;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.map-tour-label{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.map-tour-label:hover{color:var(--accent-2)}
+.map-tour-btn{flex-shrink:0;width:22px;height:22px;padding:0;font-size:11px;line-height:1;border:1px solid var(--border);border-radius:4px;background:var(--bg-elev2);color:var(--text);cursor:pointer}
+.map-tour-btn:hover:not(:disabled){border-color:var(--accent)}
+.map-tour-btn:disabled{opacity:.3;cursor:default}
 /* nummerierte Tour-Marker auf der Karte */
 .tour-num{width:30px;height:30px;border-radius:50%;background:#1f7ae0;color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5)}
 .tour-num-start{background:#1D9E75}

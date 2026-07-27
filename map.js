@@ -607,7 +607,7 @@ CRM.map.renderControls = function () {
     <div class="row" style="gap:6px;margin-bottom:4px;position:relative">
       <input id="map-ort-suche" placeholder="Kontakt suchen — oder Ort/Adresse" style="flex:1" autocomplete="off"
              oninput="CRM.map.searchInput()"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();CRM.map.searchEnter();}">
+             onkeydown="if(CRM.dropdownKeydown(event,'map-search-results','.map-search-item'))return; if(event.key==='Enter'){event.preventDefault();CRM.map.sucheOrt();}">
       <button class="btn btn-primary" id="map-ort-btn" style="min-height:40px;white-space:nowrap" onclick="CRM.map.sucheOrt()">📍 Ort</button>
     </div>
     <div id="map-search-results" class="hidden"></div>
@@ -627,6 +627,7 @@ CRM.map.renderControls = function () {
       <div id="map-tour-names" style="margin-bottom:8px"></div>
       <div id="map-tour-info" class="hidden">
         <button class="btn btn-sm" style="width:100%;margin-bottom:6px" onclick="CRM.map.showTour()">🔎 Tour auf Karte anzeigen</button>
+        <button class="btn btn-sm" style="width:100%;margin-bottom:6px" onclick="CRM.map.optimizeTour()">🔀 Reihenfolge optimieren</button>
         <button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:6px" onclick="CRM.map.startTour()">🗺️ Route in Google Maps öffnen</button>
         <button class="btn btn-sm" style="width:100%" onclick="CRM.map.clearTourSelection()">Auswahl leeren</button>
       </div>
@@ -716,60 +717,107 @@ CRM.map.updatePanelHint = function () {
   el.textContent = teile.join(' · ') || 'eingeklappt';
 };
 
+/* Manuelle Reihenfolge der Tour-Stopps. selectedIds bleibt das Set für
+   schnelle Treffer-Prüfungen; _tourOrder hält die Reihenfolge und wird
+   bei jeder Änderung mit dem Set abgeglichen (neue Stopps ans Ende,
+   entfernte raus) — so bleibt die vom Nutzer gesetzte Reihenfolge stehen. */
+CRM.map._syncTourOrder = function () {
+  CRM.map._tourOrder = (CRM.map._tourOrder || []).filter((id) => CRM.map.selectedIds.has(id));
+  CRM.map.selectedIds.forEach((id) => { if (!CRM.map._tourOrder.includes(id)) CRM.map._tourOrder.push(id); });
+  return CRM.map._tourOrder;
+};
+
+/* Gesamt-Luftlinie der Tour (Start-Suchort + Stopps in Reihenfolge). */
+CRM.map._tourDistanceKm = function () {
+  const pts = [];
+  if (CRM.map._suchortInTour && CRM.map._suchort && CRM.map._suchort.lat != null) pts.push([CRM.map._suchort.lat, CRM.map._suchort.lng]);
+  (CRM.map._tourOrder || []).forEach((id) => { const c = CRM.db.getContact(id); if (c && c.lat != null && c.lng != null) pts.push([c.lat, c.lng]); });
+  let km = 0;
+  for (let i = 1; i < pts.length; i++) km += CRM.haversineKm(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
+  return Math.round(km);
+};
+
+CRM.map.moveStop = function (id, dir) {
+  const arr = CRM.map._tourOrder || [];
+  const i = arr.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= arr.length) return;
+  arr[i] = arr.splice(j, 1, arr[i])[0];
+  CRM.map.updateTourCount();
+  if (CRM.map._tourLayer) CRM.map.showTour(); // Visualisierung mitziehen
+};
+
+/* Reihenfolge automatisch optimieren (Nearest-Neighbor ab Start). */
+CRM.map.optimizeTour = function () {
+  const contacts = (CRM.map._tourOrder || []).map((id) => CRM.db.getContact(id)).filter((c) => c && c.lat != null && c.lng != null);
+  if (contacts.length < 3) { CRM.toast('Zum Optimieren mindestens 3 Stopps mit Koordinaten.', 'error'); return; }
+  CRM.map._tourOrder = CRM.optimizeRouteOrder(contacts.slice()).map((c) => c.id);
+  CRM.map.updateTourCount();
+  if (CRM.map._tourLayer) CRM.map.showTour();
+  CRM.toast('Reihenfolge optimiert.', 'success');
+};
+
 CRM.map.updateTourCount = function () {
-  const n = CRM.map.selectedIds.size;
+  const order = CRM.map._syncTourOrder();
   const mitSuchort = !!(CRM.map._suchortInTour && CRM.map._suchort);
-  const gesamt = n + (mitSuchort ? 1 : 0);
+  const gesamt = order.length + (mitSuchort ? 1 : 0);
+  const km = CRM.map._tourDistanceKm();
   const summary = document.getElementById('map-tour-summary');
   const names = document.getElementById('map-tour-names');
   const info = document.getElementById('map-tour-info');
   if (summary) {
     summary.textContent = gesamt
-      ? `${gesamt} Stopp${gesamt === 1 ? '' : 's'} ausgewählt:`
+      ? `${gesamt} Stopp${gesamt === 1 ? '' : 's'}` + (km ? ` · ~${km} km` : '') + ':'
       : 'Noch keine Stopps ausgewählt — auf einen Pin klicken und „Zur Tour hinzufügen“ abhaken.';
   }
-  // Namen der ausgewählten Stopps (je eine kompakte Zeile), Klick zentriert den Pin
   if (names) {
-    const zeilen = [];
-    if (mitSuchort) zeilen.push(`<div class="map-tour-name">📍 ${esc(CRM.map._suchort.name)} <span style="color:var(--text-dim)">(Suchort)</span></div>`);
-    Array.from(CRM.map.selectedIds).forEach((id) => {
+    const rows = [];
+    if (mitSuchort) rows.push(`<div class="map-tour-row"><span class="map-tour-num" style="background:#1D9E75">📍</span><span class="map-tour-label">${esc(CRM.map._suchort.name)} <span style="color:var(--text-dim)">(Start)</span></span></div>`);
+    order.forEach((id, i) => {
       const c = CRM.db.getContact(id);
-      if (c) zeilen.push(`<div class="map-tour-name" onclick="CRM.showContactOnMap('${c.id}')" style="cursor:pointer">• ${esc(c.firma1)}${c.ort ? ' <span style="color:var(--text-dim)">' + esc(c.ort) + '</span>' : ''}</div>`);
+      if (!c) return;
+      rows.push(`<div class="map-tour-row">
+        <span class="map-tour-num">${i + 1 + (mitSuchort ? 1 : 0)}</span>
+        <span class="map-tour-label" onclick="CRM.showContactOnMap('${id}')" title="Auf Karte zeigen">${esc(c.firma1)}${c.ort ? ' · ' + esc(c.ort) : ''}</span>
+        <button class="map-tour-btn" title="nach oben" onclick="CRM.map.moveStop('${id}',-1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="map-tour-btn" title="nach unten" onclick="CRM.map.moveStop('${id}',1)" ${i === order.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="map-tour-btn" title="entfernen" onclick="CRM.map.toggleSelect('${id}')">✕</button>
+      </div>`);
     });
-    names.innerHTML = zeilen.join('');
+    names.innerHTML = rows.join('');
   }
   if (info) info.classList.toggle('hidden', !gesamt);
 };
 
-/* Tour auf der Karte VISUALISIEREN: nummerierte Marker in optimierter
-   Reihenfolge + verbindende Route-Linie, dann darauf zoomen. */
+/* Tour auf der Karte VISUALISIEREN: nummerierte Marker in der aktuellen
+   (manuellen) Reihenfolge + Route-Linie. Eigene Pane mit hohem z-index,
+   damit die Nummern IMMER über den Clustern liegen und sichtbar sind. */
 CRM.map.showTour = function () {
+  const map = CRM.map.instance;
+  if (!map) return;
   const stops = [];
   if (CRM.map._suchortInTour && CRM.map._suchort && CRM.map._suchort.lat != null) {
     stops.push({ lat: CRM.map._suchort.lat, lng: CRM.map._suchort.lng, name: CRM.map._suchort.name, suchort: true });
   }
-  Array.from(CRM.map.selectedIds).forEach((id) => {
+  CRM.map._syncTourOrder().forEach((id) => {
     const c = CRM.db.getContact(id);
     if (c && c.lat != null && c.lng != null) stops.push({ lat: c.lat, lng: c.lng, name: c.firma1, id: c.id });
   });
-  if (!stops.length) { CRM.toast('Keine Tour-Stopps mit Koordinaten ausgewählt — bitte ggf. „Fehlende Pins geocodieren".', 'error'); return; }
+  if (!stops.length) { CRM.toast('Keine Tour-Stopps mit Koordinaten — bitte ggf. „Fehlende Pins geocodieren".', 'error'); return; }
 
-  // Reihenfolge optimieren (Suchort bleibt vorn als Start)
-  let geordnet = stops;
-  if (stops.length > 2 && CRM.optimizeRouteOrder) {
-    try { geordnet = CRM.optimizeRouteOrder(stops.slice()); } catch (e) { geordnet = stops; }
-  }
+  // Panes anlegen (über dem Cluster-/Marker-Pane, das bei Leaflet bei 600 liegt)
+  if (!map.getPane('tourLinePane')) { map.createPane('tourLinePane'); map.getPane('tourLinePane').style.zIndex = 640; }
+  if (!map.getPane('tourPane')) { map.createPane('tourPane'); map.getPane('tourPane').style.zIndex = 690; }
 
-  const map = CRM.map.instance;
-  if (!map) return;
   if (CRM.map._tourLayer) { map.removeLayer(CRM.map._tourLayer); CRM.map._tourLayer = null; }
   const lg = L.layerGroup();
-  const pts = geordnet.map((s) => [s.lat, s.lng]);
-  if (pts.length > 1) L.polyline(pts, { color: '#1f7ae0', weight: 4, opacity: .85, dashArray: '7 7' }).addTo(lg);
-  geordnet.forEach((s, i) => {
+  const pts = stops.map((s) => [s.lat, s.lng]);
+  if (pts.length > 1) L.polyline(pts, { color: '#1f7ae0', weight: 4, opacity: .9, dashArray: '7 7', pane: 'tourLinePane' }).addTo(lg);
+  stops.forEach((s, i) => {
     L.marker([s.lat, s.lng], {
+      pane: 'tourPane',
       icon: L.divIcon({ className: 'tour-num-wrap', html: `<div class="tour-num${s.suchort ? ' tour-num-start' : ''}">${i + 1}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] }),
-      zIndexOffset: 1000,
+      zIndexOffset: 2000,
     }).bindTooltip(`${i + 1}. ${esc(s.name)}`, { direction: 'top' }).addTo(lg);
   });
   lg.addTo(map);
@@ -779,7 +827,8 @@ CRM.map.showTour = function () {
   map.invalidateSize();
   if (pts.length === 1) map.setView(pts[0], 13);
   else map.fitBounds(L.latLngBounds(pts).pad(0.25));
-  CRM.toast('Tour auf der Karte — ' + geordnet.length + ' Stopps in Reihenfolge.', 'success');
+  const km = CRM.map._tourDistanceKm();
+  CRM.toast('Tour: ' + stops.length + ' Stopps' + (km ? ' · ~' + km + ' km (Luftlinie)' : ''), 'success');
 };
 
 /* Tour-Visualisierung wieder entfernen. */
@@ -789,6 +838,7 @@ CRM.map.hideTour = function () {
 
 CRM.map.clearTourSelection = function () {
   CRM.map.selectedIds.clear();
+  CRM.map._tourOrder = [];
   CRM.map.hideTour();
   CRM.map.refresh();
   CRM.map.updateTourCount();
@@ -799,17 +849,17 @@ CRM.map.updateStatusLine = function (total, withCoords, shown) {
 };
 
 CRM.map.startTour = function () {
-  const ids = Array.from(CRM.map.selectedIds);
+  const ids = CRM.map._syncTourOrder();
   const suchortStopp = CRM.map._suchortInTour ? CRM.map.suchortAlsRoutenobjekt() : null;
   if (!ids.length && !suchortStopp) {
     CRM.toast('Bitte zuerst im Tour-Modus Pins anklicken.', 'error');
     return;
   }
+  // Manuelle Reihenfolge aus dem Panel übernehmen (Suchort vorn als Start).
+  // Kein Auto-Optimize mehr — die Reihenfolge stellt der Nutzer selbst ein
+  // (Pfeile im Panel bzw. „Reihenfolge optimieren").
   let contacts = ids.map((id) => CRM.db.getContact(id)).filter(Boolean);
-  // Suchort als Startpunkt voranstellen — die Nearest-Neighbor-Optimierung
-  // beginnt beim ersten Eintrag, dadurch wird ab dem Suchort geplant.
   if (suchortStopp) contacts = [suchortStopp].concat(contacts);
-  contacts = CRM.optimizeRouteOrder(contacts);
   const legs = CRM.buildGoogleMapsLegs(contacts, 10);
   CRM.showRouteLegsModal(legs);
 };

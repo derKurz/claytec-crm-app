@@ -540,6 +540,7 @@ CRM.mailAblage.renderMatch = function (showPicker) {
     });
   };
   input.addEventListener('input', render);
+  input.addEventListener('keydown', (e) => { CRM.dropdownKeydown(e, 'ma-contact-results', '.header-search-item'); });
 };
 
 CRM.mailAblage.save = function () {
