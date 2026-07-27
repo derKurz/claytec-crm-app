@@ -307,6 +307,20 @@ tr:hover td{background:rgba(255,255,255,.03)}
 @media (min-width:769px){ .map-swipe-zone{display:none} } /* am Laptop wird geklickt */
 #map-controls{position:absolute;top:10px;left:10px;z-index:500;max-width:230px;max-height:85vh;overflow-y:auto}
 .map-filter-fields{display:block}
+/* Einklappbare Unterabschnitte (Filter/Tour) im Kartenpanel */
+.map-sec-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;font-weight:600;margin:8px 0 4px;min-height:30px}
+.map-sec-head:hover{color:var(--accent-2)}
+.map-sec-body{}
+/* Kontakt-Autocomplete im Kartensuchfeld */
+#map-search-results{max-height:230px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin:0 0 8px;background:var(--bg-elev2)}
+.map-search-item{padding:7px 9px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.map-search-item:last-child{border-bottom:none}
+.map-search-item:hover{background:var(--bg-elev)}
+/* Tour-Stopp-Namen im Panel */
+.map-tour-name{font-size:12px;padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* nummerierte Tour-Marker auf der Karte */
+.tour-num{width:30px;height:30px;border-radius:50%;background:#1f7ae0;color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.5)}
+.tour-num-start{background:#1D9E75}
 @media (max-width:768px){
   #map-controls{max-width:200px}
   .map-filter-fields{display:none}
