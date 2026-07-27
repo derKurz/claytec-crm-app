@@ -52,6 +52,7 @@ CRM.activities.build = function (contactId) {
     list.push({
       kat: 'besuch', icon: '📍', label: 'Besuch', datum: v.date,
       text: v.note || '(ohne Notiz)', quelle: 'visit', id: v.id,
+      status: v.status || 'offen', erledigtAm: v.erledigtAm || '',
     });
   });
 
@@ -64,6 +65,7 @@ CRM.activities.build = function (contactId) {
       label: istMail ? ('E-Mail ' + richtung) : (CRM.COMM_TYPE_LABELS[m.type] || 'Kommunikation').replace(/^\S+\s/, ''),
       datum: m.date, text: m.subject || (m.body || '').slice(0, 80) || '(ohne Betreff)',
       projectId: (m.projectIds || [])[0] || null, quelle: 'comm', id: m.id,
+      status: m.status || 'offen', erledigtAm: m.erledigtAm || '',
       // Eingegangene Mails bekommen die Antwort-Aktionen (siehe renderInner)
       eingehendeMail: istMail && m.direction !== 'out',
     });
@@ -79,6 +81,7 @@ CRM.activities.build = function (contactId) {
       datum: (j.createdAt || '').slice(0, 10),
       text: j.content || '(ohne Text)',
       projectId: j.projectId || null, quelle: 'journal', id: j.id,
+      status: j.status || 'offen', erledigtAm: j.erledigtAm || '',
     });
   });
 
@@ -87,6 +90,7 @@ CRM.activities.build = function (contactId) {
       kat: 'aufgabe', icon: '✓', label: 'Aufgabe erledigt',
       datum: (t.doneAt || t.due || '').slice(0, 10), text: t.title,
       projectId: t.projectId || null, quelle: 'task', id: t.id,
+      status: 'erledigt', erledigtAm: (t.doneAt || '').slice(0, 10), // Aufgaben stehen hier immer als erledigt
     });
   });
 
@@ -114,7 +118,8 @@ CRM.activities.render = function (contactId) {
 CRM.activities.renderInner = function (contactId) {
   const alle = CRM.activities.build(contactId);
   const f = CRM.activities._filter;
-  const gefiltert = (f === 'alle') ? alle : alle.filter((a) => a.kat === f);
+  let gefiltert = (f === 'alle') ? alle : alle.filter((a) => a.kat === f);
+  if (CRM.activities._hideErledigt) gefiltert = gefiltert.filter((a) => a.status !== 'erledigt');
 
   const zaehler = {};
   alle.forEach((a) => { zaehler[a.kat] = (zaehler[a.kat] || 0) + 1; });
@@ -130,14 +135,23 @@ CRM.activities.renderInner = function (contactId) {
   const hatSekundaer = CRM.activities.SECONDARY.some(([k]) => zaehler[k]);
 
   const zeilen = gefiltert.map((a) => {
-    const farbe = CRM.activities.FARBE[a.kat] || '#888780';
+    const erledigt = a.status === 'erledigt';
+    const inArbeit = a.status === 'inArbeit';
+    const farbe = erledigt ? '#1D9E75' : (inArbeit ? '#E0A030' : (CRM.activities.FARBE[a.kat] || '#888780'));
     const p = a.projectId ? CRM.db.getProject(a.projectId) : null;
     const projChip = p
       ? `<span class="badge" style="cursor:pointer;margin-top:4px" onclick="event.stopPropagation();CRM.closeModal();CRM.switchTab('projekte');CRM.openProjectDetail('${p.id}')">${(p.kategorie || 'baustelle') === 'gross' ? '🏢' : '🏠'} ${esc2(p.name)}</span>`
       : '';
     const datum = a.datum ? a.datum.split('-').reverse().join('.') : '—';
+    const statusVermerk = erledigt
+      ? `<div class="act-status act-status-done">✓ Erledigt${a.erledigtAm ? ' am ' + a.erledigtAm.split('-').reverse().join('.') : ''}</div>`
+      : (inArbeit ? '<div class="act-status act-status-wip">🔧 In Arbeit</div>' : '');
+    // Status-Knopf nur für echte Vorgänge — die Aufgaben-Historie steht ohnehin fest auf erledigt
+    const statusBtn = a.quelle !== 'task'
+      ? `<button class="btn btn-sm act-status-btn" title="Status setzen: offen / in Arbeit / erledigt" onclick="CRM.activities.statusDialog('${contactId}','${a.quelle}','${a.id}')">${erledigt ? '↩' : '✓'}</button>`
+      : '';
     return `
-      <div class="act-row">
+      <div class="act-row${erledigt ? ' act-row-done' : ''}">
         <span class="act-dot" style="background:${farbe}"></span>
         <div class="act-main">
           <div class="act-head">
@@ -145,6 +159,7 @@ CRM.activities.renderInner = function (contactId) {
             <span class="act-date">${esc2(datum)}</span>
           </div>
           <div class="act-text">${esc2(a.text)}</div>
+          ${statusVermerk}
           ${projChip}
           ${a.eingehendeMail ? `
             <div class="act-actions">
@@ -153,6 +168,7 @@ CRM.activities.renderInner = function (contactId) {
             </div>` : ''}
         </div>
         <div class="act-btns">
+          ${statusBtn}
           <button class="btn btn-sm act-edit" title="Eintrag bearbeiten"
             onclick="CRM.activities.edit('${contactId}','${a.quelle}','${a.id}')">✏️</button>
           <button class="btn btn-sm act-del" title="Eintrag löschen"
@@ -167,6 +183,7 @@ CRM.activities.renderInner = function (contactId) {
       ${hatSekundaer || CRM.activities._showMore
         ? `<button class="qf-btn" onclick="CRM.activities.toggleMore('${contactId}')">${CRM.activities._showMore ? '▴ Weniger' : '▾ Mehr'}</button>${secondary}`
         : ''}
+      <button class="qf-btn ${CRM.activities._hideErledigt ? 'active' : ''}" style="margin-left:auto" title="Erledigte Aktivitäten aus-/einblenden" onclick="CRM.activities.toggleHideErledigt('${contactId}')">${CRM.activities._hideErledigt ? '👁 Erledigte zeigen' : '✓ Erledigte ausblenden'}</button>
     </div>
     <div class="act-list">
       ${zeilen || '<p style="color:var(--text-dim);font-size:13px;margin:8px 0">Noch keine Aktivitäten' + (f !== 'alle' ? ' in dieser Kategorie' : '') + '.</p>'}
@@ -189,6 +206,57 @@ CRM.activities.remove = function (contactId, quelle, id) {
   else if (quelle === 'task') CRM.db.deleteTask(id);
   CRM.renderContactDetailModal(contactId);
   CRM.toastUndo('Eintrag bei „' + (c ? c.firma1 : '') + '" gelöscht.');
+};
+
+/* ============================================================
+   Status einer Aktivität: offen / in Arbeit / erledigt (+ Datum)
+   ============================================================ */
+CRM.activities.toggleHideErledigt = function (contactId) {
+  CRM.activities._hideErledigt = !CRM.activities._hideErledigt;
+  CRM.activities.refresh(contactId);
+};
+
+CRM.activities._getStatus = function (contactId, quelle, id) {
+  let o = null;
+  if (quelle === 'visit') { const c = CRM.db.getContact(contactId); o = (c && (c.visits || []).find((v) => v.id === id)) || null; }
+  else if (quelle === 'comm') o = CRM.db.getComm(id);
+  else if (quelle === 'journal') o = CRM.db.getJournalEntries().find((x) => x.id === id);
+  o = o || {};
+  return { status: o.status || 'offen', erledigtAm: o.erledigtAm || '' };
+};
+
+CRM.activities.statusDialog = function (contactId, quelle, id) {
+  const akt = CRM.activities._getStatus(contactId, quelle, id);
+  const heute = new Date().toISOString().slice(0, 10);
+  const opt = (val, label) => `<label class="act-status-opt"><input type="radio" name="akt-status" value="${val}" ${akt.status === val ? 'checked' : ''}> ${label}</label>`;
+  CRM.openModal(`
+    <h2>Status der Aktivität</h2>
+    <div class="row" style="flex-direction:column;gap:10px;margin:12px 0">
+      ${opt('offen', '⚪ Offen')}
+      ${opt('inArbeit', '🟠 In Arbeit')}
+      ${opt('erledigt', '🟢 Erledigt')}
+    </div>
+    <div class="row" style="align-items:center;gap:8px">
+      <label style="margin:0">Erledigt am</label>
+      <input type="date" id="akt-erledigt-datum" value="${escAttr(akt.erledigtAm || heute)}" style="max-width:170px">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.renderContactDetailModal('${contactId}')">Abbrechen</button>
+      <button class="btn btn-primary" onclick="CRM.activities.saveStatus('${contactId}','${quelle}','${id}')">💾 Speichern</button>
+    </div>
+  `, { dismissible: false });
+};
+
+CRM.activities.saveStatus = function (contactId, quelle, id) {
+  const sel = document.querySelector('input[name="akt-status"]:checked');
+  const status = sel ? sel.value : 'offen';
+  const datum = (document.getElementById('akt-erledigt-datum') || {}).value || '';
+  const patch = { status, erledigtAm: status === 'erledigt' ? datum : '' };
+  if (quelle === 'visit') CRM.updateVisit(contactId, id, patch);
+  else if (quelle === 'comm') CRM.db.updateComm(id, patch);
+  else if (quelle === 'journal') { const j = CRM.db.getJournalEntries().find((x) => x.id === id); if (j) { Object.assign(j, patch); CRM.db.saveJournal(); } }
+  CRM.renderContactDetailModal(contactId);
+  CRM.toast('Status: ' + { offen: 'Offen', inArbeit: 'In Arbeit', erledigt: 'Erledigt' }[status], 'success');
 };
 
 /* Neuen Eintrag anlegen — Typ vorgegeben, Datum und Projekt wählbar. */
