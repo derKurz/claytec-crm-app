@@ -456,6 +456,7 @@ document.addEventListener('DOMContentLoaded', () => {
     CRM.backup.exportJSON(); // zeigt eigene Meldung (Ordner ODER Download)
   });
   document.getElementById('btn-backup-import').addEventListener('click', () => {
+    CRM._backupMergeDirect = false;
     document.getElementById('file-input-backup').click();
   });
   document.getElementById('file-input-backup').addEventListener('change', (e) => {
@@ -465,7 +466,8 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result);
-        CRM.confirmRestoreBackup(data);
+        if (CRM._backupMergeDirect) { CRM._backupMergeDirect = false; CRM.confirmMerge(data); }
+        else CRM.confirmRestoreBackup(data);
       } catch (err) {
         CRM.toast('Backup-Datei ungültig: ' + err.message, 'error');
       }
@@ -530,8 +532,14 @@ CRM.initMobileNav = function () {
     closeSheet();
     CRM.backup.exportJSON();
   });
+  document.getElementById('more-sheet-merge').addEventListener('click', () => {
+    closeSheet();
+    CRM._backupMergeDirect = true; // direkt mischen, kein Ersetzen anbieten
+    document.getElementById('file-input-backup').click();
+  });
   document.getElementById('more-sheet-restore').addEventListener('click', () => {
     closeSheet();
+    CRM._backupMergeDirect = false;
     document.getElementById('file-input-backup').click();
   });
 
@@ -1013,6 +1021,22 @@ CRM.confirmRestoreBackup = function (data) {
   `);
   CRM._pendingRestoreData = data;
 };
+/* Dedizierter Laptop→Handy-Weg: nur zusammenführen, keine Ersetzen-Option
+   (schützt vor versehentlichem Plattmachen des Handy-Bestands). */
+CRM.confirmMerge = function (data) {
+  const n = (data.contacts || []).length;
+  CRM.openModal(`
+    <h2>🔀 Vom Laptop zusammenführen</h2>
+    <p>Diese Datei enthält <strong>${n}</strong> Kontakte und ${(data.projects || []).length} Projekte (Stand: ${esc(data.exportedAt || '?')}).</p>
+    <p style="color:var(--text-dim);font-size:13px">Die Daten werden <strong>hinzugefügt und aktualisiert</strong> — nichts auf diesem Gerät wird gelöscht. Bei gleicher ID gewinnt die Version aus der Datei (dein Laptop-Stand).</p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn btn-primary" onclick='CRM.doRestore("merge")'>🔀 Zusammenführen</button>
+    </div>
+  `);
+  CRM._pendingRestoreData = data;
+};
+
 CRM.doRestore = function (mode) {
   try {
     CRM.takeSnapshot('Vor Backup-Wiederherstellung');

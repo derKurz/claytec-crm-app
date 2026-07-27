@@ -555,9 +555,22 @@ CRM.mailAblage.save = function () {
   const pid = document.getElementById('ma-project').value;
   if (pid) comm.projectIds = [pid];
   CRM.db.addComm(comm);
-  CRM.closeModal();
-  CRM.toast(`✓ E-Mail bei „${c.firma1}" abgelegt${pid ? ' (+ Projekt)' : ''}.`, 'success');
   if (CRM.renderDashboard && document.querySelector('#view-start.active')) CRM.renderDashboard();
+  if (CRM.renderContactList && document.querySelector('#view-kontakte.active')) CRM.renderContactList();
+  CRM.mailAblage.showSaved(c.id, c.firma1, !!pid);
+};
+
+/* Nach dem Ablegen: statt nur zu schließen, direkt den Weg zum Kontakt
+   anbieten (die E-Mail liegt jetzt dort in den Aktivitäten). */
+CRM.mailAblage.showSaved = function (contactId, firma, mitProjekt) {
+  CRM.openModal(`
+    <h2 style="margin-top:0">✓ E-Mail abgelegt</h2>
+    <p style="color:var(--text-dim);font-size:13px">Bei <strong>${esc(firma)}</strong>${mitProjekt ? ' (+ Projekt)' : ''} gespeichert — sie erscheint jetzt in den Aktivitäten des Kontakts.</p>
+    <div class="row" style="flex-direction:column;gap:10px;margin-top:12px">
+      <button class="btn btn-primary" style="justify-content:center;padding:14px" onclick="CRM.openContactDetail('${contactId}')">→ Kontakt öffnen</button>
+      <button class="btn" style="justify-content:center;padding:14px" onclick="CRM.closeModal()">Fertig</button>
+    </div>
+  `);
 };
 
 /* ============================================================
@@ -822,23 +835,40 @@ CRM.mailAntwort.buildBlock = function (contactId, commId) {
 CRM.mailAntwort.prepare = function (contactId, commId) {
   const block = CRM.mailAntwort.buildBlock(contactId, commId);
   if (!block) return;
+  CRM.mailAntwort._lastBlock = block;
   const sparsam = CRM.db.getSettings().antwortDatensparsam !== false;
-  CRM._copyRichText('<pre>' + esc(block) + '</pre>', block).then(() => {
-    CRM.openModal(`
-      <h2>🤖 Antwort vorbereiten</h2>
-      <p style="color:var(--text-dim);font-size:13px">Der Block liegt in der Zwischenablage — in Claude Code einfügen, dort entsteht die fachliche Antwort (Korrespondenz-Skill + Technische Regeln).</p>
-      <pre style="background:var(--bg);padding:10px;border-radius:6px;font-size:11px;max-height:34vh;overflow:auto;white-space:pre-wrap">${esc(block)}</pre>
-      <p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">
-        ${sparsam
-          ? '🔒 Datensparsam: Klarnamen, Telefonnummern, Mailadressen, IBANs und Straße wurden aus dem Text entfernt — Firma und Projekt bleiben als Referenz erhalten.'
-          : '⚠️ Vollständig: enthält auch Ansprechpartner und Kontaktdaten. Umschaltbar in den Einstellungen.'}
-      </p>
-      <div class="modal-footer">
-        <button class="btn" onclick="CRM.renderContactDetailModal('${contactId}')">Zurück zum Kontakt</button>
-        <button class="btn btn-primary" onclick="CRM.closeModal()">Erledigt</button>
-      </div>
-    `, { dismissible: false });
-  }).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+  // Dialog IMMER zeigen (nicht erst nach erfolgreichem Kopieren) — am Handy
+  // scheitert das automatische Kopieren oft, dann braucht es den Button.
+  CRM.openModal(`
+    <h2>🤖 Antwort vorbereiten</h2>
+    <p style="color:var(--text-dim);font-size:13px">Block kopieren und in Claude einfügen — dort entsteht die fachliche Antwort (Korrespondenz-Skill + Technische Regeln).</p>
+    <pre id="ma-antwort-block" style="background:var(--bg);padding:10px;border-radius:6px;font-size:11px;max-height:34vh;overflow:auto;white-space:pre-wrap;user-select:all">${esc(block)}</pre>
+    <p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">
+      ${sparsam
+        ? '🔒 Datensparsam: Klarnamen, Telefonnummern, Mailadressen, IBANs und Straße wurden aus dem Text entfernt — Firma und Projekt bleiben als Referenz erhalten.'
+        : '⚠️ Vollständig: enthält auch Ansprechpartner und Kontaktdaten. Umschaltbar in den Einstellungen.'}
+    </p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.renderContactDetailModal('${contactId}')">Zurück zum Kontakt</button>
+      <button class="btn btn-primary" onclick="CRM.mailAntwort.copyBlock()">📋 Kopieren</button>
+    </div>
+  `, { dismissible: false });
+  // Zusätzlich einmal automatisch versuchen (klappt am Desktop lautlos)
+  CRM._copyRichText('<pre>' + esc(block) + '</pre>', block).catch(() => {});
+};
+
+/* Expliziter Kopier-Knopf — mit Fallback (Text markieren), falls die
+   Zwischenablage blockiert ist (typisch am Handy ohne Freigabe). */
+CRM.mailAntwort.copyBlock = function () {
+  const block = CRM.mailAntwort._lastBlock || '';
+  if (!block) return;
+  const fertig = () => CRM.toast('📋 Kopiert — in Claude einfügen (Strg+V / einfügen).', 'success');
+  CRM._copyRichText('<pre>' + esc(block) + '</pre>', block).then(fertig).catch(() => {
+    const el = document.getElementById('ma-antwort-block');
+    if (el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    try { document.execCommand('copy'); fertig(); }
+    catch (e) { CRM.toast('Text ist markiert — bitte mit Strg+C / langem Tippen kopieren.', 'error'); }
+  });
 };
 
 /* Gesendete Antwort dokumentieren: Ablage-Dialog vorausgefüllt öffnen
