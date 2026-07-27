@@ -513,7 +513,10 @@ CRM.mailAblage.renderMatch = function (showPicker) {
       <div style="margin-bottom:6px;font-size:13px">${showPicker ? '⚠ Kein Kontakt mit dieser Adresse gefunden — bitte wählen:' : 'Kontakt wählen (oder oben „▼ Zuordnen" für automatische Erkennung):'}</div>
       <input id="ma-contact-search" placeholder="Firma, Ort, PLZ suchen..." autocomplete="off">
       <div id="ma-contact-results" style="margin-top:6px"></div>
-      ${showPicker && CRM.mailAblage._detectedMail ? `<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.closeModal();CRM.emailParser.openDialog()">➕ Als neuen Kontakt anlegen</button>` : ''}
+      <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+        ${showPicker && CRM.mailAblage._detectedMail ? `<button class="btn btn-sm" onclick="CRM.closeModal();CRM.emailParser.openDialog()">➕ Als neuen Kontakt anlegen</button>` : ''}
+        <button class="btn btn-sm" onclick="CRM.mailAblage.showPrivateForm()">🏠 Als private Anfrage ablegen</button>
+      </div>
     </div>`;
   const input = document.getElementById('ma-contact-search');
   const results = document.getElementById('ma-contact-results');
@@ -571,6 +574,61 @@ CRM.mailAblage.showSaved = function (contactId, firma, mitProjekt) {
       <button class="btn" style="justify-content:center;padding:14px" onclick="CRM.closeModal()">Fertig</button>
     </div>
   `);
+};
+
+/* ============================================================
+   Private Erstanfrage: in einem Schritt einen Bauherr-Kontakt
+   anlegen und die E-Mail dort ablegen (ohne den vollen Anlege-
+   Dialog). Weitere Mails derselben Person werden künftig über die
+   Adresse automatisch diesem Kontakt zugeordnet.
+   ============================================================ */
+CRM.mailAblage._guessName = function (text) {
+  const t = String(text || '');
+  // 1) „Von:"-Zeile → Name vor <adresse>
+  const m = t.match(/^\s*(?:Von|From)\s*:\s*(.+)$/im);
+  if (m) {
+    let line = m[1].replace(/<[^>]*>/g, '').replace(/[\w.+-]+@[\w.-]+\.\w+/g, '').replace(/["']/g, '').trim().replace(/[,;].*$/, '').trim();
+    if (line.length >= 2 && !/@/.test(line)) return line;
+  }
+  // 2) Grußformel am Ende → folgender Name
+  const gr = t.match(/(?:Gr[üu][ßs]+en?|Gr[üu][ßs]e|regards|MfG|LG|VG)[\s,]*\n+\s*([A-ZÄÖÜ][\wäöüß]+(?:\s+[A-ZÄÖÜ][\wäöüß]+){0,2})/i);
+  if (gr) return gr[1].trim();
+  return '';
+};
+
+/* Inline-Formular im Zuordnungs-Bereich — E-Mail-Text bleibt erhalten. */
+CRM.mailAblage.showPrivateForm = function () {
+  const el = document.getElementById('ma-match');
+  if (!el) return;
+  const body = (document.getElementById('ma-input') || {}).value || '';
+  const mail = CRM.mailAblage._detectedMail || '';
+  const defaultName = CRM.mailAblage._guessName(body) || ('Private Anfrage – ' + new Date().toLocaleDateString('de-DE'));
+  el.innerHTML = `
+    <div style="border:1px solid var(--accent);border-radius:8px;padding:10px 12px">
+      <div style="font-size:13px;margin-bottom:6px">🏠 <strong>Private Anfrage</strong> — es wird ein neuer <strong>Bauherr</strong>-Kontakt angelegt.</div>
+      <label>Name / Bezeichnung</label>
+      <input id="pa-name" value="${escAttr(defaultName)}" autocomplete="off">
+      ${mail ? `<p style="font-size:12px;color:var(--text-dim);margin:6px 0 0">📧 ${esc(mail)} — wird gespeichert, damit weitere Mails automatisch hier landen.</p>` : '<p style="font-size:12px;color:var(--text-dim);margin:6px 0 0">Keine Absender-Adresse erkannt — Wiedererkennung greift dann nur bei manueller Zuordnung.</p>'}
+      <div class="row" style="gap:6px;margin-top:8px">
+        <button class="btn btn-sm" onclick="CRM.mailAblage.renderMatch(true)">Zurück</button>
+        <button class="btn btn-sm btn-primary" onclick="CRM.mailAblage.savePrivate()">🏠 Anlegen & ablegen</button>
+      </div>
+    </div>`;
+  setTimeout(() => { const n = document.getElementById('pa-name'); if (n) { n.focus(); n.select(); } }, 50);
+};
+
+CRM.mailAblage.savePrivate = function () {
+  const nameEl = document.getElementById('pa-name');
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { CRM.toast('Bitte einen Namen / eine Bezeichnung eingeben.', 'error'); return; }
+  const mail = CRM.mailAblage._detectedMail || '';
+  const c = CRM.db.addContact({
+    firma1: name, type: 'bauherr', abc: 'C', source: 'eigene',
+    tags: ['Private Anfrage'],
+    ansprechpartner: mail ? { email: mail } : {},
+  });
+  CRM.mailAblage._contactId = c.id;
+  CRM.mailAblage.save(); // legt die E-Mail als comm ab und zeigt „Kontakt öffnen"
 };
 
 /* ============================================================
