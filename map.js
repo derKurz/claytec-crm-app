@@ -162,7 +162,7 @@ CRM.map.sucheOrt = async function () {
   } catch (e) {
     CRM.toast('Ortssuche fehlgeschlagen — Internetverbindung prüfen.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📍 Auf Karte'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📍 Ort'; }
   }
 };
 
@@ -340,7 +340,7 @@ CRM.map.distKm = function (lat1, lng1, lat2, lng2) {
 CRM.map.openNearby = function (origin) {
   if (origin && origin.lat != null) {
     CRM.map._nearbyOrigin = origin;
-    CRM.map.renderNearbyPanel();
+    CRM.map.renderNearbyPanel(true);
     return;
   }
   // Position älter als 5 Minuten → neu lokalisieren (im Auto ist man weitergefahren)
@@ -348,17 +348,17 @@ CRM.map.openNearby = function (origin) {
   if (!pos || Date.now() - pos.ts > 5 * 60 * 1000) {
     CRM.map.locateMe(() => {
       CRM.map._nearbyOrigin = { lat: CRM.map._gpsPos.lat, lng: CRM.map._gpsPos.lng, label: 'meinem Standort' };
-      CRM.map.renderNearbyPanel();
+      CRM.map.renderNearbyPanel(true);
     });
     return;
   }
   CRM.map._nearbyOrigin = { lat: pos.lat, lng: pos.lng, label: 'meinem Standort' };
-  CRM.map.renderNearbyPanel();
+  CRM.map.renderNearbyPanel(true);
 };
 
 CRM.map.setNearbyRadius = function (km) {
   CRM.map._nearbyRadius = km;
-  CRM.map.renderNearbyPanel();
+  CRM.map.renderNearbyPanel(true);
 };
 CRM.map.toggleNearbyOverdue = function () {
   CRM.map._nearbyOverdueOnly = !CRM.map._nearbyOverdueOnly;
@@ -369,7 +369,7 @@ CRM.map.toggleNearbyExpand = function (id) {
   CRM.map.renderNearbyPanel();
 };
 
-CRM.map.renderNearbyPanel = function () {
+CRM.map.renderNearbyPanel = function (updateMap) {
   const pos = CRM.map._nearbyOrigin || CRM.map._gpsPos;
   if (!pos) return;
   const radius = CRM.map._nearbyRadius;
@@ -440,6 +440,20 @@ CRM.map.renderNearbyPanel = function () {
     <p style="color:var(--text-dim);font-size:11px;margin:8px 0 0">Entfernung = Luftlinie ab ${esc(pos.label || 'meinem Standort')}. Zeile antippen zeigt den Pin auf der Karte.</p>
   `;
   panel.classList.add('open');
+
+  // Karte auf den Umkreis zoomen, damit die nahen Kontakte als Pins
+  // sichtbar werden (die Marker sind vorhanden, aber die Ansicht stand
+  // vorher nur auf dem Suchort — die umliegenden Pins lagen außerhalb).
+  if (updateMap && CRM.map.instance) {
+    const map = CRM.map.instance;
+    if (CRM.map.markersLayer && !map.hasLayer(CRM.map.markersLayer)) map.addLayer(CRM.map.markersLayer);
+    map.invalidateSize();
+    const pts = [[pos.lat, pos.lng]].concat(hits.map((h) => [h.c.lat, h.c.lng]));
+    // animate:false — sofortiger Sprung auf den Umkreis (zuverlässiger als
+    // die Zoom-Animation) statt langsamer Fahrt.
+    if (pts.length > 1) map.fitBounds(L.latLngBounds(pts).pad(0.15), { animate: false });
+    else map.setView([pos.lat, pos.lng], 12, { animate: false });
+  }
 };
 
 CRM.map.makeIcon = function (c, highlight) {
