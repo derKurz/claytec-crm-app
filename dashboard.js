@@ -49,6 +49,13 @@ CRM.renderDashboard = function () {
         </button>
       </div>
 
+      ${(CRM.lager && CRM.lager.knapp().length) ? `
+      <button class="dash-lager-warn" onclick="CRM.lager.openDialog()">
+        <span class="dash-lager-icon">🔔</span>
+        <span class="dash-lager-txt"><strong>${CRM.lager.knapp().length} Muster/Prospekte nachbestellen</strong> — ${esc(CRM.lager.knapp().slice(0, 3).map((a) => a.name).join(', '))}${CRM.lager.knapp().length > 3 ? ' …' : ''}</span>
+        <span class="dash-lager-chev">›</span>
+      </button>` : ''}
+
       <div class="dash-section">
         <div class="dash-section-head">
           <span>Als Nächstes dran</span>

@@ -752,3 +752,30 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .map-panel-head{cursor:pointer;user-select:none;display:flex;justify-content:space-between;
   align-items:center;gap:8px;font-weight:600;min-height:34px}
 .map-panel-head:hover{color:var(--accent-2)}
+
+/* ============================================================
+   Muster-Lager
+   ============================================================ */
+.lager-list{display:flex;flex-direction:column;gap:2px;max-height:44vh;overflow-y:auto}
+.lager-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.lager-main{flex:1;min-width:0}
+.lager-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lager-sub{font-size:11px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:6px}
+.lager-sub input{padding:2px 4px;font-size:11px;height:auto}
+.lager-bar{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin-top:5px}
+.lager-bar>div{height:100%}
+.lager-count{flex-shrink:0;width:56px;text-align:right;font-size:15px;font-weight:700}
+.lager-count span{font-size:11px;color:var(--text-dim);font-weight:400}
+.lager-btns{flex-shrink:0;display:flex;gap:3px}
+.lager-btns .btn{min-width:30px;padding:4px 6px}
+.dagelassen-list{display:flex;flex-direction:column;gap:2px;max-height:50vh;overflow-y:auto}
+.dagelassen-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid var(--border);cursor:pointer}
+.dagelassen-row .dg-name{flex:1;min-width:0;font-size:14px}
+/* Dashboard-Nachbestell-Warnung */
+.dash-lager-warn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:rgba(255,159,67,.12);border:1px solid var(--orange);border-radius:var(--radius);
+  padding:10px 12px;margin-bottom:16px;cursor:pointer;color:var(--text)}
+.dash-lager-warn:hover{background:rgba(255,159,67,.2)}
+.dash-lager-icon{font-size:18px;flex-shrink:0}
+.dash-lager-txt{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-lager-chev{color:var(--text-dim);font-size:18px;flex-shrink:0}

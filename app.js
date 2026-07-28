@@ -554,6 +554,10 @@ CRM.initMobileNav = function () {
     closeSheet();
     CRM.sync.exportEingang();
   });
+  document.getElementById('more-sheet-lager').addEventListener('click', () => {
+    closeSheet();
+    CRM.lager.openDialog();
+  });
   document.getElementById('more-sheet-import').addEventListener('click', () => {
     closeSheet();
     document.getElementById('file-input-excel').click();

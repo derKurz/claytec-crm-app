@@ -295,6 +295,7 @@ CRM.renderContactDetailModal = function (id) {
         <button class="btn" onclick="CRM.speech.openCapture('${c.id}')">🎤 Sprachnotiz</button>
         <button class="btn" onclick="CRM.mailAblage.open('${c.id}')">📧 E-Mail ablegen</button>
         <button class="btn" onclick="CRM.muster.open('${c.id}')">📦 Muster schicken</button>
+        <button class="btn" onclick="CRM.lager.openDagelassen('${c.id}')">📥 Muster dagelassen</button>
       </div>
       <details style="margin-bottom:10px">
         <summary style="cursor:pointer;color:var(--text-dim);font-size:13px">+ Besuch mit Datum/Notiz manuell nachtragen</summary>
