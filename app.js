@@ -520,8 +520,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // im OneDrive-"Eingang"-Ordner liegt — nur wenn der Claytec-Ordner
   // schon verbunden ist (kein ungefragter Datei-Auswahl-Dialog).
   if (CRM.ablage && CRM.ablage.supported()) {
-    CRM.ablage.idbGet('claytecRoot').then((stored) => {
-      if (stored) CRM.ablage.processEingang(true).catch(() => {});
+    Promise.all([
+      CRM.ablage.idbGet('claytecRoot'),
+      CRM.ablage.idbGet('claytecEingang'),
+    ]).then(([root, eingang]) => {
+      if (eingang) CRM.ablage.eingangHandle = eingang;
+      // Läuft, sobald ENTWEDER der Claytec-Ordner ODER ein eigener
+      // Eingang-Ordner verbunden ist.
+      if (root || eingang) CRM.ablage.processEingang(true).catch(() => {});
     });
   }
 });

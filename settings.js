@@ -77,7 +77,10 @@ CRM.renderSettings = function () {
       <hr style="border-color:var(--border);margin:14px 0">
       <label>Handy-Eingang verarbeiten</label>
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Liest Besuche/Kontakte, die du am Handy über „📤 Eingang exportieren" (Mehr-Menü) in den OneDrive-Ordner <code>Eingang</code> geteilt hast, übernimmt sie hier und legt neue Besuche automatisch in Excel ab. Läuft auch automatisch im Hintergrund, wenn du die App öffnest.</p>
-      <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.ablage.processEingang(false)">📥 Eingang jetzt verarbeiten</button>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Liegt dein <code>Eingang</code>-Ordner an einem <strong>anderen</strong> Ort als der Claytec-Ordner (z.B. <code>…\\Claytec CRM\\Eingang</code>)? Dann wähle ihn hier einmalig direkt aus — sonst wird automatisch der Unterordner <code>Eingang</code> im Claytec-Ordner benutzt.</p>
+      <button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.ablage.connectEingang()">📁 Eingang-Ordner wählen</button>
+      <span id="ablage-eingang-status" style="font-size:12px;color:var(--text-dim);margin-left:8px">${CRM.ablage && CRM.ablage.eingangHandle ? '✓ eigener Ordner: ' + esc(CRM.ablage.eingangHandle.name) + ' <a href="#" onclick="CRM.ablage.clearEingang();return false" style="margin-left:6px;color:var(--text-dim)">(entfernen)</a>' : 'Standard: „Eingang" im Claytec-Ordner'}</span>
+      <div style="margin-top:8px"><button class="btn btn-sm" ${CRM.ablage && CRM.ablage.supported() ? '' : 'disabled'} onclick="CRM.ablage.processEingang(false)">📥 Eingang jetzt verarbeiten</button></div>
       <hr style="border-color:var(--border);margin:14px 0">
       <label>Notion-Feierabend-Notizen</label>
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Bündelt Besuche, Notizen und neue Aufgaben je Kontakt mit hinterlegtem Notion-Link zu einem kopierfertigen Block. Den bei Claude einfügen: „übertrage die Feierabend-Notizen nach Notion" — Claude schreibt sie über den Notion-Konnektor in die Seiten. (Kein Notion-Zugriff aus der App selbst — die App ist öffentlich gehostet.)</p>

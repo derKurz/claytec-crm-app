@@ -503,7 +503,24 @@ CRM.ablage.showResult = function (ok, log, paths) {
    Dialog pro Besuch (silent:true). Verarbeitete Dateien werden danach
    aus dem Eingang-Ordner gelöscht.
    ============================================================ */
+/* Separat verbundener Eingang-Ordner (falls gesetzt) — erlaubt, den
+   Eingang in einen ANDEREN Ordner als die Kundenablage zu legen
+   (z.B. …\Claytec CRM\Eingang, während .Kunden woanders liegt). */
+CRM.ablage.getEingangHandle = async function () {
+  if (CRM.ablage.eingangHandle) {
+    if (await CRM.ablage.verifyPermission(CRM.ablage.eingangHandle)) return CRM.ablage.eingangHandle;
+    return null;
+  }
+  const stored = await CRM.ablage.idbGet('claytecEingang');
+  if (stored && (await CRM.ablage.verifyPermission(stored))) { CRM.ablage.eingangHandle = stored; return stored; }
+  return null;
+};
+
 CRM.ablage.getEingangDir = async function (create) {
+  // 1) Eigener Eingang-Ordner, falls verbunden — direkt nutzen
+  const eigen = await CRM.ablage.getEingangHandle();
+  if (eigen) return eigen;
+  // 2) Fallback: Unterordner „Eingang" im verbundenen Claytec-Ordner
   const root = await CRM.ablage.ensureRoot();
   if (!root) return null;
   try {
@@ -511,6 +528,30 @@ CRM.ablage.getEingangDir = async function (create) {
   } catch (e) {
     return null;
   }
+};
+
+/* Eigenen Eingang-Ordner wählen (den „Eingang"-Ordner selbst, nicht dessen
+   Elternordner). Danach liest/löscht processEingang direkt darin. */
+CRM.ablage.connectEingang = async function () {
+  if (!CRM.ablage.supported()) { CRM.toast('Nur in Chrome/Edge am Laptop möglich.', 'error'); return null; }
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'claytec-eingang', mode: 'readwrite', startIn: 'documents' });
+    CRM.ablage.eingangHandle = handle;
+    await CRM.ablage.idbSet('claytecEingang', handle);
+    CRM.toast('Eingang-Ordner verbunden: ' + handle.name, 'success');
+    if (CRM.renderSettings && document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
+    return handle;
+  } catch (e) {
+    if (e.name !== 'AbortError') CRM.toast('Ordner-Auswahl abgebrochen: ' + e.message, 'error');
+    return null;
+  }
+};
+
+CRM.ablage.clearEingang = async function () {
+  CRM.ablage.eingangHandle = null;
+  await CRM.ablage.idbSet('claytecEingang', null);
+  if (CRM.renderSettings && document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
+  CRM.toast('Eigener Eingang-Ordner entfernt — nutzt wieder „Eingang" im Claytec-Ordner.', 'success');
 };
 
 CRM.ablage.processEingang = async function (silent) {
