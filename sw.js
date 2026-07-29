@@ -7,7 +7,7 @@
    - Geocoding (Nominatim) wird NIE gecacht (Live-Daten, datensparsam).
    Cache-Version bei jedem Update hochzählen (passt zu ?v= in index.html).
    ============================================================ */
-var VERSION = '20260724m';
+var VERSION = '20260724n';
 var APP_CACHE = 'claytec-crm-app-' + VERSION;
 var TILE_CACHE = 'claytec-crm-tiles-v1';
 var TILE_LIMIT = 600; // max. gecachte Kartenkacheln
@@ -108,15 +108,35 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  // App-Shell & sonstige GETs: cache-first, dann Netz
+  // Navigationsanfragen (die HTML-Seite): NETWORK-FIRST.
+  // So bekommt der Nutzer beim Öffnen immer die aktuelle index.html —
+  // die wiederum auf die neuen ?v=-Dateien verweist → App aktualisiert
+  // sich von selbst, ohne Cache-Handstände. Offline: gecachte Seite.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).then(function (res) {
+        var copy = res.clone();
+        caches.open(APP_CACHE).then(function (cache) { cache.put('./index.html', copy); });
+        return res;
+      }).catch(function () {
+        return caches.match(req).then(function (cached) {
+          return cached || caches.match('./index.html');
+        });
+      })
+    );
+    return;
+  }
+
+  // Versionierte App-Shell & sonstige GETs: cache-first, dann Netz.
+  // Der ?v=-Suffix ist Teil des Cache-Schlüssels — eine neue Version ist
+  // automatisch ein Cache-Miss und wird frisch aus dem Netz geladen.
   e.respondWith(
     caches.match(req).then(function (cached) {
       if (cached) return cached;
       return fetch(req).then(function (res) {
         return res;
       }).catch(function () {
-        // Offline-Fallback: bei Navigationsanfragen die App-Shell liefern
-        if (req.mode === 'navigate') return caches.match('./index.html');
+        return undefined;
       });
     })
   );
