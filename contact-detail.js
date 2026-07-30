@@ -274,6 +274,7 @@ CRM.renderContactDetailModal = function (id) {
         <div class="li-badges" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
       </div>
       <div style="display:flex;gap:6px">
+        <button class="btn btn-icon" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren (in die aktive Liste)'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'}</button>
         <button class="btn btn-icon" title="vCard (.vcf) erstellen — für Google Kontakte" onclick="CRM.vcard.exportContact('${c.id}')">📇</button>
         <button class="btn btn-icon" title="Kontakt löschen" onclick="CRM.deleteContactFromDetail('${c.id}')">🗑</button>
         <button class="btn btn-icon" onclick="CRM.closeModal()">✕</button>

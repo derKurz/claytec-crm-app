@@ -313,6 +313,8 @@ CRM.renderContactList = function () {
   const toolbar = `<div class="row" id="contact-route-toolbar" style="gap:8px;margin-bottom:8px;${selCount ? '' : 'display:none'}">
       <span style="color:var(--text-dim);font-size:13px;align-self:center"><strong id="contact-sel-count">${selCount}</strong> ausgewählt</span>
       <button class="btn btn-sm" onclick="CRM.selectAllFiltered()">☑️ Alle auswählen</button>
+      <button class="btn btn-sm" onclick="CRM.markSelectedAktiv()">⭐ Aktiv markieren</button>
+      <button class="btn btn-sm" onclick="CRM.unmarkSelectedAktiv()">☆ Markierung weg</button>
       <button class="btn btn-sm btn-primary" onclick="CRM.archiveSelectedContacts()">🗄️ Archivieren</button>
       <button class="btn btn-sm" onclick="CRM.reactivateSelectedContacts()">↩️ Reaktivieren</button>
       <button class="btn btn-sm" onclick="CRM.routeSelectedGoogle()">🗺️ Route</button>
@@ -640,6 +642,30 @@ CRM._setArchivedForSelection = function (value) {
 };
 CRM.archiveSelectedContacts = function () { CRM._setArchivedForSelection(true); };
 CRM.reactivateSelectedContacts = function () { CRM._setArchivedForSelection(false); };
+
+/* Aktiv-Markierung von Hand setzen/entfernen (für ausgewählte Kontakte). */
+CRM._setAktivForSelection = function (value) {
+  const ids = new Set(CRM._contactSelection || []);
+  if (!ids.size) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
+  let n = 0;
+  CRM.db.getContacts().forEach((c) => { if (ids.has(c.id)) { c.aktiv = value; n++; } });
+  CRM.db.saveContacts();
+  CRM._contactSelection.clear();
+  CRM.renderContactList();
+  CRM.toast(value ? ('⭐ ' + n + ' Kontakte als aktiv markiert.') : (n + ' Markierungen entfernt.'), 'success');
+};
+CRM.markSelectedAktiv = function () { CRM._setAktivForSelection(true); };
+CRM.unmarkSelectedAktiv = function () { CRM._setAktivForSelection(false); };
+/* Aktiv-Markierung eines einzelnen Kontakts umschalten (aus der Detailansicht). */
+CRM.toggleContactAktiv = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
+  c.aktiv = !c.aktiv;
+  CRM.db.saveContacts();
+  CRM.renderContactList();
+  if (CRM.openContactDetail) CRM.openContactDetail(id); // Detail neu zeichnen
+  CRM.toast(c.aktiv ? '⭐ Als aktiv markiert.' : 'Markierung entfernt.', 'success');
+};
 
 CRM._selectedContacts = function () {
   return Array.from(CRM._contactSelection).map((id) => CRM.db.getContact(id)).filter(Boolean);
