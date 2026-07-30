@@ -363,6 +363,10 @@ body.resizing-col{cursor:col-resize;user-select:none}
 .map-panel-close{min-height:44px;padding:8px 14px;flex-shrink:0}
 
 .filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end}
+/* Such- + Filterleiste bleiben beim Scrollen oben stehen */
+.kontakte-sticky{position:sticky;top:0;z-index:20;background:var(--bg);margin:0 -16px 6px;padding:8px 16px 6px;border-bottom:1px solid var(--border)}
+.kontakte-sticky .filter-bar{margin-bottom:8px}
+.kontakte-sticky .quick-filters{margin-bottom:0}
 .filter-bar .col{min-width:90px}
 .filter-bar-extra{display:contents}
 .quick-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}

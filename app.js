@@ -290,7 +290,15 @@ CRM.renderContactList = function () {
   }
 
   const f = CRM.getContactFilters();
-  const filtered = CRM.sortContacts(contacts.filter((c) => CRM.contactMatchesFilters(c, f)));
+  let filtered = contacts.filter((c) => CRM.contactMatchesFilters(c, f));
+  if (f.text) {
+    // Bei aktiver Suche: nach Treffer-Güte im Firmennamen sortieren (beste oben)
+    const toks = CRM.searchNorm(f.text).split(' ').filter(Boolean);
+    filtered.sort((a, b) => CRM.contactListSearchRank(toks, a) - CRM.contactListSearchRank(toks, b)
+      || String(a.firma1 || '').localeCompare(String(b.firma1 || '')));
+  } else {
+    filtered = CRM.sortContacts(filtered);
+  }
   document.getElementById('contact-count').textContent =
     filtered.length === contacts.length ? `${contacts.length} Kontakte` : `${filtered.length} von ${contacts.length} Kontakten`;
 

@@ -666,6 +666,17 @@ CRM.contactSearchRank = function (qNorm, c) {
   return 5; // Ansprechpartner / sonstige Nebenfelder
 };
 
+/* Rang für die Kontaktliste bei aktiver Mehrwort-Suche (z.B. „b m").
+   Firmenname-Treffer zuerst, Nebenfeld-Treffer zuletzt — kleiner = besser. */
+CRM.contactListSearchRank = function (tokens, c) {
+  if (!tokens || !tokens.length) return 9;
+  const firma = CRM.searchNorm(c.firma1 || '');
+  const inFirma = tokens.filter((t) => firma.includes(t)).length;
+  if (inFirma === tokens.length) return firma.startsWith(tokens[0]) ? 0 : 1;
+  if (inFirma > 0) return 2;
+  return 3; // alle Tokens nur über Ort/ERP/Ansprechpartner
+};
+
 CRM.getLastVisit = function (contact) {
   if (!contact.visits || !contact.visits.length) return null;
   return contact.visits.reduce((latest, v) => (!latest || v.date > latest.date ? v : latest), null);
