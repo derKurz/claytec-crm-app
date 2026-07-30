@@ -933,47 +933,94 @@ CRM.initHeaderSearch = function () {
 
   const norm = (s) => String(s || '').toLowerCase();
 
+  // Universelle Aktionen/Reiter — anspringbar per Stichwort.
+  const COMMANDS = [
+    { icon: '🗺️', label: 'Karte öffnen', keys: ['karte', 'map'], run: () => CRM.switchTab('karte') },
+    { icon: '📅', label: 'Heute / Agenda / To-Dos', keys: ['heute', 'agenda', 'aufgaben', 'aufgabe', 'todo', 'to do', 'wiedervorlage'], run: () => CRM.switchTab('agenda') },
+    { icon: '👥', label: 'Kontakte', keys: ['kontakte', 'kontakt'], run: () => CRM.switchTab('kontakte') },
+    { icon: '📍', label: 'Regionen', keys: ['regionen', 'region', 'gebiet'], run: () => CRM.switchTab('regionen') },
+    { icon: '🕸️', label: 'Netzwerk', keys: ['netzwerk', 'beziehung'], run: () => CRM.switchTab('netzwerk') },
+    { icon: '📋', label: 'Projekte', keys: ['projekte', 'projekt', 'baustelle', 'bv'], run: () => CRM.switchTab('projekte') },
+    { icon: '📦', label: 'Muster-Lager', keys: ['muster', 'lager', 'inventur'], run: () => { if (CRM.lager && CRM.lager.openDialog) CRM.lager.openDialog(); else CRM.switchTab('start'); } },
+    { icon: '💾', label: 'Backup erstellen', keys: ['backup', 'sicherung', 'sichern'], run: () => CRM.backup && CRM.backup.exportJSON() },
+    { icon: '📥', label: 'Handy-Eingang verarbeiten', keys: ['eingang', 'sync', 'synchronisieren'], run: () => CRM.ablage && CRM.ablage.processEingang(false) },
+    { icon: '➕', label: 'Neuer Kontakt', keys: ['neuer kontakt', 'kontakt anlegen', 'neu'], run: () => CRM.createNewContact && CRM.createNewContact() },
+    { icon: '⚙️', label: 'Einstellungen', keys: ['einstellungen', 'settings', 'optionen'], run: () => CRM.switchTab('einstellungen') },
+  ];
+
+  const cat = (label) => `<div class="header-search-cat">${label}</div>`;
+
   const render = () => {
     const q = norm(input.value).trim();
     if (!q) { results.classList.add('hidden'); results.innerHTML = ''; return; }
-    // Nach Relevanz sortieren (Firmenname-Treffer vor Nebenfeld-Treffern),
-    // dann erst begrenzen — sonst verdrängen Ansprechpartner-Treffer den
-    // gesuchten Firmennamen aus der Liste (Limit war zu niedrig + unsortiert).
+    const contacts = CRM.db.getContacts();
+
+    // 1) Aktionen (Stichwort trifft Reiter/Funktion)
+    const cmds = q.length >= 2
+      ? COMMANDS.map((c, i) => ({ c, i }))
+        .filter(({ c }) => c.keys.some((k) => k.startsWith(q) || q.startsWith(k)) || c.label.toLowerCase().includes(q))
+        .slice(0, 4)
+      : [];
+
+    // 2) Orte (Stadt) und 3) PLZ
+    const orte = q.length >= 2
+      ? [...new Set(contacts.filter((c) => !c.archived && c.ort && norm(c.ort).includes(q)).map((c) => c.ort))].slice(0, 5)
+      : [];
+    const plz = /^\d{2,5}$/.test(q) ? q : null;
+
+    // 4) Kontakte (Firma/Person/ERP) nach Relevanz
     const qn = CRM.searchNorm(q);
-    const matches = CRM.db.getContacts()
+    const matches = contacts
       .filter((c) => CRM.contactQueryMatch(q, c))
       .sort((a, b) => CRM.contactSearchRank(qn, a) - CRM.contactSearchRank(qn, b)
         || String(a.firma1 || '').localeCompare(String(b.firma1 || '')))
-      .slice(0, 15);
+      .slice(0, 10);
+
+    // 5) To-Dos (offene nächste Schritte, die zum Text passen)
+    const todos = q.length >= 2
+      ? contacts.map((c) => ({ c, t: CRM.getOpenTodoText(c) })).filter((x) => x.t && norm(x.t).includes(q)).slice(0, 5)
+      : [];
+
+    // 6) Projekte
     const projMatches = CRM.db.getProjects().filter((p) => CRM.smartMatch(q, [p.name, p.erpNr, p.ort])).slice(0, 4);
-    if (!matches.length && !projMatches.length) {
-      results.innerHTML = '<div class="header-search-empty">Keine Treffer</div>';
-    } else {
-      results.innerHTML = matches.map((c) => `
-        <div class="header-search-item" data-id="${c.id}">
-          <span class="badge badge-${c.type}" style="margin-right:6px">${CRM.TYPE_SHORT[c.type] || '–'}</span>
-          <strong>${esc(c.firma1)}</strong> ${c.isPartner ? '⭐' : ''}
-          <span style="color:var(--text-dim);font-size:12px"> · ${esc(c.plz)} ${esc(c.ort)}</span>
-        </div>`).join('')
-      + projMatches.map((p) => `
-        <div class="header-search-item" data-project-id="${p.id}">
-          <span class="badge badge-status-${p.status}" style="margin-right:6px">📋</span>
-          <strong>${esc(p.name)}</strong>
-          <span style="color:var(--text-dim);font-size:12px"> · Projekt${p.erpNr ? ' · ERP ' + esc(p.erpNr) : ''}${p.ort ? ' · ' + esc(p.ort) : ''}</span>
-        </div>`).join('');
-      results.querySelectorAll('.header-search-item').forEach((row) => {
-        row.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          if (row.dataset.projectId) {
-            input.value = '';
-            results.classList.add('hidden');
-            CRM.openProjectDetail(row.dataset.projectId);
-          } else {
-            CRM.goToContactFromSearch(row.dataset.id);
-          }
-        });
+
+    let html = '';
+    if (cmds.length) html += cat('Aktionen') + cmds.map(({ c, i }) => `
+      <div class="header-search-item" data-action="${i}"><span style="margin-right:6px">${c.icon}</span><strong>${esc(c.label)}</strong></div>`).join('');
+    if (plz) html += cat('PLZ') + `
+      <div class="header-search-item" data-plz="${esc(plz)}"><span style="margin-right:6px">📮</span>Kontakte mit PLZ <strong>${esc(plz)}</strong> anzeigen</div>`;
+    if (orte.length) html += cat('Orte') + orte.map((o) => `
+      <div class="header-search-item" data-ort="${esc(o)}"><span style="margin-right:6px">📍</span><strong>${esc(o)}</strong> <span style="color:var(--text-dim);font-size:12px">· Kontakte hier</span></div>`).join('');
+    if (matches.length) html += cat('Kontakte') + matches.map((c) => `
+      <div class="header-search-item" data-id="${c.id}">
+        <span class="badge badge-${c.type}" style="margin-right:6px">${CRM.TYPE_SHORT[c.type] || '–'}</span>
+        <strong>${esc(c.firma1)}</strong> ${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span style="color:var(--green)">●</span>' : ''}
+        <span style="color:var(--text-dim);font-size:12px"> · ${esc(c.plz)} ${esc(c.ort)}</span>
+      </div>`).join('');
+    if (todos.length) html += cat('To-Dos') + todos.map((x) => `
+      <div class="header-search-item" data-id="${x.c.id}"><span style="margin-right:6px">❗</span>${esc(x.t)} <span style="color:var(--text-dim);font-size:12px">· ${esc(x.c.firma1)}</span></div>`).join('');
+    if (projMatches.length) html += cat('Projekte') + projMatches.map((p) => `
+      <div class="header-search-item" data-project-id="${p.id}"><span class="badge badge-status-${p.status}" style="margin-right:6px">📋</span><strong>${esc(p.name)}</strong><span style="color:var(--text-dim);font-size:12px"> · Projekt${p.ort ? ' · ' + esc(p.ort) : ''}</span></div>`).join('');
+
+    results.innerHTML = html || '<div class="header-search-empty">Keine Treffer</div>';
+    results.querySelectorAll('.header-search-item').forEach((row) => {
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const d = row.dataset;
+        if (d.action != null) {
+          input.value = ''; results.classList.add('hidden');
+          const cmd = COMMANDS[+d.action]; if (cmd) cmd.run();
+        } else if (d.plz != null) {
+          input.value = ''; results.classList.add('hidden'); CRM.jumpToContactsFilter({ plz: d.plz });
+        } else if (d.ort != null) {
+          input.value = ''; results.classList.add('hidden'); CRM.jumpToContactsFilter({ ort: d.ort });
+        } else if (d.projectId) {
+          input.value = ''; results.classList.add('hidden'); CRM.openProjectDetail(d.projectId);
+        } else if (d.id) {
+          CRM.goToContactFromSearch(d.id);
+        }
       });
-    }
+    });
     results.classList.remove('hidden');
   };
 
@@ -1000,6 +1047,20 @@ CRM.goToContactFromSearch = function (id) {
   } else {
     CRM.openContactDetail(id);
   }
+};
+
+/* Aus der Schnellsuche in die Kontaktliste springen, gefiltert nach Ort/PLZ. */
+CRM.jumpToContactsFilter = function (opts) {
+  opts = opts || {};
+  CRM.switchTab('kontakte');
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  if (opts.ort != null) { setVal('filter-ort', opts.ort); setVal('filter-plz', ''); }
+  if (opts.plz != null) { setVal('filter-plz', opts.plz); setVal('filter-ort', ''); }
+  // „Mehr Filter" auf Mobile aufklappen, damit der aktive Filter sichtbar ist
+  const extra = document.getElementById('filter-bar-extra');
+  const tgl = document.getElementById('btn-toggle-extra-filters');
+  if (extra && tgl && !extra.classList.contains('open')) { extra.classList.add('open'); tgl.textContent = '▴ Filter ausblenden'; }
+  CRM.renderContactList();
 };
 
 /* Sichtbare Dropdown-Filter für Ort + PLZ-Bereich: ▾-Pfeil öffnet die volle

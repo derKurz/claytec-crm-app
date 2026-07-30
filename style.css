@@ -48,6 +48,8 @@ button{font-family:inherit}
 .header-search-item:last-child{border-bottom:none}
 .header-search-item:hover{background:var(--bg-elev)}
 .header-search-empty{padding:10px 12px;font-size:13px;color:var(--text-dim)}
+.header-search-cat{padding:4px 12px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-dim);background:var(--bg);position:sticky;top:0}
+.header-search-item.kbd-active{background:var(--bg-elev)}
 
 .btn{
   background:var(--bg-elev2);color:var(--text);border:1px solid var(--border);
