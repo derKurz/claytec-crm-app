@@ -307,6 +307,7 @@ CRM.renderContactList = function () {
   const selCount = CRM._contactSelection.size;
   const toolbar = `<div class="row" id="contact-route-toolbar" style="gap:8px;margin-bottom:8px;${selCount ? '' : 'display:none'}">
       <span style="color:var(--text-dim);font-size:13px;align-self:center"><strong id="contact-sel-count">${selCount}</strong> ausgewählt</span>
+      <button class="btn btn-sm" onclick="CRM.selectAllFiltered()">☑️ Alle auswählen</button>
       <button class="btn btn-sm btn-primary" onclick="CRM.routeSelectedGoogle()">🗺️ Route in Google Maps</button>
       <button class="btn btn-sm" onclick="CRM.routeSelectedOnMap()">📍 Auf Karte anzeigen</button>
       <button class="btn btn-sm btn-danger" onclick="CRM.deleteSelectedContacts()">🗑️ Auswahl löschen</button>
@@ -363,6 +364,17 @@ CRM.toggleNotesColumn = function () {
 CRM.clearContactSelection = function () {
   CRM._contactSelection.clear();
   CRM.renderContactList();
+};
+
+/* Alle aktuell gefilterten Kontakte anhaken (für gebietsweises Bereinigen:
+   erst alle wählen, dann die wenigen Behalter abwählen, dann löschen). */
+CRM.selectAllFiltered = function () {
+  CRM._contactSelection = CRM._contactSelection || new Set();
+  const filtered = CRM.getFilteredContacts();
+  if (!filtered.length) { CRM.toast('Keine Kontakte im aktuellen Filter.', 'error'); return; }
+  filtered.forEach((c) => CRM._contactSelection.add(c.id));
+  CRM.renderContactList();
+  CRM.toast('☑️ ' + filtered.length + ' Kontakte ausgewählt — jetzt die Behalter abwählen, dann „Auswahl löschen".', 'success');
 };
 
 CRM.clearRegionFilter = function () {
