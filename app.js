@@ -144,7 +144,7 @@ CRM.restoreLastTab = function () {
 /* ============================================================
    Kontaktliste (einfache Tabellenansicht für Schritt 1)
    ============================================================ */
-CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false };
+CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false };
 
 /* PLZ-Bereich parsen: "80-85", "80–85", "8000-8500" → {min, max} (auf Präfix-Länge normalisiert) */
 CRM.parsePlzRange = function (raw) {
@@ -179,6 +179,9 @@ CRM.getContactFilters = function () {
 };
 
 CRM.contactMatchesFilters = function (c, f) {
+  // Archiv: standardmäßig ausgeblendet; nur im Archiv-Filter sichtbar
+  if (f.qf.archiv) { if (!c.archived) return false; }
+  else if (c.archived) return false;
   // Präziser Regionsfilter (mehrere, auch nicht benachbarte Gebiete) aus dem Regionen-Tab
   if (CRM._regionFilter && CRM._regionFilter.size) {
     if (!CRM._regionFilter.has(CRM.regionForPlz(c.plz))) return false;
@@ -310,10 +313,12 @@ CRM.renderContactList = function () {
   const toolbar = `<div class="row" id="contact-route-toolbar" style="gap:8px;margin-bottom:8px;${selCount ? '' : 'display:none'}">
       <span style="color:var(--text-dim);font-size:13px;align-self:center"><strong id="contact-sel-count">${selCount}</strong> ausgewählt</span>
       <button class="btn btn-sm" onclick="CRM.selectAllFiltered()">☑️ Alle auswählen</button>
-      <button class="btn btn-sm btn-primary" onclick="CRM.routeSelectedGoogle()">🗺️ Route in Google Maps</button>
-      <button class="btn btn-sm" onclick="CRM.routeSelectedOnMap()">📍 Auf Karte anzeigen</button>
-      <button class="btn btn-sm btn-danger" onclick="CRM.deleteSelectedContacts()">🗑️ Auswahl löschen</button>
-      <button class="btn btn-sm" onclick="CRM.clearContactSelection()">Auswahl leeren</button>
+      <button class="btn btn-sm btn-primary" onclick="CRM.archiveSelectedContacts()">🗄️ Archivieren</button>
+      <button class="btn btn-sm" onclick="CRM.reactivateSelectedContacts()">↩️ Reaktivieren</button>
+      <button class="btn btn-sm" onclick="CRM.routeSelectedGoogle()">🗺️ Route</button>
+      <button class="btn btn-sm" onclick="CRM.routeSelectedOnMap()">📍 Karte</button>
+      <button class="btn btn-sm btn-danger" onclick="CRM.deleteSelectedContacts()">🗑️ Löschen</button>
+      <button class="btn btn-sm" onclick="CRM.clearContactSelection()">Leeren</button>
     </div>`;
 
   const showNotes = !!CRM._showNotes;
@@ -471,6 +476,43 @@ CRM.runAktivImport = function (file) {
   reader.readAsText(file, 'utf-8');
 };
 
+/* Aktuell gefilterte Kontakte als CSV exportieren (Excel-lesbar, ;-getrennt,
+   UTF-8 mit BOM -> korrekte Umlaute). Für „unmarkierte sichern vor dem
+   Löschen, ggf. später wieder aufnehmen". */
+CRM.exportFilteredCsv = function () {
+  const rows = CRM.getFilteredContacts();
+  if (!rows.length) { CRM.toast('Keine Kontakte im aktuellen Filter.', 'error'); return; }
+  const cols = ['Firma', 'ERP-Nr', 'Typ', 'PLZ', 'Ort', 'Region', 'Telefon', 'Email', 'Letzter Besuch', 'Markiert (aktiv)'];
+  const cell = (v) => {
+    v = (v == null ? '' : String(v));
+    return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const lines = [cols.join(';')];
+  rows.forEach((c) => {
+    lines.push([
+      c.firma1, c.erpNr || '', (CRM.TYPE_LABELS[c.type] || c.type || ''),
+      c.plz || '', c.ort || '', CRM.regionNameForPlz(c.plz),
+      c.telFirma || '', c.emailFirma || '', CRM.formatLastVisit(c),
+      c.aktiv ? 'ja' : 'nein',
+    ].map(cell).join(';'));
+  });
+  const csv = '﻿' + lines.join('\r\n'); // BOM = Excel zeigt Umlaute korrekt
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = 'claytec-kontakte-export-' + stamp + '.csv';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const file = new File([blob], name, { type: 'text/csv' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'Claytec Kontakte-Export' }).catch(() => {});
+  } else {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  CRM.toast('⬇️ ' + rows.length + ' Kontakte exportiert (' + name + ').', 'success');
+};
+
 CRM.clearRegionFilter = function () {
   CRM._regionFilter = new Set();
   CRM.renderContactList();
@@ -577,6 +619,27 @@ CRM.deleteSelectedContacts = async function () {
   if (!confirm(ids.length + ' ausgewählte Kontakte löschen? (Partner/besuchte bleiben geschützt, vorher wird ein Backup erstellt.)')) return;
   await CRM._performContactDeletion(ids, { protect: true });
 };
+
+/* Archivieren = nicht löschen, nur aus Liste + Karte ausblenden (reversibel).
+   Gute, sichere Alternative zum Löschen: alles bleibt erhalten. */
+CRM._setArchivedForSelection = function (value) {
+  const ids = new Set(CRM._contactSelection || []);
+  if (!ids.size) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
+  let undoOk = true;
+  try { CRM.takeSnapshot(value ? 'Vor Archivieren' : 'Vor Reaktivieren'); } catch (e) { undoOk = false; }
+  let n = 0;
+  CRM.db.getContacts().forEach((c) => { if (ids.has(c.id)) { c.archived = value; n++; } });
+  CRM.db.saveContacts();
+  CRM._contactSelection.clear();
+  CRM.renderContactList();
+  if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+  if (CRM.renderDashboard) CRM.renderDashboard();
+  const msg = value ? ('🗄️ ' + n + ' Kontakte archiviert (aus Liste + Karte ausgeblendet).')
+                    : ('↩️ ' + n + ' Kontakte reaktiviert.');
+  if (undoOk) CRM.toastUndo(msg); else CRM.toast(msg, 'success');
+};
+CRM.archiveSelectedContacts = function () { CRM._setArchivedForSelection(true); };
+CRM.reactivateSelectedContacts = function () { CRM._setArchivedForSelection(false); };
 
 CRM._selectedContacts = function () {
   return Array.from(CRM._contactSelection).map((id) => CRM.db.getContact(id)).filter(Boolean);
@@ -1042,7 +1105,7 @@ CRM.setTypeChipFilter = function (typ) {
 
 CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
-    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false };
+    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false };
     CRM._regionFilter = new Set();
     ['contact-search', 'filter-ort', 'filter-plz'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['filter-type', 'filter-source', 'filter-abc'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });

@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260724s">
+<link rel="stylesheet" href="style.css?v=20260724t">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -122,6 +122,7 @@
       <button class="qf-btn" data-qf="eurobaustoff">🛒 Eurobaustoff</button>
       <button class="qf-btn" data-qf="aktiv">🟢 Nur markierte</button>
       <button class="qf-btn" data-qf="inaktiv">Nur unmarkierte</button>
+      <button class="qf-btn" data-qf="archiv">🗄️ Archiv</button>
       <button class="qf-btn" data-qf="reset" style="margin-left:auto">✕ Filter zurücksetzen</button>
     </div>
     <div class="row" style="justify-content:space-between;align-items:center;margin:4px 0">
@@ -129,6 +130,7 @@
       <div class="row" style="gap:6px">
         <button class="btn btn-sm" id="btn-aktiv-import" onclick="CRM.openAktivImport()" title="OneNote-Liste (CSV) einlesen und aktive Kontakte automatisch markieren">⭐ Aktiv-Erkennung</button>
         <button class="btn btn-sm" id="btn-select-all" onclick="CRM.selectAllFiltered()" title="Alle aktuell gefilterten Kontakte anhaken">☑️ Alle auswählen</button>
+        <button class="btn btn-sm" id="btn-export-csv" onclick="CRM.exportFilteredCsv()" title="Aktuell gefilterte Kontakte als CSV (Excel) exportieren">⬇️ Export</button>
         <button class="btn btn-sm" id="btn-cleanup-contacts" onclick="CRM.openCleanupDialog()" title="Gefilterte Kontakte gesammelt löschen">🧹 Bereinigen</button>
         <button class="btn btn-sm" id="btn-toggle-notes" onclick="CRM.toggleNotesColumn()">📝 Notizen anzeigen</button>
         <button class="btn btn-sm" id="btn-new-contact">+ Neuer Kontakt</button>
@@ -179,29 +181,29 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260724s"></script>
-<script src="db-indexeddb.js?v=20260724s"></script>
-<script src="supabase-client.js?v=20260724s"></script>
-<script src="sync.js?v=20260724s"></script>
-<script src="import.js?v=20260724s"></script>
-<script src="activities.js?v=20260724s"></script>
-<script src="contact-detail.js?v=20260724s"></script>
-<script src="agenda.js?v=20260724s"></script>
-<script src="dashboard.js?v=20260724s"></script>
-<script src="geocoding.js?v=20260724s"></script>
-<script src="map.js?v=20260724s"></script>
-<script src="speech.js?v=20260724s"></script>
-<script src="settings.js?v=20260724s"></script>
-<script src="projects.js?v=20260724s"></script>
-<script src="network.js?v=20260724s"></script>
-<script src="regions.js?v=20260724s"></script>
-<script src="excel-ablage.js?v=20260724s"></script>
-<script src="vcard.js?v=20260724s"></script>
-<script src="email-parser.js?v=20260724s"></script>
-<script src="werbemittel.js?v=20260724s"></script>
-<script src="yosima-farbtoene.js?v=20260724s"></script>
-<script src="muster.js?v=20260724s"></script>
-<script src="lager.js?v=20260724s"></script>
-<script src="app.js?v=20260724s"></script>
+<script src="storage.js?v=20260724t"></script>
+<script src="db-indexeddb.js?v=20260724t"></script>
+<script src="supabase-client.js?v=20260724t"></script>
+<script src="sync.js?v=20260724t"></script>
+<script src="import.js?v=20260724t"></script>
+<script src="activities.js?v=20260724t"></script>
+<script src="contact-detail.js?v=20260724t"></script>
+<script src="agenda.js?v=20260724t"></script>
+<script src="dashboard.js?v=20260724t"></script>
+<script src="geocoding.js?v=20260724t"></script>
+<script src="map.js?v=20260724t"></script>
+<script src="speech.js?v=20260724t"></script>
+<script src="settings.js?v=20260724t"></script>
+<script src="projects.js?v=20260724t"></script>
+<script src="network.js?v=20260724t"></script>
+<script src="regions.js?v=20260724t"></script>
+<script src="excel-ablage.js?v=20260724t"></script>
+<script src="vcard.js?v=20260724t"></script>
+<script src="email-parser.js?v=20260724t"></script>
+<script src="werbemittel.js?v=20260724t"></script>
+<script src="yosima-farbtoene.js?v=20260724t"></script>
+<script src="muster.js?v=20260724t"></script>
+<script src="lager.js?v=20260724t"></script>
+<script src="app.js?v=20260724t"></script>
 </body>
 </html>

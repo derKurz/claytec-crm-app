@@ -375,7 +375,7 @@ CRM.map.renderNearbyPanel = function (updateMap) {
   const radius = CRM.map._nearbyRadius;
 
   let hits = CRM.db.getContacts()
-    .filter((c) => c.lat != null && c.lng != null)
+    .filter((c) => c.lat != null && c.lng != null && !c.archived)
     .map((c) => ({ c, dist: CRM.map.distKm(pos.lat, pos.lng, c.lat, c.lng), due: CRM.getDueStatus(c) }))
     .filter((h) => h.dist <= radius);
   if (CRM.map._nearbyOverdueOnly) hits = hits.filter((h) => h.due.status === 'overdue' || h.due.status === 'today');
@@ -500,7 +500,8 @@ CRM.map.refresh = function () {
   const withCoords = all.filter((c) => c.lat != null && c.lng != null);
   const q = (CRM.map.filters.query || '').trim().toLowerCase();
   const filtered = withCoords.filter((c) =>
-    CRM.map.filters.types[c.type]
+    !c.archived // archivierte Kontakte nie auf der Karte
+    && CRM.map.filters.types[c.type]
     && (!CRM.map.filters.partnerOnly || c.isPartner)
     && (!q || String(c.ort || '').toLowerCase().includes(q) || String(c.plz || '').toLowerCase().includes(q)));
   const markers = [];
