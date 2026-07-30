@@ -473,6 +473,11 @@ document.addEventListener('DOMContentLoaded', () => {
     navigator.storage.persist().catch(() => {});
   }
 
+  // Sicherheitswarnung: läuft die App NICHT auf der echten Hosting-Adresse
+  // (z.B. versehentlich auf localhost/Test-Server), einen unübersehbaren
+  // roten Balken einblenden. Verhindert die localhost/github.io-Verwechslung.
+  CRM.warnWrongOrigin();
+
   document.getElementById('btn-import-excel').addEventListener('click', () => {
     document.getElementById('file-input-excel').click();
   });
@@ -531,6 +536,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+/* ============================================================
+   Sicherheitswarnung bei falscher Adresse (localhost/Test-Server)
+   ============================================================ */
+CRM.warnWrongOrigin = function () {
+  var host = location.hostname;
+  var OK = 'derkurz.github.io'; // die einzige echte Hosting-Adresse
+  if (host === OK) return;      // richtige App → keine Warnung
+  if (document.getElementById('wrong-origin-banner')) return;
+  var bar = document.createElement('div');
+  bar.id = 'wrong-origin-banner';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;'
+    + 'background:#c0392b;color:#fff;padding:10px 14px;font-size:14px;'
+    + 'line-height:1.4;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+  bar.innerHTML = '⚠️ <strong>Achtung: Test-Version (' + host + ')</strong> — '
+    + 'das ist NICHT die echte App, deine Daten hier sind getrennt gespeichert. '
+    + 'Bitte benutze: <a href="https://derkurz.github.io/claytec-crm-app/" '
+    + 'style="color:#fff;text-decoration:underline;font-weight:700">'
+    + 'derkurz.github.io/claytec-crm-app</a>';
+  document.body.insertBefore(bar, document.body.firstChild);
+  document.body.style.paddingTop = (bar.offsetHeight || 44) + 'px';
+};
 
 /* ============================================================
    Mobile-Navigation: Bottom Nav + "Mehr"-Sheet + FAB
