@@ -144,7 +144,7 @@ CRM.restoreLastTab = function () {
 /* ============================================================
    Kontaktliste (einfache Tabellenansicht für Schritt 1)
    ============================================================ */
-CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false };
+CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false };
 
 /* PLZ-Bereich parsen: "80-85", "80–85", "8000-8500" → {min, max} (auf Präfix-Länge normalisiert) */
 CRM.parsePlzRange = function (raw) {
@@ -190,6 +190,8 @@ CRM.contactMatchesFilters = function (c, f) {
   if (f.source && c.source !== f.source) return false;
   if (f.abc && c.abc !== f.abc) return false;
   if (f.qf.partner && !c.isPartner) return false;
+  if (f.qf.aktiv && !c.aktiv) return false;
+  if (f.qf.inaktiv && c.aktiv) return false;
   if (f.qf.eurobaustoff && c.source !== 'eurobaustoff') return false;
   if (f.qf.overdue || f.qf.week) {
     const st = CRM.getDueStatus(c).status;
@@ -260,7 +262,7 @@ CRM.contactRowHtml = function (c, opts) {
   const dueRowClass = due.status === 'overdue' ? 'due-overdue' : (due.status === 'ok' ? 'due-ok' : '');
   return `<tr class="${dueRowClass}" ${o.rowStyle ? `style="${o.rowStyle}"` : ''}>
       <td class="col-check"><input type="checkbox" class="${checkboxClass}" data-id="${c.id}" ${checked}></td>
-      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</td>
+      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span title="aktiv (in OneNote-Notizen erwähnt)" style="color:var(--green)">●</span>' : ''}</td>
       <td class="col-erp" data-label="ERP-Nr." onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.erpNr || '')}</td>
       <td class="col-typ" data-label="Typ" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"><span class="badge badge-${c.type}" title="${CRM.TYPE_LABELS[c.type]}">${CRM.TYPE_SHORT[c.type] || '–'}</span></td>
       <td class="col-ort" data-label="Ort" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.plz)} ${esc(c.ort)}</td>
@@ -418,6 +420,57 @@ CRM.selectAllFiltered = function () {
   CRM.toast('☑️ ' + filtered.length + ' Kontakte ausgewählt — jetzt die Behalter abwählen, dann „Auswahl löschen".', 'success');
 };
 
+/* ============================================================
+   Aktiv-Erkennung — OneNote-CSV einlesen und Kontakte markieren, deren
+   Firmenname in den Notizen vorkommt (Abgleich komplett auf dem Gerät).
+   Markierte (+ Partner + besuchte) gelten als „aktiv/behalten" und sind
+   beim Bereinigen geschützt. Filter „nur unmarkierte" zeigt die Kandidaten.
+   ============================================================ */
+CRM.GENERIC_FIRMA_TOKENS = new Set(('bau gmbh gmbhco der die und mit fuer von handel baustoffe baustoff '
+  + 'malerbetrieb malermeister maler zimmerei holzbau naturbaustoffe ohgc ohg gbr '
+  + 'architekt architekten architekturbuero ingenieur ingenieure bautraeger stuck stuckateur putz farben '
+  + 'firma herr frau').split(' '));
+CRM._normText = function (s) {
+  return (' ' + (s || '').toLowerCase() + ' ')
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, ' ');
+};
+CRM._distinctiveTokens = function (firma) {
+  const toks = CRM._normText(firma).split(' ')
+    .filter((t) => t.length >= 5 && !CRM.GENERIC_FIRMA_TOKENS.has(t));
+  toks.sort((a, b) => b.length - a.length);
+  return toks.slice(0, 2);
+};
+CRM.openAktivImport = function () {
+  const inp = document.getElementById('file-input-aktiv');
+  if (inp) inp.click();
+};
+CRM.runAktivImport = function (file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const corpus = ' ' + CRM._normText(reader.result) + ' ';
+      const contacts = CRM.db.getContacts();
+      CRM.takeSnapshot('Vor Aktiv-Markierung');
+      let marked = 0, byNote = 0;
+      contacts.forEach((c) => {
+        const toks = CRM._distinctiveTokens(c.firma1);
+        const hit = toks.some((t) => corpus.indexOf(' ' + t + ' ') !== -1);
+        if (hit) byNote++;
+        c.aktiv = hit || !!c.isPartner || ((c.visits || []).length > 0);
+        if (c.aktiv) marked++;
+      });
+      CRM.db.saveContacts();
+      CRM.renderContactList();
+      CRM.toastUndo('⭐ ' + marked + ' von ' + contacts.length + ' Kontakten als aktiv markiert (' + byNote + ' über Notizen). '
+        + 'Nutze den Filter „Nur unmarkierte" (' + (contacts.length - marked) + ') zum Bereinigen.');
+    } catch (e) {
+      CRM.toast('Fehler beim Einlesen: ' + (e && e.message || e), 'error');
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+};
+
 CRM.clearRegionFilter = function () {
   CRM._regionFilter = new Set();
   CRM.renderContactList();
@@ -433,7 +486,7 @@ CRM.getFilteredContacts = function () {
   return CRM.db.getContacts().filter((c) => CRM.contactMatchesFilters(c, f));
 };
 CRM._isProtectedContact = function (c) {
-  return !!c.isPartner || ((c.visits || []).length > 0);
+  return !!c.isPartner || !!c.aktiv || ((c.visits || []).length > 0);
 };
 CRM.openCleanupDialog = function () {
   const all = CRM.db.getContacts();
@@ -960,6 +1013,11 @@ CRM.initContactFilters = function () {
   });
   document.getElementById('btn-new-contact')?.addEventListener('click', () => CRM.createNewContact());
   document.getElementById('btn-toggle-extra-filters')?.addEventListener('click', () => CRM.toggleExtraFilters());
+  document.getElementById('file-input-aktiv')?.addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) CRM.runAktivImport(f);
+    e.target.value = '';
+  });
 };
 
 /* Mobile: Ort/PLZ/Listenquelle/A-B-C standardmäßig eingeklappt (belegten sonst
@@ -984,13 +1042,16 @@ CRM.setTypeChipFilter = function (typ) {
 
 CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
-    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false };
+    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false };
     CRM._regionFilter = new Set();
     ['contact-search', 'filter-ort', 'filter-plz'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['filter-type', 'filter-source', 'filter-abc'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.querySelectorAll('.typ-chip').forEach((b) => b.classList.toggle('active', b.dataset.typ === ''));
   } else {
     CRM._quickFilters[qf] = !CRM._quickFilters[qf];
+    // „markiert" und „unmarkiert" schließen sich gegenseitig aus
+    if (qf === 'aktiv' && CRM._quickFilters.aktiv) CRM._quickFilters.inaktiv = false;
+    if (qf === 'inaktiv' && CRM._quickFilters.inaktiv) CRM._quickFilters.aktiv = false;
   }
   document.querySelectorAll('#contact-quick-filters .qf-btn[data-qf]').forEach((b) => {
     if (b.dataset.qf !== 'reset') b.classList.toggle('active', !!CRM._quickFilters[b.dataset.qf]);
