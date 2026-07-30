@@ -198,18 +198,21 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
 /* Kontaktliste — kompakte Spalten */
 .contact-table{table-layout:fixed;width:100%}
-.contact-table th,.contact-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contact-table th,.contact-table td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+/* Firma (2. Spalte) hat KEINE feste Breite -> sie absorbiert den freien Platz
+   und ist die breite, gut lesbare Spalte. Mindestbreite über min-width. */
+.contact-table th:nth-child(2),.contact-table td:nth-child(2){min-width:240px}
+.contact-table td.mc-title{font-weight:600}
 .contact-table .col-check{width:34px;text-align:center}
 .contact-table .col-erp{width:80px}
 .contact-table .col-typ{width:48px}
-.contact-table .col-ort{width:190px;white-space:normal}
+.contact-table .col-ort{width:150px;white-space:normal}
 .contact-table .col-abc{width:48px}
-.contact-table .col-map{width:46px;text-align:center}
-.contact-table th:nth-child(2),.contact-table td:nth-child(2){max-width:200px}
-.contact-table .col-todo{width:170px}
-.contact-table .col-region{width:150px}
-.contact-table .col-lastvisit{width:110px}
-.contact-table .col-status{width:92px}
+.contact-table .col-map{width:44px;text-align:center}
+.contact-table .col-todo{width:120px}
+.contact-table .col-region{width:110px}
+.contact-table .col-lastvisit{width:104px}
+.contact-table .col-status{width:88px}
 .contact-table .col-dist{width:90px;text-align:right}
 /* Spaltenbreite per Ziehen: Griff am rechten Rand jeder Kopfzelle */
 .contact-table thead th{position:relative}
