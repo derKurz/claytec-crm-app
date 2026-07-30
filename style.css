@@ -208,7 +208,14 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .contact-table th:nth-child(2),.contact-table td:nth-child(2){max-width:200px}
 .contact-table .col-todo{width:170px}
 .contact-table .col-region{width:150px}
+.contact-table .col-lastvisit{width:110px}
+.contact-table .col-status{width:92px}
 .contact-table .col-dist{width:90px;text-align:right}
+/* Spaltenbreite per Ziehen: Griff am rechten Rand jeder Kopfzelle */
+.contact-table thead th{position:relative}
+.col-resizer{position:absolute;top:0;right:0;width:8px;height:100%;cursor:col-resize;user-select:none;touch-action:none;z-index:2}
+.col-resizer:hover,.col-resizer.dragging{background:var(--accent);opacity:.5}
+body.resizing-col{cursor:col-resize;user-select:none}
 .contact-check{width:auto;cursor:pointer}
 .badge-todo{color:var(--orange);border-color:var(--orange);max-width:160px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 .btn-link{background:none;border:none;padding:0;color:var(--accent);cursor:pointer;font-size:13px;text-align:left;text-decoration:underline;text-decoration-color:transparent;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}

@@ -213,7 +213,7 @@ CRM.contactTableHeaderHtml = function (showDistance, opts) {
     const arrow = sort.field === field ? (sort.dir === 'desc' ? ' ▼' : ' ▲') : '';
     return `<th class="${extraClass || ''}" style="cursor:pointer" title="Sortieren" onclick="CRM.setContactSort('${field}')">${label}${arrow}</th>`;
   };
-  return `<tr><th class="col-check"></th>${th('firma', 'Firma')}<th class="col-erp">ERP-Nr.</th>${th('typ', 'Typ', 'col-typ')}${th('plz', 'PLZ/Ort', 'col-ort')}<th class="col-region">Region</th>${th('abc', 'A/B/C', 'col-abc')}${th('todo', 'To Do', 'col-todo')}<th>Letzter Besuch</th>${th('status', 'Status')}<th class="col-map"></th>${showDistance ? '<th class="col-dist">Entfernung</th>' : ''}</tr>`;
+  return `<tr><th class="col-check"></th>${th('firma', 'Firma')}<th class="col-erp">ERP-Nr.</th>${th('typ', 'Typ', 'col-typ')}${th('plz', 'PLZ/Ort', 'col-ort')}<th class="col-region">Region</th>${th('abc', 'A/B/C', 'col-abc')}${th('todo', 'To Do', 'col-todo')}<th class="col-lastvisit">Letzter Besuch</th>${th('status', 'Status', 'col-status')}<th class="col-map"></th>${showDistance ? '<th class="col-dist">Entfernung</th>' : ''}</tr>`;
 };
 
 /* Sortierstatus für die Kontakttabelle (Firma/PLZ/Typ/To-Do/Status) — nur
@@ -351,6 +351,47 @@ CRM.renderContactList = function () {
       CRM.db.updateContact(e.target.dataset.id, { nextStep: e.target.value });
       CRM.renderContactList(); // To-Do-Spalte aktualisieren
     });
+  });
+
+  CRM.initColumnResize();
+};
+
+/* Spaltenbreiten in der Kontakttabelle per Ziehen verstellen (nur Desktop).
+   Breiten bleiben pro Spalte gespeichert. */
+CRM._colWidthsKey = 'crm_contact_col_widths';
+CRM.initColumnResize = function () {
+  if (window.innerWidth <= 768) return; // Mobile = Kartenansicht
+  const table = document.querySelector('#contact-list-container .contact-table');
+  if (!table) return;
+  const ths = table.querySelectorAll('thead th');
+  const saved = CRM.storage.read(CRM._colWidthsKey, {}) || {};
+  ths.forEach((th, i) => { if (saved[i]) th.style.width = saved[i] + 'px'; });
+  ths.forEach((th, i) => {
+    if (i === ths.length - 1) return; // letzte Spalte braucht keinen Griff
+    const grip = document.createElement('div');
+    grip.className = 'col-resizer';
+    grip.title = 'Spaltenbreite ziehen';
+    grip.addEventListener('click', (e) => { e.stopPropagation(); }); // nicht sortieren
+    grip.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX;
+      const startW = th.getBoundingClientRect().width;
+      grip.classList.add('dragging');
+      document.body.classList.add('resizing-col');
+      const move = (ev) => { th.style.width = Math.max(36, startW + (ev.clientX - startX)) + 'px'; };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        grip.classList.remove('dragging');
+        document.body.classList.remove('resizing-col');
+        const widths = CRM.storage.read(CRM._colWidthsKey, {}) || {};
+        widths[i] = Math.round(th.getBoundingClientRect().width);
+        CRM.storage.write(CRM._colWidthsKey, widths);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+    th.appendChild(grip);
   });
 };
 
