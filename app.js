@@ -309,6 +309,7 @@ CRM.renderContactList = function () {
       <span style="color:var(--text-dim);font-size:13px;align-self:center"><strong id="contact-sel-count">${selCount}</strong> ausgewählt</span>
       <button class="btn btn-sm btn-primary" onclick="CRM.routeSelectedGoogle()">🗺️ Route in Google Maps</button>
       <button class="btn btn-sm" onclick="CRM.routeSelectedOnMap()">📍 Auf Karte anzeigen</button>
+      <button class="btn btn-sm btn-danger" onclick="CRM.deleteSelectedContacts()">🗑️ Auswahl löschen</button>
       <button class="btn btn-sm" onclick="CRM.clearContactSelection()">Auswahl leeren</button>
     </div>`;
 
@@ -367,6 +368,108 @@ CRM.clearContactSelection = function () {
 CRM.clearRegionFilter = function () {
   CRM._regionFilter = new Set();
   CRM.renderContactList();
+};
+
+/* ============================================================
+   Kontakte-Bereinigung — gefilterte Kontakte gesammelt löschen.
+   Sicherheitsnetz: Partner/besuchte werden geschützt, vor dem Löschen
+   wird automatisch ein Backup erstellt UND ein Undo-Snapshot gesetzt.
+   ============================================================ */
+CRM.getFilteredContacts = function () {
+  const f = CRM.getContactFilters();
+  return CRM.db.getContacts().filter((c) => CRM.contactMatchesFilters(c, f));
+};
+CRM._isProtectedContact = function (c) {
+  return !!c.isPartner || ((c.visits || []).length > 0);
+};
+CRM.openCleanupDialog = function () {
+  const all = CRM.db.getContacts();
+  if (!all.length) { CRM.toast('Keine Kontakte vorhanden.', 'error'); return; }
+  const filtered = CRM.getFilteredContacts();
+  const protectedArr = filtered.filter(CRM._isProtectedContact);
+  const partnerN = filtered.filter((c) => c.isPartner).length;
+  const visitedN = filtered.filter((c) => (c.visits || []).length > 0).length;
+  CRM._cleanupState = { filtered, protectedArr };
+  const noFilter = filtered.length === all.length;
+  const toDelete = filtered.length - protectedArr.length;
+  CRM.openModal(`
+    <h2>🧹 Kontakte bereinigen</h2>
+    <p>Dein aktueller Filter trifft <strong>${filtered.length}</strong> von ${all.length} Kontakten.</p>
+    ${noFilter ? `<p style="background:rgba(255,92,92,.12);border:1px solid var(--red);border-radius:8px;padding:8px 10px;font-size:13px">⚠️ <strong>Kein Filter aktiv</strong> — das betrifft deine GESAMTE Liste. Setz oben zuerst einen Filter (Suche, Typ, Region, PLZ, Quelle), um gezielt zu kürzen.</p>` : ''}
+    <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" id="cleanup-protect" checked>
+      🛡️ Partner (${partnerN}) und besuchte (${visitedN}) Kontakte schützen
+    </label>
+    <p style="font-size:15px;margin:6px 0">➡️ Es werden <strong id="cleanup-todelete" style="color:var(--red)">${toDelete}</strong> Kontakte gelöscht.</p>
+    <p style="color:var(--text-dim);font-size:12px">Vor dem Löschen wird automatisch ein <strong>Backup</strong> erstellt; danach kannst du per „↶ Rückgängig" sofort zurück. Große Bereinigungen am besten am <strong>Laptop</strong> machen, dann Backup aufs Handy einspielen.</p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn btn-danger" id="cleanup-go" onclick="CRM.runCleanup()">🗑️ Backup + löschen</button>
+    </div>
+  `);
+  const cb = document.getElementById('cleanup-protect');
+  if (cb) cb.addEventListener('change', CRM._updateCleanupCount);
+  CRM._updateCleanupCount();
+};
+CRM._updateCleanupCount = function () {
+  const st = CRM._cleanupState; if (!st) return;
+  const protect = !!(document.getElementById('cleanup-protect') || {}).checked;
+  const n = protect ? (st.filtered.length - st.protectedArr.length) : st.filtered.length;
+  const el = document.getElementById('cleanup-todelete');
+  if (el) el.textContent = n;
+  const go = document.getElementById('cleanup-go');
+  if (go) go.disabled = n === 0;
+};
+/* Gemeinsamer, sicherer Lösch-Ablauf: Schutz anwenden → Backup → Undo-
+   Snapshot → in einem Rutsch löschen → Oberfläche aktualisieren. */
+CRM._performContactDeletion = async function (ids, opts) {
+  opts = opts || {};
+  const set = ids instanceof Set ? new Set(ids) : new Set(ids);
+  let skipped = 0;
+  if (opts.protect !== false) {
+    CRM.db.getContacts().forEach((c) => {
+      if (set.has(c.id) && CRM._isProtectedContact(c)) { set.delete(c.id); skipped++; }
+    });
+  }
+  if (!set.size) {
+    CRM.toast(skipped ? 'Nur Partner/besuchte ausgewählt — nichts gelöscht.' : 'Nichts zu löschen.', 'error');
+    return;
+  }
+  const go = document.getElementById('cleanup-go');
+  if (go) { go.disabled = true; go.textContent = 'Backup läuft…'; }
+  try {
+    await CRM.backup.exportJSON(); // Sicherung ZUERST — bei Fehler kein Löschen
+  } catch (e) {
+    CRM.toast('Backup fehlgeschlagen — Löschen abgebrochen. (' + (e && e.message || e) + ')', 'error');
+    if (go) { go.disabled = false; go.textContent = '🗑️ Backup + löschen'; }
+    return;
+  }
+  let undoOk = true;
+  try { CRM.takeSnapshot('Vor Bereinigung (' + set.size + ' Kontakte)'); }
+  catch (e) { undoOk = false; }
+  const removed = CRM.db.deleteContacts(set);
+  if (CRM._contactSelection) CRM._contactSelection.clear();
+  CRM.closeModal();
+  CRM.renderContactList();
+  if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+  if (CRM.renderDashboard) CRM.renderDashboard();
+  const extra = skipped ? ' (' + skipped + ' Partner/besuchte geschützt)' : '';
+  if (undoOk) CRM.toastUndo('🧹 ' + removed + ' Kontakte gelöscht' + extra + '. Backup wurde gespeichert.');
+  else CRM.toast('🧹 ' + removed + ' Kontakte gelöscht' + extra + '. Backup gespeichert (Undo hier nicht verfügbar).', 'success');
+};
+// Weg 1: kompletten gefilterten Satz löschen (Dialog).
+CRM.runCleanup = async function () {
+  const st = CRM._cleanupState; if (!st) return;
+  const protect = !!(document.getElementById('cleanup-protect') || {}).checked;
+  const victims = protect ? st.filtered.filter((c) => !CRM._isProtectedContact(c)) : st.filtered.slice();
+  await CRM._performContactDeletion(victims.map((c) => c.id), { protect: false });
+};
+// Weg 2: einzeln angehakte Kontakte löschen (Auswahl-Leiste).
+CRM.deleteSelectedContacts = async function () {
+  const ids = Array.from(CRM._contactSelection || []);
+  if (!ids.length) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
+  if (!confirm(ids.length + ' ausgewählte Kontakte löschen? (Partner/besuchte bleiben geschützt, vorher wird ein Backup erstellt.)')) return;
+  await CRM._performContactDeletion(ids, { protect: true });
 };
 
 CRM._selectedContacts = function () {

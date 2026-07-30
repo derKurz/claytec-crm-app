@@ -298,6 +298,32 @@ CRM.db = {
     this.saveComms();
     this.saveJournal();
   },
+  // Mehrere Kontakte in EINEM Durchgang löschen (für die Bereinigung).
+  // Spart bei ~1000 Löschungen tausende Einzel-Speichervorgänge.
+  deleteContacts(ids) {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    if (!set.size) return 0;
+    const before = this._contacts.length;
+    this._contacts = this._contacts.filter((c) => !set.has(c.id));
+    const removed = before - this._contacts.length;
+    this._contacts.forEach((c) => {
+      Object.keys(c.links || {}).forEach((k) => {
+        c.links[k] = (c.links[k] || []).filter((x) => !set.has(x));
+      });
+    });
+    this._projects.forEach((p) => {
+      p.contactIds = (p.contactIds || []).filter((x) => !set.has(x));
+    });
+    this._tasks = this._tasks.filter((t) => !set.has(t.contactId));
+    this._comms.forEach((m) => { m.contactIds = (m.contactIds || []).filter((x) => !set.has(x)); });
+    this._journal = this._journal.filter((j) => !set.has(j.contactId));
+    this.saveContacts();
+    this.saveProjects();
+    this.saveTasks();
+    this.saveComms();
+    this.saveJournal();
+    return removed;
+  },
 
   /* ---- Projects ---- */
   getProjects() {
