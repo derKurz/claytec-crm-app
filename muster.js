@@ -35,6 +35,8 @@ CRM.muster.open = function (contactId, taskId) {
   CRM.muster._taskId = taskId || null; // wird nach dem Versand als erledigt markiert
   CRM.muster._mengen = {};
   CRM.muster._farbton = {};
+  CRM.muster._einheit = {};   // pro Artikel: 'stk' oder 've'
+  CRM.muster._openKats = null; // wird in renderListe gesetzt: nur erste Kategorie offen
   const c = CRM.db.getContact(contactId);
   if (!c) return;
   const ap = c.ansprechpartner || {};
@@ -43,7 +45,7 @@ CRM.muster.open = function (contactId, taskId) {
 
   CRM.openModal([
     '<h2>📦 Muster / Werbemittel schicken</h2>',
-    '<p style="color:var(--text-dim);font-size:13px">Stückzahl je Artikel setzen — auch weniger als eine ganze Verpackungseinheit ist möglich.</p>',
+    '<p style="color:var(--text-dim);font-size:13px">Bereich antippen zum Auf-/Zuklappen. Menge je Artikel setzen und <strong>Stück</strong> oder <strong>VE</strong> (Verpackungseinheit) wählen.</p>',
     '<div class="row" style="flex-wrap:wrap;gap:8px">',
     '  <div class="col" style="min-width:200px"><label>Kunde</label><input id="mu-kunde" value="' + escAttr(c.firma1) + '"></div>',
     '  <div class="col" style="max-width:150px"><label>Kunden-Nr.</label><input id="mu-knr" value="' + escAttr(c.erpNr || '') + '" placeholder="ERP-Nr."></div>',
@@ -95,45 +97,83 @@ CRM.muster.renderListe = function () {
     return;
   }
 
+  // Nach Kategorie gruppieren (Reihenfolge des Katalogs beibehalten)
+  const kats = [];
+  const byKat = {};
+  items.forEach((it) => { if (!byKat[it.kat]) { byKat[it.kat] = []; kats.push(it.kat); } byKat[it.kat].push(it); });
+  // Erststart: nur die erste Kategorie offen
+  if (!CRM.muster._openKats) CRM.muster._openKats = new Set(kats.length ? [kats[0]] : []);
+  const searching = !!q; // beim Suchen alles aufklappen, damit Treffer sichtbar sind
+
   let html = '';
-  let lastKat = null;
-  items.forEach((it) => {
-    if (it.kat !== lastKat) {
-      lastKat = it.kat;
-      html += '<div style="background:var(--bg-elev2);padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dim)">' + esc2(it.kat) + '</div>';
-    }
-    const menge = CRM.muster._mengen[it.nr] || 0;
-    const isFav = fav.indexOf(it.nr) >= 0;
-    html += [
-      '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);min-height:52px' + (menge ? ';background:rgba(30,142,80,.10)' : '') + '">',
-      '  <button class="btn btn-sm" style="padding:4px 7px;' + (isFav ? 'color:var(--gold)' : 'opacity:.35') + '" title="Zu meiner Auswahl" onclick="CRM.muster.toggleFavorit(\'' + escAttr(it.nr) + '\')">★</button>',
-      '  <div style="flex:1;min-width:0">',
-      '    <div style="font-size:13px;font-weight:600">' + esc2(it.name) + '</div>',
-      '    <div style="font-size:11px;color:var(--text-dim)">' + esc2(it.nr) + (it.ve > 1 ? ' · VE ' + it.ve + ' Stk' : '') + (it.desc ? ' · ' + esc2(it.desc) : '') + '</div>',
-      '  </div>',
-      '  <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">',
-      '    <button class="btn btn-sm" style="min-width:36px;min-height:36px" onclick="CRM.muster.setMenge(\'' + escAttr(it.nr) + '\',-1)">−</button>',
-      '    <span style="min-width:26px;text-align:center;font-weight:700;font-size:14px">' + menge + '</span>',
-      '    <button class="btn btn-sm" style="min-width:36px;min-height:36px" onclick="CRM.muster.setMenge(\'' + escAttr(it.nr) + '\',1)">+</button>',
-      '  </div>',
-      '</div>',
-    ].join('');
-    // YOSIMA-Beutel: Farbton ist Pflicht — Auswahlzeile direkt darunter
-    if (menge && CRM.muster.brauchtFarbton(it.nr)) {
-      const gew = CRM.muster._farbton[it.nr];
-      const brauchtStruktur = CRM.YOSIMA_BEUTEL_ARTIKEL[it.nr].struktur;
-      html += [
-        '<div style="padding:8px 10px 10px 46px;border-bottom:1px solid var(--border);background:' + (gew ? 'rgba(30,142,80,.10)' : 'rgba(200,107,9,.12)') + '">',
-        '  <div style="font-size:12px;margin-bottom:6px;' + (gew ? '' : 'color:var(--orange);font-weight:600') + '">',
-        gew ? ('✓ Farbton: <strong>' + esc2(gew) + '</strong>') : ('⚠ Farbton' + (brauchtStruktur ? ' + Strukturzuschlag' : '') + ' erforderlich'),
-        '  </div>',
-        '  <button class="btn btn-sm" onclick="CRM.muster.openFarbwahl(\'' + escAttr(it.nr) + '\')">🎨 ' + (gew ? 'Farbton ändern' : 'Farbton wählen') + '</button>',
-        '</div>',
-      ].join('');
-    }
+  kats.forEach((kat) => {
+    const open = searching || CRM.muster._openKats.has(kat);
+    const gewaehlt = byKat[kat].filter((it) => CRM.muster._mengen[it.nr]).length;
+    html += '<div onclick="CRM.muster.toggleKat(\'' + escAttr(kat) + '\')" style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-elev2);padding:8px 10px;font-size:12px;font-weight:600;color:var(--text-dim);cursor:pointer;position:sticky;top:0;user-select:none">'
+      + '<span>' + (open ? '▾' : '▸') + ' ' + esc2(kat) + '</span>'
+      + (gewaehlt ? '<span style="color:var(--accent-2)">' + gewaehlt + ' gewählt</span>' : '')
+      + '</div>';
+    html += '<div style="' + (open ? '' : 'display:none') + '">';
+    byKat[kat].forEach((it) => { html += CRM.muster._itemRowHtml(it, fav); });
+    html += '</div>';
   });
   el.innerHTML = html;
   CRM.muster.updateSumme();
+};
+
+/* Eine Artikelzeile (Menge, Stück/VE-Umschalter, ggf. Farbton). */
+CRM.muster._itemRowHtml = function (it, fav) {
+  const menge = CRM.muster._mengen[it.nr] || 0;
+  const isFav = (fav || CRM.muster.getFavoriten()).indexOf(it.nr) >= 0;
+  const ve = it.ve || 1;
+  const unit = (ve > 1 && CRM.muster._einheit[it.nr] === 've') ? 've' : 'stk';
+  const nrEsc = escAttr(it.nr);
+  let html = [
+    '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);min-height:52px' + (menge ? ';background:rgba(30,142,80,.10)' : '') + '">',
+    '  <button class="btn btn-sm" style="padding:4px 7px;' + (isFav ? 'color:var(--gold)' : 'opacity:.35') + '" title="Zu meiner Auswahl" onclick="CRM.muster.toggleFavorit(\'' + nrEsc + '\')">★</button>',
+    '  <div style="flex:1;min-width:0">',
+    '    <div style="font-size:13px;font-weight:600">' + esc2(it.name) + '</div>',
+    '    <div style="font-size:11px;color:var(--text-dim)">' + esc2(it.nr) + (ve > 1 ? ' · 1 VE = ' + ve + ' Stück' : '') + (it.desc ? ' · ' + esc2(it.desc) : '') + '</div>',
+    // Umschalter nur bei echten VE-Artikeln (VE > 1)
+    ve > 1 ? ('    <div style="display:flex;gap:0;margin-top:5px">'
+      + '<button class="btn btn-sm ' + (unit === 'stk' ? 'btn-primary' : '') + '" style="border-top-right-radius:0;border-bottom-right-radius:0" onclick="CRM.muster.setEinheit(\'' + nrEsc + '\',\'stk\')">Stück</button>'
+      + '<button class="btn btn-sm ' + (unit === 've' ? 'btn-primary' : '') + '" style="border-top-left-radius:0;border-bottom-left-radius:0;margin-left:-1px" onclick="CRM.muster.setEinheit(\'' + nrEsc + '\',\'ve\')">VE</button>'
+      + (menge && unit === 've' ? '<span style="align-self:center;margin-left:8px;font-size:11px;color:var(--accent-2)">= ' + (menge * ve) + ' Stück</span>' : '')
+      + '</div>') : '',
+    '  </div>',
+    '  <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">',
+    '    <button class="btn btn-sm" style="min-width:36px;min-height:36px" onclick="CRM.muster.setMenge(\'' + nrEsc + '\',-1)">−</button>',
+    '    <span style="min-width:44px;text-align:center;font-weight:700;font-size:14px">' + menge + '<span style="font-size:10px;color:var(--text-dim);display:block;font-weight:400">' + (unit === 've' ? 'VE' : 'Stk') + '</span></span>',
+    '    <button class="btn btn-sm" style="min-width:36px;min-height:36px" onclick="CRM.muster.setMenge(\'' + nrEsc + '\',1)">+</button>',
+    '  </div>',
+    '</div>',
+  ].join('');
+  // YOSIMA-Beutel: Farbton ist Pflicht — Auswahlzeile direkt darunter
+  if (menge && CRM.muster.brauchtFarbton(it.nr)) {
+    const gew = CRM.muster._farbton[it.nr];
+    const brauchtStruktur = CRM.YOSIMA_BEUTEL_ARTIKEL[it.nr].struktur;
+    html += [
+      '<div style="padding:8px 10px 10px 46px;border-bottom:1px solid var(--border);background:' + (gew ? 'rgba(30,142,80,.10)' : 'rgba(200,107,9,.12)') + '">',
+      '  <div style="font-size:12px;margin-bottom:6px;' + (gew ? '' : 'color:var(--orange);font-weight:600') + '">',
+      gew ? ('✓ Farbton: <strong>' + esc2(gew) + '</strong>') : ('⚠ Farbton' + (brauchtStruktur ? ' + Strukturzuschlag' : '') + ' erforderlich'),
+      '  </div>',
+      '  <button class="btn btn-sm" onclick="CRM.muster.openFarbwahl(\'' + nrEsc + '\')">🎨 ' + (gew ? 'Farbton ändern' : 'Farbton wählen') + '</button>',
+      '</div>',
+    ].join('');
+  }
+  return html;
+};
+
+CRM.muster.toggleKat = function (kat) {
+  if (!CRM.muster._openKats) CRM.muster._openKats = new Set();
+  if (CRM.muster._openKats.has(kat)) CRM.muster._openKats.delete(kat);
+  else CRM.muster._openKats.add(kat);
+  CRM.muster.renderListe();
+};
+
+CRM.muster.setEinheit = function (nr, u) {
+  CRM.muster._einheit[nr] = u;
+  CRM.muster.renderListe();
 };
 
 CRM.muster.setMenge = function (nr, delta) {
@@ -144,11 +184,23 @@ CRM.muster.setMenge = function (nr, delta) {
   CRM.muster.renderListe();
 };
 
+/* VE-Faktor eines Artikels (1, falls kein echter VE-Artikel). */
+CRM.muster._veOf = function (nr) {
+  const it = (CRM.WERBEMITTEL || []).find((x) => x.nr === nr);
+  return (it && it.ve > 1) ? it.ve : 1;
+};
+/* Gesamt-Stückzahl eines Artikels je nach gewählter Einheit. */
+CRM.muster._stueckOf = function (nr) {
+  const m = CRM.muster._mengen[nr] || 0;
+  const unit = CRM.muster._einheit[nr] === 've' ? 've' : 'stk';
+  return unit === 've' ? m * CRM.muster._veOf(nr) : m;
+};
+
 CRM.muster.updateSumme = function () {
   const el = document.getElementById('mu-summe');
   if (!el) return;
   const nrs = Object.keys(CRM.muster._mengen);
-  const stueck = nrs.reduce((s, nr) => s + CRM.muster._mengen[nr], 0);
+  const stueck = nrs.reduce((s, nr) => s + CRM.muster._stueckOf(nr), 0);
   el.textContent = nrs.length
     ? nrs.length + ' Position' + (nrs.length === 1 ? '' : 'en') + ' · ' + stueck + ' Stück gesamt'
     : 'Noch nichts ausgewählt';
@@ -246,9 +298,14 @@ CRM.muster._collect = function () {
   (CRM.WERBEMITTEL || []).forEach((it) => {
     const m = CRM.muster._mengen[it.nr];
     if (!m) return;
-    // Bei VE > 1 ausdrücklich klarstellen, dass NUR Teilmenge gewünscht ist
-    const veHinweis = it.ve > 1 ? ' (VE ' + it.ve + ' Stk — bitte nur ' + m + ' Stk)' : '';
-    let zeile = '- ' + it.nr + '  ' + it.name + ': ' + m + ' Stück' + veHinweis;
+    // Klartext je nach gewählter Einheit — eindeutig, ohne Misch-Hinweise:
+    //   Stück:  „12 Stück"
+    //   VE:     „2 VE (= 20 Stück)"
+    const unit = (it.ve > 1 && CRM.muster._einheit[it.nr] === 've') ? 've' : 'stk';
+    const mengeText = unit === 've'
+      ? m + ' VE (= ' + (m * it.ve) + ' Stück)'
+      : m + ' Stück';
+    let zeile = '- ' + it.nr + '  ' + it.name + ': ' + mengeText;
     if (CRM.muster.brauchtFarbton(it.nr)) {
       const ton = CRM.muster._farbton[it.nr];
       if (!ton) fehlendeFarbe.push(it.name);
@@ -294,7 +351,9 @@ CRM.muster._journal = function (c) {
   const txt = Object.keys(CRM.muster._mengen).map((nr) => {
     const it = (CRM.WERBEMITTEL || []).find((x) => x.nr === nr);
     const ton = CRM.muster._farbton[nr];
-    return CRM.muster._mengen[nr] + '× ' + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
+    const m = CRM.muster._mengen[nr];
+    const unit = (it && it.ve > 1 && CRM.muster._einheit[nr] === 've') ? ' VE ' : '× ';
+    return m + unit + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
   }).join(', ');
   // Feldnamen müssen zum Journal-Datenmodell passen (entryType/content) —
   // sonst wird der Eintrag zwar gespeichert, aber leer angezeigt.
