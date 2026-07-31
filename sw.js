@@ -7,7 +7,7 @@
    - Geocoding (Nominatim) wird NIE gecacht (Live-Daten, datensparsam).
    Cache-Version bei jedem Update hochzählen (passt zu ?v= in index.html).
    ============================================================ */
-var VERSION = '20260725a';
+var VERSION = '20260725b';
 var APP_CACHE = 'claytec-crm-app-' + VERSION;
 var TILE_CACHE = 'claytec-crm-tiles-v1';
 var TILE_LIMIT = 600; // max. gecachte Kartenkacheln
@@ -40,6 +40,7 @@ var APP_SHELL = [
   './yosima-farbtoene.js?v=' + VERSION,
   './muster.js?v=' + VERSION,
   './lager.js?v=' + VERSION,
+  './hotels.js?v=' + VERSION,
   './app.js?v=' + VERSION,
   './icon.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',

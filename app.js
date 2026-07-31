@@ -947,6 +947,10 @@ CRM.initMobileNav = function () {
     closeSheet();
     CRM.lager.openDialog();
   });
+  document.getElementById('more-sheet-hotels')?.addEventListener('click', () => {
+    closeSheet();
+    CRM.hotels.openDialog();
+  });
   document.getElementById('more-sheet-import').addEventListener('click', () => {
     closeSheet();
     document.getElementById('file-input-excel').click();
@@ -1000,6 +1004,7 @@ CRM.initHeaderSearch = function () {
     { icon: '🕸️', label: 'Netzwerk', keys: ['netzwerk', 'beziehung'], run: () => CRM.switchTab('netzwerk') },
     { icon: '📋', label: 'Projekte', keys: ['projekte', 'projekt', 'baustelle', 'bv'], run: () => CRM.switchTab('projekte') },
     { icon: '📦', label: 'Muster-Lager', keys: ['muster', 'lager', 'inventur'], run: () => { if (CRM.lager && CRM.lager.openDialog) CRM.lager.openDialog(); else CRM.switchTab('start'); } },
+    { icon: '🏨', label: 'Hotels / Übernachtungen', keys: ['hotel', 'hotels', 'uebernachtung', 'übernachtung', 'gasthof'], run: () => { if (CRM.hotels && CRM.hotels.openDialog) CRM.hotels.openDialog(); } },
     { icon: '💾', label: 'Backup erstellen', keys: ['backup', 'sicherung', 'sichern'], run: () => CRM.backup && CRM.backup.exportJSON() },
     { icon: '📥', label: 'Handy-Eingang verarbeiten', keys: ['eingang', 'sync', 'synchronisieren'], run: () => CRM.ablage && CRM.ablage.processEingang(false) },
     { icon: '➕', label: 'Neuer Kontakt', keys: ['neuer kontakt', 'kontakt anlegen', 'neu'], run: () => CRM.createNewContact && CRM.createNewContact() },
