@@ -151,11 +151,16 @@ CRM.quickActionButtons = function (c) {
   const mail = c.emailFirma || (c.ansprechpartner && c.ansprechpartner.email);
   let html = '';
   if (tel) html += `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()" title="Anrufen">📞</a>`;
-  if (mail) html += `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail">✉</a>`;
+  if (mail) html += `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail schreiben">✉</a>`;
+  if (c.website) {
+    const url = /^https?:\/\//i.test(c.website) ? c.website : 'https://' + c.website;
+    html += `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐 Web</a>`;
+  }
   html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍 Karte</button>`;
   const addr = CRM.formatAddress(c);
   if (addr) html += `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️ Maps</a>`;
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Für OneNote kopieren (danach Strg+V in eine Seite einfügen)">📋 OneNote</button>`;
+  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋 Kopieren</button>`;
+  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧 Weiterleiten</button>`;
   const inRoute = CRM._contactSelection && CRM._contactSelection.has(c.id);
   html += `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓ In Route' : '➕ Zur Route'}</button>`;
   return html;

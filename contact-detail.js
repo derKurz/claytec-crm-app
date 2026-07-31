@@ -54,6 +54,26 @@ CRM.copyForOneNote = function (id) {
   });
 };
 
+/* Kontaktdaten per E-Mail weiterleiten: öffnet eine neue Mail (leerer
+   Empfänger) mit Betreff + Kontaktblock im Text — z.B. um einem Kunden
+   den passenden Händler/Verarbeiter zu schicken. */
+CRM.forwardContactByMail = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
+  const addr = CRM.formatAddress(c);
+  const ap = c.ansprechpartner || {};
+  const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
+  const lines = [c.firma1];
+  if (addr) lines.push(addr);
+  if (apName) lines.push('Ansprechpartner: ' + apName + (ap.funktion ? ' (' + ap.funktion + ')' : ''));
+  if (c.telFirma) lines.push('Tel: ' + c.telFirma);
+  if (ap.telefon && ap.telefon !== c.telFirma) lines.push('Tel (AP): ' + ap.telefon);
+  if (c.emailFirma) lines.push('E-Mail: ' + c.emailFirma);
+  if (c.website) lines.push('Web: ' + c.website);
+  const subject = 'Kontakt: ' + c.firma1 + (c.ort ? ' (' + c.ort + ')' : '');
+  window.location.href = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(lines.join('\r\n'));
+};
+
 CRM._copyRichText = async function (html, text) {
   if (navigator.clipboard && window.ClipboardItem) {
     try {
@@ -274,6 +294,7 @@ CRM.renderContactDetailModal = function (id) {
         <div class="li-badges" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
       </div>
       <div style="display:flex;gap:6px">
+        <button class="btn btn-icon" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')" style="${c.top25 ? 'border-color:var(--accent-2);background:rgba(255,193,7,.12)' : ''}">🏆</button>
         <button class="btn btn-icon" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren (in die aktive Liste)'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'}</button>
         <button class="btn btn-icon" title="vCard (.vcf) erstellen — für Google Kontakte" onclick="CRM.vcard.exportContact('${c.id}')">📇</button>
         <button class="btn btn-icon" title="Kontakt löschen" onclick="CRM.deleteContactFromDetail('${c.id}')">🗑</button>

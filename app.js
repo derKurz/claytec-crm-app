@@ -144,7 +144,7 @@ CRM.restoreLastTab = function () {
 /* ============================================================
    Kontaktliste (einfache Tabellenansicht für Schritt 1)
    ============================================================ */
-CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false };
+CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
 
 /* PLZ-Bereich parsen: "80-85", "80–85", "8000-8500" → {min, max} (auf Präfix-Länge normalisiert) */
 CRM.parsePlzRange = function (raw) {
@@ -193,6 +193,7 @@ CRM.contactMatchesFilters = function (c, f) {
   if (f.source && c.source !== f.source) return false;
   if (f.abc && c.abc !== f.abc) return false;
   if (f.qf.partner && !c.isPartner) return false;
+  if (f.qf.top25 && !c.top25) return false;
   if (f.qf.aktiv && !c.aktiv) return false;
   if (f.qf.inaktiv && c.aktiv) return false;
   if (f.qf.eurobaustoff && c.source !== 'eurobaustoff') return false;
@@ -265,7 +266,7 @@ CRM.contactRowHtml = function (c, opts) {
   const dueRowClass = due.status === 'overdue' ? 'due-overdue' : (due.status === 'ok' ? 'due-ok' : '');
   return `<tr class="${dueRowClass}" ${o.rowStyle ? `style="${o.rowStyle}"` : ''}>
       <td class="col-check"><input type="checkbox" class="${checkboxClass}" data-id="${c.id}" ${checked}></td>
-      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span title="aktiv (in OneNote-Notizen erwähnt)" style="color:var(--green)">●</span>' : ''}</td>
+      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.firma1)} ${c.top25 ? '🏆' : ''}${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span title="aktiv (in OneNote-Notizen erwähnt)" style="color:var(--green)">●</span>' : ''}</td>
       <td class="col-erp" data-label="ERP-Nr." onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.erpNr || '')}</td>
       <td class="col-typ" data-label="Typ" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"><span class="badge badge-${c.type}" title="${CRM.TYPE_LABELS[c.type]}">${CRM.TYPE_SHORT[c.type] || '–'}</span></td>
       <td class="col-ort" data-label="Ort" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.plz)} ${esc(c.ort)}</td>
@@ -673,6 +674,16 @@ CRM.toggleContactAktiv = function (id) {
   CRM.renderContactList();
   if (CRM.openContactDetail) CRM.openContactDetail(id); // Detail neu zeichnen
   CRM.toast(c.aktiv ? '⭐ Als aktiv markiert.' : 'Markierung entfernt.', 'success');
+};
+/* Top-25-Kunde von Hand markieren (besondere Kontaktpflege). */
+CRM.toggleContactTop25 = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
+  c.top25 = !c.top25;
+  CRM.db.saveContacts();
+  CRM.renderContactList();
+  if (CRM.openContactDetail) CRM.openContactDetail(id);
+  CRM.toast(c.top25 ? '🏆 Als Top-25-Kunde markiert.' : 'Top-25-Markierung entfernt.', 'success');
 };
 
 CRM._selectedContacts = function () {
@@ -1200,7 +1211,7 @@ CRM.setTypeChipFilter = function (typ) {
 
 CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
-    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false };
+    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
     CRM._regionFilter = new Set();
     ['contact-search', 'filter-ort', 'filter-plz'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['filter-type', 'filter-source', 'filter-abc'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
