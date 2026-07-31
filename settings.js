@@ -93,6 +93,18 @@ CRM.renderSettings = function () {
     </div>
 
     <div class="card">
+      <h3 style="margin-top:0">🏠 Zuhause (Start/Ziel für Routen)</h3>
+      <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Deine Wohnort-Adresse — damit du Routen „ab Zuhause" starten und „zurück nach Hause" enden lassen kannst. Bleibt nur lokal auf diesem Gerät.</p>
+      <label>Adresse (Straße Nr., PLZ Ort)</label>
+      <input id="set-home-adresse" value="${escAttr((s.home && s.home.adresse) || '')}" placeholder="z.B. Musterstraße 1, 92224 Amberg">
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="CRM.saveHome()">Speichern</button>
+        <button class="btn btn-sm" onclick="CRM.geocodeHome()">📍 Auf Karte prüfen (geocodieren)</button>
+      </div>
+      <p id="home-status" style="font-size:12px;color:var(--text-dim);margin:8px 0 0">${(s.home && s.home.lat != null) ? '✓ verortet (' + s.home.lat.toFixed(4) + ', ' + s.home.lng.toFixed(4) + ')' : (s.home && s.home.adresse ? 'noch nicht geocodiert — „Auf Karte prüfen" antippen' : 'noch nicht hinterlegt')}</p>
+    </div>
+
+    <div class="card">
       <h3 style="margin-top:0">Supabase (Cloud-Sync, Phase 3 — erster Schritt)</h3>
       <p style="color:var(--text-dim);font-size:12px;margin:4px 0 8px">Noch keine echte Synchronisation — nur Verbindung herstellen und testen (siehe OFFLINE_SYNC.md). Nur den <strong>Veröffentlichungsschlüssel</strong> („anon"/"public") eintragen, niemals den geheimen/<code>service_role</code>-Key.</p>
       <label>Project URL</label>
@@ -337,6 +349,34 @@ CRM.saveOnedrivePath = function () {
   CRM.db.saveSettings({ onedrivePath: document.getElementById('set-onedrive-path').value.trim().replace(/[\\/]+$/, '') });
   CRM.toast('Pfad gespeichert.', 'success');
   if (document.querySelector('#view-einstellungen.active')) CRM.renderSettings(); // Kopier-Hinweis oben aktualisieren
+};
+
+/* Wohnort speichern (Adresse; Koordinaten bleiben bis zum Geocodieren leer). */
+CRM.saveHome = function () {
+  const adresse = (document.getElementById('set-home-adresse').value || '').trim();
+  const prev = CRM.db.getSettings().home || {};
+  // Adresse geändert → alte Koordinaten verwerfen (müssen neu geocodiert werden)
+  const home = (prev.adresse === adresse) ? Object.assign({}, prev, { adresse }) : { adresse, lat: null, lng: null };
+  CRM.db.saveSettings({ home });
+  CRM.toast(adresse ? 'Wohnort gespeichert.' : 'Wohnort entfernt.', 'success');
+  if (document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
+};
+
+/* Wohnort geocodieren (Nominatim) → Koordinaten für „Zuhause" ermitteln. */
+CRM.geocodeHome = async function () {
+  const adresse = (document.getElementById('set-home-adresse').value || '').trim();
+  if (!adresse) { CRM.toast('Bitte zuerst eine Adresse eintragen.', 'error'); return; }
+  const st = document.getElementById('home-status');
+  if (st) st.textContent = 'suche Koordinaten …';
+  const hit = await CRM.geocoding.geocodeFree(adresse);
+  if (hit) {
+    CRM.db.saveSettings({ home: { adresse, lat: hit.lat, lng: hit.lng } });
+    CRM.toast('✓ Wohnort verortet.', 'success');
+  } else {
+    CRM.db.saveSettings({ home: { adresse, lat: null, lng: null } });
+    CRM.toast('Adresse nicht gefunden — Route funktioniert trotzdem über die Adresse.', 'error');
+  }
+  if (document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
 };
 
 /* Klick auf den angezeigten Pfad kopiert ihn in die Zwischenablage —

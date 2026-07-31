@@ -34,6 +34,20 @@ CRM.geocoding.getPendingContacts = function () {
 };
 
 /* Datensparsam: NUR Adressdaten an Nominatim, keine Firmen-/Personennamen */
+/* Freie Adresszeile geocodieren (z.B. für „Zuhause"). Gibt {lat,lng,display}
+   zurück oder null. Nutzt dasselbe Nominatim wie die Kontakt-Geocodierung. */
+CRM.geocoding.geocodeFree = async function (query) {
+  if (!query || !query.trim()) return null;
+  const params = new URLSearchParams({ format: 'jsonv2', q: query.trim(), countrycodes: 'de', limit: '1' });
+  try {
+    const res = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data && data.length) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name };
+  } catch (e) { /* offline / Fehler */ }
+  return null;
+};
+
 CRM.geocoding.geocodeOne = async function (c) {
   const params = new URLSearchParams({
     format: 'jsonv2',

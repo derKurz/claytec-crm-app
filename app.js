@@ -691,10 +691,49 @@ CRM._selectedContacts = function () {
 };
 
 CRM.routeSelectedGoogle = function () {
-  let contacts = CRM._selectedContacts().filter((c) => c.strasse && c.plz);
+  const contacts = CRM._selectedContacts().filter((c) => c.strasse && c.plz);
   if (!contacts.length) { CRM.toast('Für die Auswahl fehlen Adressen (Straße/PLZ).', 'error'); return; }
-  contacts = CRM.optimizeRouteOrder(contacts);
-  CRM.showRouteLegsModal(CRM.buildGoogleMapsLegs(contacts, 10));
+  CRM.openRouteModal(contacts);
+};
+
+/* Routen-Fenster mit optionalem Start/Ziel „Zuhause" (aus den Einstellungen). */
+CRM.openRouteModal = function (contacts) {
+  CRM._routeContacts = CRM.optimizeRouteOrder(contacts);
+  const s = CRM.db.getSettings();
+  const home = (s.home && s.home.adresse) ? s.home.adresse : '';
+  CRM._routeOpts = { startHome: !!s.routeStartHome && !!home, endHome: !!s.routeEndHome && !!home };
+  CRM.openModal(`
+    <h2>🗺️ Route planen</h2>
+    <p style="color:var(--text-dim);font-size:13px">${CRM._routeContacts.length} Stopps, nach Nähe sortiert. Google Maps: max. 10 Stopps pro Route.</p>
+    ${home ? `
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer"><input type="checkbox" id="route-start-home" ${CRM._routeOpts.startHome ? 'checked' : ''}> 🏠 Start Zuhause</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer"><input type="checkbox" id="route-end-home" ${CRM._routeOpts.endHome ? 'checked' : ''}> 🏠 Ziel Zuhause</label>
+    </div>` : '<p style="font-size:12px;color:var(--text-dim)">Tipp: Wohnort in den Einstellungen hinterlegen → dann „Start/Ziel Zuhause".</p>'}
+    <div id="route-legs"></div>
+    <div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>
+  `);
+  const upd = () => {
+    const cbS = document.getElementById('route-start-home');
+    const cbE = document.getElementById('route-end-home');
+    CRM._routeOpts.startHome = !!(cbS && cbS.checked);
+    CRM._routeOpts.endHome = !!(cbE && cbE.checked);
+    CRM.db.saveSettings({ routeStartHome: CRM._routeOpts.startHome, routeEndHome: CRM._routeOpts.endHome });
+    CRM._renderRouteLegs();
+  };
+  ['route-start-home', 'route-end-home'].forEach((id) => { const el = document.getElementById(id); if (el) el.addEventListener('change', upd); });
+  CRM._renderRouteLegs();
+};
+CRM._renderRouteLegs = function () {
+  const box = document.getElementById('route-legs');
+  if (!box) return;
+  const s = CRM.db.getSettings();
+  const home = (s.home && s.home.adresse) ? s.home.adresse : '';
+  const legs = CRM.buildGoogleMapsLegs(CRM._routeContacts, 10, { homeAddr: home, startHome: CRM._routeOpts.startHome, endHome: CRM._routeOpts.endHome });
+  box.innerHTML = legs.map((l) => `<div class="list-item" style="cursor:default">
+      <div class="li-main"><div class="li-title">${l.label}</div></div>
+      <a class="btn btn-primary btn-sm" href="${l.url}" target="_blank" rel="noopener">Öffnen</a>
+    </div>`).join('');
 };
 
 CRM.routeSelectedOnMap = function () {

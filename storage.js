@@ -979,15 +979,21 @@ CRM.optimizeRouteOrder = function (contacts) {
   return ordered.concat(withoutCoords);
 };
 
-CRM.buildGoogleMapsLegs = function (contacts, maxStops) {
+CRM.buildGoogleMapsLegs = function (contacts, maxStops, opts) {
+  opts = opts || {};
   maxStops = maxStops || 10;
-  const addrs = contacts.map(CRM.formatAddress).filter(Boolean);
+  const home = opts.homeAddr;
+  let addrs = contacts.map(CRM.formatAddress).filter(Boolean);
+  // Ziel Zuhause = Heimadresse als letzter Stopp anhängen
+  if (opts.endHome && home) addrs = addrs.concat([home]);
   const legs = [];
   for (let i = 0; i < addrs.length; i += maxStops) {
     const chunk = addrs.slice(i, i + maxStops);
     const destination = chunk[chunk.length - 1];
     const waypoints = chunk.slice(0, -1);
     let url = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(destination) + '&travelmode=driving';
+    // Start Zuhause = Heimadresse als origin (nur auf der ersten Etappe)
+    if (opts.startHome && home && i === 0) url += '&origin=' + encodeURIComponent(home);
     if (waypoints.length) url += '&waypoints=' + waypoints.map(encodeURIComponent).join('|');
     legs.push({ url, stops: chunk.length, label: `Etappe ${legs.length + 1} (${chunk.length} Stopps)` });
   }
