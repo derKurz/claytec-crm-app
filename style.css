@@ -416,6 +416,21 @@ body.resizing-col{cursor:col-resize;user-select:none}
 #bottom-nav{display:none}
 #fab-new{display:none}
 
+/* Desktop (>768px): „Mehr" ist ein Klapp-Menü oben rechts (Overlay = Klick
+   daneben schließt; Eintrag anklicken navigiert und schließt). */
+#more-sheet-overlay{position:fixed;inset:0;z-index:1200}
+#more-sheet-overlay.hidden{display:none}
+#more-sheet{
+  position:absolute;top:52px;right:12px;width:252px;max-height:calc(100vh - 72px);overflow-y:auto;
+  background:var(--bg-elev);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 12px 32px rgba(0,0,0,.4);padding:6px;display:flex;flex-direction:column;gap:2px;
+}
+.more-sheet-item{
+  background:none;border:none;color:var(--text);text-align:left;font-size:14px;
+  padding:10px 12px;border-radius:8px;cursor:pointer;
+}
+.more-sheet-item:hover{background:var(--bg-elev2)}
+
 @media (max-width:768px){
   #tabs{display:none}
   .header-actions{display:none}
