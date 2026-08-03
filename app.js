@@ -933,6 +933,7 @@ CRM.initMobileNav = function () {
   const closeSheet = () => overlay.classList.add('hidden');
 
   document.getElementById('bn-more-btn').addEventListener('click', openSheet);
+  document.getElementById('btn-more-header')?.addEventListener('click', openSheet); // Desktop-Kopfzeile
   document.getElementById('more-sheet-close').addEventListener('click', closeSheet);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); });
 

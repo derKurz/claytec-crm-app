@@ -55,6 +55,10 @@ CRM.hotels.openDialog = function () {
     '    <div class="col" style="max-width:140px"><label>Preis/Nacht (€)</label><input id="ho-preis" type="number" min="0" step="0.5" value="' + escAttr(e.preis != null ? e.preis : '') + '"></div>',
     '  </div>',
     '  <label style="margin-top:6px">Adresse</label><input id="ho-adresse" value="' + escAttr(e.adresse || '') + '" placeholder="Straße Nr., PLZ Ort">',
+    '  <div class="row" style="gap:6px;margin-top:6px">',
+    '    <button class="btn btn-sm" onclick="CRM.hotels.lookupAddress()" title="Adresse aus Name + Ort automatisch finden">🔎 Adresse finden</button>',
+    '    <button class="btn btn-sm" onclick="CRM.hotels.openMapsSearch()" title="Hotel auf Google Maps suchen (Adresse/Telefon dort kopieren)">🗺️ Auf Google Maps</button>',
+    '  </div>',
     '  <div class="row" style="flex-wrap:wrap;gap:8px;margin-top:6px">',
     '    <div class="col" style="min-width:130px"><label>Telefon</label><input id="ho-tel" value="' + escAttr(e.telefon || '') + '"></div>',
     '    <div class="col" style="min-width:160px"><label>E-Mail</label><input id="ho-mail" value="' + escAttr(e.email || '') + '"></div>',
@@ -92,6 +96,32 @@ CRM.hotels.saveForm = function () {
   CRM.hotels._editId = null;
   CRM.toast('🏨 Hotel gespeichert.', 'success');
   CRM.hotels.openDialog();
+};
+
+/* Adresse aus Name + Ort per Karte (OpenStreetMap) automatisch ermitteln
+   und ins Adressfeld übernehmen. Kostenlos, ohne API-Schlüssel. */
+CRM.hotels.lookupAddress = async function () {
+  const name = ((document.getElementById('ho-name') || {}).value || '').trim();
+  const ort = ((document.getElementById('ho-ort') || {}).value || '').trim();
+  const q = [name, ort].filter(Boolean).join(', ');
+  if (!q) { CRM.toast('Bitte erst Name (und Ort) eingeben.', 'error'); return; }
+  CRM.toast('🔎 Suche Adresse …', 'success');
+  const hit = await CRM.geocoding.geocodeFree(q);
+  const adr = document.getElementById('ho-adresse');
+  if (hit && hit.display && adr) {
+    adr.value = hit.display;
+    CRM.toast('✓ Adresse übernommen — bei Bedarf anpassen.', 'success');
+  } else {
+    CRM.toast('Nichts gefunden — „🗺️ Auf Google Maps" nutzen und Adresse kopieren.', 'error');
+  }
+};
+
+/* Hotel auf Google Maps suchen (neuer Tab) — dort Adresse/Telefon/Website ablesen. */
+CRM.hotels.openMapsSearch = function () {
+  const name = ((document.getElementById('ho-name') || {}).value || '').trim();
+  const ort = ((document.getElementById('ho-ort') || {}).value || '').trim();
+  const q = [name, ort].filter(Boolean).join(' ') || 'Hotel';
+  window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q), '_blank');
 };
 
 CRM.hotels.remove = function (id) {

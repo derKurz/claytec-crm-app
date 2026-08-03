@@ -145,7 +145,8 @@ CRM.vcard.showResult = function (c, rel) {
     : `
       <p style="margin:0 0 6px"><strong>Heruntergeladen als:</strong></p>
       <p style="font-family:monospace;font-size:12px;background:var(--bg);padding:8px 10px;border-radius:6px;word-break:break-all;margin:0 0 8px">${esc(dateiname)}</p>
-      <p style="font-size:13px;margin:0">Die Datei liegt in deinem <strong>Download-Ordner</strong> (am Handy: „Downloads", am Laptop meist <code>C:\\Users\\...\\Downloads</code>).</p>`;
+      <p style="font-size:13px;margin:0">Die Datei landet dort, wohin dein <strong>Browser Downloads speichert</strong> — das ist nicht zwingend <code>C:\\Users\\...\\Downloads</code>, oft auch <code>OneDrive\\Downloads</code> oder ein selbst gewählter Ordner.</p>
+      <p style="font-size:13px;margin:6px 0 0">👉 <strong>Sicher finden:</strong> im Browser die <strong>Download-Liste</strong> öffnen (<code>Strg+J</code> in Chrome/Edge; am Handy Menü → „Downloads") → dort die <code>.vcf</code> → <em>„Im Ordner anzeigen"</em>.</p>`;
 
   CRM.openModal(`
     <h2>📇 vCard erstellt</h2>
