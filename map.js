@@ -577,6 +577,11 @@ CRM.map.openSidePanel = function (id) {
     </div>
     <p style="margin:6px 0 4px">${esc(c.plz)} ${esc(c.ort)}</p>
     ${(() => { const t = CRM.getOpenTodoText(c); return t ? `<p style="margin:6px 0"><span class="badge badge-todo" title="${esc(t)}">❗ ${esc(t)}</span></p>` : ''; })()}
+    <button class="btn btn-primary" style="margin:8px 0 4px;width:100%;justify-content:center;padding:12px" onclick="CRM.openContactDetail('${c.id}')">📇 Kontakt öffnen</button>
+    <label class="tour-add-row" style="display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:8px;cursor:pointer;${inTour ? 'background:rgba(25,227,211,.1);border-color:#19e3d3' : ''}">
+      <input type="checkbox" style="width:auto" ${inTour ? 'checked' : ''} onchange="CRM.map.toggleSelect('${c.id}')">
+      <span>${inTour ? '✓ Teil der Tour' : 'Zur Tour hinzufügen'}</span>
+    </label>
     <div class="map-panel-extra">
       <div class="li-badges">
         <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
@@ -585,11 +590,6 @@ CRM.map.openSidePanel = function (id) {
       <p style="margin:10px 0 4px">${esc(c.strasse)}</p>
       <p style="color:var(--text-dim);font-size:13px">Letzter Besuch: ${esc(CRM.formatLastVisit(c))}</p>
     </div>
-    <label class="tour-add-row" style="display:flex;align-items:center;gap:8px;margin:12px 0;padding:8px;border:1px solid var(--border);border-radius:8px;cursor:pointer;${inTour ? 'background:rgba(25,227,211,.1);border-color:#19e3d3' : ''}">
-      <input type="checkbox" style="width:auto" ${inTour ? 'checked' : ''} onchange="CRM.map.toggleSelect('${c.id}')">
-      <span>${inTour ? '✓ Teil der Tour' : 'Zur Tour hinzufügen'}</span>
-    </label>
-    <button class="btn btn-primary" style="margin-top:4px;width:100%" onclick="CRM.openContactDetail('${c.id}')">Vollständiges Profil öffnen</button>
   `;
   panel.classList.add('open');
 };

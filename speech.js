@@ -223,7 +223,10 @@ CRM.speech.saveAsVisit = function () {
    nie exportiert werden. */
 CRM.speech.showPostSaveActions = function (contactId, visit, noteText) {
   const c = CRM.db.getContact(contactId);
-  const excelBtn = visit
+  // „In Excel ablegen" nur am Laptop (Chrome/Edge mit Ordnerzugriff) anbieten —
+  // am Handy geht es nicht und würde nur verwirren. Der Besuch ist bereits
+  // gespeichert und landet später über Eingang/Tagesabschluss in Excel.
+  const excelBtn = (visit && CRM.ablage && CRM.ablage.supported())
     ? `<button class="btn btn-primary" style="justify-content:center;padding:14px" onclick='CRM.ablage.openDialog("${contactId}", ${JSON.stringify(visit).replace(/'/g, '&#39;')})'>📋 In Excel ablegen</button>`
     : '';
 
