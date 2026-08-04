@@ -952,6 +952,10 @@ CRM.initMobileNav = function () {
     closeSheet();
     CRM.hotels.openDialog();
   });
+  document.getElementById('more-sheet-eingang-verarbeiten')?.addEventListener('click', () => {
+    closeSheet();
+    CRM.ablage.processEingang(false);
+  });
   document.getElementById('more-sheet-tagesabschluss')?.addEventListener('click', () => {
     closeSheet();
     CRM.ablage.openTagesabschluss();
