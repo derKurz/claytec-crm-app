@@ -523,6 +523,29 @@ body.resizing-col{cursor:col-resize;user-select:none}
 /* Betreff-Zeile (was beim faelligen Besuch ansteht) hervorheben */
 #view-agenda .li-betreff{color:var(--text);font-weight:600;margin-top:2px}
 
+/* Kontakt-Detailansicht am Handy kompakter: der Kopfbereich (Badges,
+   Nächster Schritt, viele Aktions-Buttons) fraß die ganze erste Seite —
+   jetzt schlanker, damit Aufgaben + Aktivitäten sofort sichtbar sind. */
+@media (max-width:768px){
+  .modal{padding:14px}
+  .cd-header{margin-bottom:8px;gap:6px}
+  .cd-header > div:first-child{min-width:0}
+  .cd-header h2{font-size:17px;line-height:1.15;word-break:break-word}
+  .cd-header .li-badges{gap:4px;margin-top:4px}
+  .cd-header .badge{font-size:10px;padding:2px 6px}
+  .cd-ap{margin-top:6px;font-size:13px}
+  .cd-nextstep{margin-top:6px}
+  .cd-nextstep input{min-height:38px}
+  .cd-header .li-badges .btn{min-height:34px;padding:5px 9px;font-size:13px}
+  /* Aktions-Buttons im Kontakt-Kopf am Handy nur als Symbol (Text raus) —
+     spart die 6 Umbruch-Zeilen; Tooltip/Long-Press zeigt die Bedeutung. */
+  .cd-header .li-badges .btn-lbl{display:none}
+  .cd-header .btn-icon{min-height:34px;padding:4px 8px}
+  .cd-sec{padding:12px}
+  .cd-sec-body{margin-top:8px}
+  .cd-sec-head{min-height:30px}
+}
+
 @media (max-width:768px){
   .contact-table.mobile-cards thead{display:none}
   .contact-table.mobile-cards tbody{display:block}

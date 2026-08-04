@@ -154,15 +154,15 @@ CRM.quickActionButtons = function (c) {
   if (mail) html += `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail schreiben">✉</a>`;
   if (c.website) {
     const url = /^https?:\/\//i.test(c.website) ? c.website : 'https://' + c.website;
-    html += `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐 Web</a>`;
+    html += `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐<span class="btn-lbl"> Web</span></a>`;
   }
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍 Karte</button>`;
+  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍<span class="btn-lbl"> Karte</span></button>`;
   const addr = CRM.formatAddress(c);
-  if (addr) html += `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️ Maps</a>`;
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋 Kopieren</button>`;
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧 Weiterleiten</button>`;
+  if (addr) html += `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️<span class="btn-lbl"> Maps</span></a>`;
+  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋<span class="btn-lbl"> Kopieren</span></button>`;
+  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧<span class="btn-lbl"> Weiterleiten</span></button>`;
   const inRoute = CRM._contactSelection && CRM._contactSelection.has(c.id);
-  html += `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓ In Route' : '➕ Zur Route'}</button>`;
+  html += `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓' : '➕'}<span class="btn-lbl"> ${inRoute ? 'In Route' : 'Zur Route'}</span></button>`;
   return html;
 };
 
