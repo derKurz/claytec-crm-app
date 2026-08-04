@@ -262,11 +262,15 @@ CRM.renderContactDetailModal = function (id) {
       </div>`)(e.v))).join('')
     : '<p style="color:var(--text-dim);font-size:13px">Noch keine Besuche oder E-Mails erfasst.</p>';
 
+  // Offene Aufgaben zählen — als Marker am „Aufgaben"-Abschnitt (auch wenn zugeklappt)
+  const offeneAufgaben = CRM.db.getTasksForContact(c.id).filter((t) => !t.done).length;
+  const aufgabenTitel = 'Aufgaben' + (offeneAufgaben ? ` <span class="cd-task-badge" title="${offeneAufgaben} offene Aufgabe(n)">${offeneAufgaben}</span>` : '');
+
   const html = `
     <div class="cd-header">
       <div>
         <h2 style="margin:0 0 6px">${esc2(c.firma1)} ${c.isPartner ? '⭐' : ''}</h2>
-        <div class="li-badges">
+        <div class="li-badges cd-meta">
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
           <span class="badge">${CRM.SOURCE_LABELS[c.source]}</span>
@@ -291,7 +295,7 @@ CRM.renderContactDetailModal = function (id) {
           <label style="margin:0">Nächster Schritt</label>
           <input data-field="nextStep" value="${escAttr(c.nextStep || '')}" placeholder="z.B. Angebot nachfassen, Muster vorbeibringen...">
         </div>
-        <div class="li-badges" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
+        <div class="li-badges cd-actions" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
       </div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-icon" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')" style="${c.top25 ? 'border-color:var(--accent-2);background:rgba(255,193,7,.12)' : ''}">🏆</button>
@@ -302,7 +306,7 @@ CRM.renderContactDetailModal = function (id) {
       </div>
     </div>
 
-    ${CRM.cdSection('aufgaben', 'Aufgaben', `
+    ${CRM.cdSection('aufgaben', aufgabenTitel, `
       <div id="cd-tasks">${CRM.renderContactTasks(c.id)}</div>
       <div class="row" style="margin-top:8px;align-items:flex-end">
         <div class="col"><input id="cd-task-title" placeholder="Neue Aufgabe für diesen Kontakt" onkeydown="if(event.key==='Enter')CRM.addContactTask('${c.id}')"></div>
