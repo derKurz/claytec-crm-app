@@ -316,6 +316,12 @@ CRM.ablage.fileVisit = async function (contactId, visit, monthEssence, opts) {
     // ---------- B) Monatsbericht ----------
     const monthFolderRel = await CRM.ablage.appendMonthEntry(root, c, visit.date, monthEssence, log);
 
+    // Besuch als „in Excel abgelegt" markieren (per ID) — verhindert doppeltes
+    // Ablegen und ist die Basis für den Tagesabschluss.
+    if (visit && visit.id) {
+      const stored = (c.visits || []).find((x) => x.id === visit.id);
+      if (stored && !stored.excelFiled) { stored.excelFiled = true; stored.excelFiledAt = new Date().toISOString(); CRM.db.saveContacts(); }
+    }
     if (!silent) CRM.ablage.showResult(true, log, { custFolderRel, monthFolderRel });
     return { ok: true, log, paths: { custFolderRel, monthFolderRel } };
   } catch (e) {
@@ -434,6 +440,7 @@ CRM.ablage.openDialog = function (contactId, visit) {
   `);
   document.getElementById('abl-go').addEventListener('click', async () => {
     const v = {
+      id: visit.id,
       date: document.getElementById('abl-date').value || visit.date,
       note: document.getElementById('abl-note').value,
     };
@@ -552,6 +559,79 @@ CRM.ablage.clearEingang = async function () {
   await CRM.ablage.idbSet('claytecEingang', null);
   if (CRM.renderSettings && document.querySelector('#view-einstellungen.active')) CRM.renderSettings();
   CRM.toast('Eigener Eingang-Ordner entfernt — nutzt wieder „Eingang" im Claytec-Ordner.', 'success');
+};
+
+/* ============================================================
+   Tagesabschluss: alle noch nicht abgelegten Besuche (mit Inhalt)
+   gesammelt in Excel ablegen — ohne jeden Kunden einzeln zu öffnen.
+   Standard „nur heute"; „alle offenen" holt auch ältere nach.
+   ============================================================ */
+CRM.ablage._taScope = 'heute';
+CRM.ablage._taCandidates = function (scope) {
+  const today = new Date().toISOString().slice(0, 10);
+  const out = [];
+  CRM.db.getContacts().forEach((c) => {
+    (c.visits || []).forEach((v) => {
+      if (!v.note || !v.note.trim()) return; // nur Besuche mit Inhalt
+      if (v.excelFiled) return;              // schon abgelegt
+      if (scope === 'heute' && v.date !== today) return;
+      out.push({ c: c, v: v });
+    });
+  });
+  out.sort((a, b) => (a.v.date < b.v.date ? 1 : a.v.date > b.v.date ? -1 : 0)
+    || String(a.c.firma1 || '').localeCompare(String(b.c.firma1 || '')));
+  return out;
+};
+CRM.ablage.openTagesabschluss = function () {
+  if (!CRM.ablage.supported()) { CRM.toast('Tagesabschluss (Excel) nur in Chrome/Edge am Laptop.', 'error'); return; }
+  CRM.ablage._taScope = CRM.ablage._taScope || 'heute';
+  CRM.ablage._renderTagesabschluss();
+};
+CRM.ablage.setTaScope = function (s) { CRM.ablage._taScope = s; CRM.ablage._renderTagesabschluss(); };
+CRM.ablage._renderTagesabschluss = function () {
+  const scope = CRM.ablage._taScope;
+  const list = CRM.ablage._taCandidates(scope);
+  const kunden = new Set(list.map((x) => x.c.id)).size;
+  const rows = list.length
+    ? list.slice(0, 200).map((x) => '<div class="list-item" style="cursor:default"><div class="li-main" style="min-width:0">'
+        + '<div class="li-title">' + esc(x.c.firma1) + '</div>'
+        + '<div style="font-size:12px;color:var(--text-dim)">' + esc(x.v.date) + ' · ' + esc((x.v.note || '').replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
+        + '</div></div>').join('')
+      + (list.length > 200 ? '<p style="color:var(--text-dim);font-size:12px;padding:6px">… und ' + (list.length - 200) + ' weitere</p>' : '')
+    : '<p style="color:var(--text-dim);font-size:13px;padding:10px">Keine offenen Besuche' + (scope === 'heute' ? ' von heute' : '') + ' — alles abgelegt. ✅</p>';
+  CRM.openModal(''
+    + '<h2>🗂️ Tagesabschluss — Besuche in Excel ablegen</h2>'
+    + '<p style="color:var(--text-dim);font-size:13px">Legt alle noch nicht abgelegten Besuche (mit Inhalt) gesammelt in die Besuchsprotokolle <strong>und</strong> den Monatsbericht — jeder Besuch genau einmal.</p>'
+    + '<div class="quick-filters" style="margin:8px 0">'
+    + '  <button class="qf-btn ' + (scope === 'heute' ? 'active' : '') + '" onclick="CRM.ablage.setTaScope(\'heute\')">Nur heute</button>'
+    + '  <button class="qf-btn ' + (scope === 'offen' ? 'active' : '') + '" onclick="CRM.ablage.setTaScope(\'offen\')">Alle offenen</button>'
+    + '</div>'
+    + '<p style="font-size:15px;margin:6px 0"><strong>' + list.length + '</strong> Besuche von <strong>' + kunden + '</strong> Kunden werden abgelegt.</p>'
+    + '<div style="max-height:40vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">' + rows + '</div>'
+    + '<div class="modal-footer">'
+    + '  <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>'
+    + '  <button class="btn btn-primary" id="ta-go" ' + (list.length ? '' : 'disabled') + ' onclick="CRM.ablage.runTagesabschluss()">🗂️ ' + list.length + ' jetzt ablegen</button>'
+    + '</div>');
+};
+CRM.ablage.runTagesabschluss = async function () {
+  const list = CRM.ablage._taCandidates(CRM.ablage._taScope);
+  if (!list.length) { CRM.toast('Nichts abzulegen.', 'error'); return; }
+  const btn = document.getElementById('ta-go');
+  if (btn) btn.disabled = true;
+  let ok = 0, fehler = 0;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i].c;
+    const v = list[i].v;
+    if (btn) btn.textContent = 'Lege ab… (' + (i + 1) + '/' + list.length + ')';
+    try {
+      const res = await CRM.ablage.fileVisit(c.id, v, CRM.ablage.noteToEssence(v.note), { silent: true });
+      if (res && res.ok) ok++; else fehler++;
+    } catch (e) { fehler++; }
+  }
+  CRM.closeModal();
+  if (CRM.renderContactList && document.querySelector('#view-kontakte.active')) CRM.renderContactList();
+  if (CRM.renderDashboard && document.querySelector('#view-start.active')) CRM.renderDashboard();
+  CRM.toast('🗂️ Tagesabschluss: ' + ok + ' Besuche in Excel abgelegt' + (fehler ? ', ' + fehler + ' Fehler' : '') + '.', fehler ? 'error' : 'success');
 };
 
 CRM.ablage.processEingang = async function (silent) {
