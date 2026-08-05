@@ -133,23 +133,34 @@ CRM.ablage.findCustomerDir = async function (typeDir, c) {
   const wantName = CRM.ablage.normalizeName(c.firma1);
   // Vollständiger erwarteter Ordnername: "Firma, Ort - ErpNr"
   const wantFull = CRM.ablage.normalizeName(CRM.ablage.customerFolderName(c));
-  const wantErp = String(c.erpNr || '').trim();
+  const wantErpDigits = String(c.erpNr || '').replace(/\D/g, '');
   let exact = null;
   let fuzzy = null;
-  for await (const entry of typeDir.values()) {
-    if (entry.kind !== 'directory') continue;
+
+  // Prüft einen einzelnen Ordner-Eintrag gegen den gesuchten Kunden.
+  const consider = (entry) => {
+    if (entry.kind !== 'directory' || exact) return;
+    // 1) ERP-/Kundennummer-Treffer = eindeutig (exakte Zahl im Ordnernamen,
+    //    egal wie der Firmenname geschrieben ist).
+    if (wantErpDigits.length >= 3 && (entry.name.match(/\d+/g) || []).includes(wantErpDigits)) { exact = entry; return; }
     const norm = CRM.ablage.normalizeName(entry.name);
-    // ERP-Treffer = immer eindeutig, sofortiger Abbruch
-    if (wantErp && entry.name.includes(wantErp)) { exact = entry; break; }
-    // Exakter Name-Treffer: normalisierter Ordnername stimmt überein ODER beginnt mit Firma
-    if (norm === wantFull || (wantName && norm.startsWith(wantName))) {
-      exact = exact || entry;
-      continue;
-    }
-    // Ähnlichkeit nur als letzter Ausweg (erhöhter Schwellenwert)
-    if (exact) continue;
+    // 2) Name stimmt überein ODER beginnt mit dem Firmennamen.
+    if (norm === wantFull || (wantName && norm.startsWith(wantName))) { exact = entry; return; }
+    // 3) Ähnlichkeit (Wortüberlappung) → Rückfrage.
     const score = CRM.ablage.folderSimilarity(norm, wantFull);
     if (score >= CRM.ablage.SIMILARITY_ASK_THRESHOLD && (!fuzzy || score > fuzzy.score)) fuzzy = { entry, score };
+  };
+
+  for await (const entry of typeDir.values()) {
+    if (entry.kind !== 'directory') continue;
+    consider(entry);
+    if (exact) break;
+    // Eine Ebene tiefer suchen — fängt VERSCHACHTELTE Kundenordner ab,
+    // z.B. .BH\BayWa\BayWa, Lauf - 51157 (Sammelordner „BayWa" darüber).
+    try {
+      for await (const sub of entry.values()) { consider(sub); if (exact) break; }
+    } catch (e) { /* kein Zugriff / keine Unterordner */ }
+    if (exact) break;
   }
   return { exact, fuzzy };
 };
