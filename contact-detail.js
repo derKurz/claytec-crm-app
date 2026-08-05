@@ -243,7 +243,7 @@ CRM.renderContactDetailModal = function (id) {
     ? merged.map((e) => (e.kind === 'comm' ? commHtml(e.m) : ((v) => `
       <div class="list-item" style="cursor:default;align-items:flex-start">
         <div class="li-main" id="visit-view-${v.id}">
-          <div class="li-title">${esc2(v.date)}</div>
+          <div class="li-title">${esc2(v.date)}${v.excelFiled ? ' <span style="color:var(--green);font-size:11px;font-weight:400" title="bereits in Excel abgelegt">✓ in Excel</span>' : ''}</div>
           <div class="li-sub">${esc2(v.note) || '<span style="color:var(--text-dim)">(ohne Notiz)</span>'}</div>
         </div>
         <div id="visit-edit-${v.id}" class="hidden" style="flex:1">
@@ -257,7 +257,7 @@ CRM.renderContactDetailModal = function (id) {
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm" title="Bearbeiten" onclick="CRM.editVisit('${v.id}')">✏️</button>
           <button class="btn btn-sm" title="Löschen" onclick="CRM.deleteVisit('${c.id}','${v.id}')">🗑</button>
-          <button class="btn btn-sm" title="In Besuchsprotokoll + Monatsbericht ablegen" onclick='CRM.ablage.openDialog("${c.id}", ${JSON.stringify({ id: v.id, date: v.date, note: v.note || '' }).replace(/'/g, "&#39;")})'>📋</button>
+          <button class="btn btn-sm" title="${v.excelFiled ? 'Erneut in Excel ablegen (fügt eine weitere Zeile hinzu)' : 'In Besuchsprotokoll + Monatsbericht ablegen'}" onclick='CRM.ablage.openDialog("${c.id}", ${JSON.stringify({ id: v.id, date: v.date, note: v.note || '' }).replace(/'/g, "&#39;")})'>📋</button>
         </div>
       </div>`)(e.v))).join('')
     : '<p style="color:var(--text-dim);font-size:13px">Noch keine Besuche oder E-Mails erfasst.</p>';
@@ -269,7 +269,7 @@ CRM.renderContactDetailModal = function (id) {
   const html = `
     <div class="cd-header">
       <div>
-        <h2 style="margin:0 0 6px">${esc2(c.firma1)} ${c.isPartner ? '⭐' : ''}</h2>
+        <h2 style="margin:0 0 6px">${esc2(CRM.displayName(c))} ${c.isPartner ? '⭐' : ''}</h2>
         <div class="li-badges cd-meta">
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
@@ -347,7 +347,10 @@ CRM.renderContactDetailModal = function (id) {
         ℹ️ Datenherkunft: ${CRM.formatProvenance(c)}
       </div>
       <div class="row">
-        <div class="col"><label>Firma 1</label><input data-field="firma1" value="${escAttr(c.firma1)}"></div>
+        <div class="col"><label>Anzeigename (optional — überschreibt die erste Zeile)</label><input data-field="anzeigename" value="${escAttr(c.anzeigename || '')}" placeholder="z.B. BayWa  (statt „BayWa AG Baustoffe“)"></div>
+      </div>
+      <div class="row">
+        <div class="col"><label>Firma 1 (offizieller Name)</label><input data-field="firma1" value="${escAttr(c.firma1)}"></div>
         <div class="col"><label>Firma 2 / Zusatz</label><input data-field="firma2" value="${escAttr(c.firma2)}"></div>
         <div class="col" style="max-width:150px"><label>ERP-/Kundennr.</label><input data-field="erpNr" value="${escAttr(c.erpNr || '')}" placeholder="z.B. 22769"></div>
       </div>

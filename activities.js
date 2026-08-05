@@ -53,6 +53,7 @@ CRM.activities.build = function (contactId) {
       kat: 'besuch', icon: '📍', label: 'Besuch', datum: v.date,
       text: v.note || '(ohne Notiz)', quelle: 'visit', id: v.id,
       status: v.status || 'offen', erledigtAm: v.erledigtAm || '',
+      excelFiled: !!v.excelFiled, note: v.note || '',
     });
   });
 
@@ -159,6 +160,7 @@ CRM.activities.renderInner = function (contactId) {
             <span class="act-date">${esc2(datum)}</span>
           </div>
           <div class="act-text">${esc2(a.text)}</div>
+          ${a.quelle === 'visit' && a.excelFiled ? '<div class="act-status" style="color:var(--green)">✓ in Excel abgelegt</div>' : ''}
           ${statusVermerk}
           ${projChip}
           ${a.eingehendeMail ? `
@@ -168,6 +170,9 @@ CRM.activities.renderInner = function (contactId) {
             </div>` : ''}
         </div>
         <div class="act-btns">
+          ${a.quelle === 'visit' && CRM.ablage && CRM.ablage.supported()
+            ? `<button class="btn btn-sm" title="${a.excelFiled ? 'Erneut in Excel ablegen (fügt eine weitere Zeile hinzu)' : 'In Excel ablegen (Besuchsprotokoll + Berichtswesen Vertrieb)'}" onclick="CRM.activities.fileVisit('${contactId}','${a.id}')">📋</button>`
+            : ''}
           ${statusBtn}
           <button class="btn btn-sm act-edit" title="Eintrag bearbeiten"
             onclick="CRM.activities.edit('${contactId}','${a.quelle}','${a.id}')">✏️</button>
@@ -194,6 +199,14 @@ CRM.activities.renderInner = function (contactId) {
       <button class="btn btn-sm" onclick="CRM.activities.openEintrag('${contactId}','reklamation')">⚠️ Reklamation</button>
       <button class="btn btn-sm" onclick="CRM.activities.openEintrag('${contactId}','schulung')">🎓 Schulung</button>
     </div>`;
+};
+
+/* Besuch (erneut) in Excel ablegen — öffnet den bekannten Ablage-Dialog. */
+CRM.activities.fileVisit = function (contactId, visitId) {
+  const c = CRM.db.getContact(contactId);
+  const v = c && (c.visits || []).find((x) => x.id === visitId);
+  if (!v) return;
+  CRM.ablage.openDialog(contactId, { id: v.id, date: v.date, note: v.note || '' });
 };
 
 /* Eintrag löschen — mit Undo-Sicherung, da Verlust sonst endgültig wäre. */

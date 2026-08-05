@@ -95,7 +95,7 @@ CRM.ablage.normalizeName = function (s) {
 };
 
 CRM.ablage.customerFolderName = function (c) {
-  const parts = [c.firma1];
+  const parts = [CRM.displayName(c)];
   if (c.ort) parts.push(c.ort);
   let base = parts.filter(Boolean).join(', ');
   if (c.erpNr) base += ' - ' + c.erpNr;

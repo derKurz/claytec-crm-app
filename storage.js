@@ -608,6 +608,14 @@ CRM._removeVisit = function (contactId, visitId) {
    - Wortreihenfolge: „baustoffe maier" findet „Maier Baustoffe"
    Jedes Suchwort muss irgendwo im Kontakt vorkommen (UND-Logik).
    ============================================================ */
+/* Anzeigename: optionaler Kurzname (z.B. „BayWa") überschreibt den langen
+   Firmennamen für die Anzeige (erste Zeile) UND den Excel-Ordnernamen.
+   Der offizielle Name bleibt in firma1 erhalten. */
+CRM.displayName = function (c) {
+  if (!c) return '';
+  return (c.anzeigename && String(c.anzeigename).trim()) || c.firma1 || '';
+};
+
 CRM.searchNorm = function (s) {
   return String(s || '')
     .toLowerCase()
