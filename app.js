@@ -596,10 +596,19 @@ CRM._performContactDeletion = async function (ids, opts) {
   }
   const go = document.getElementById('cleanup-go');
   if (go) { go.disabled = true; go.textContent = 'Backup läuft…'; }
+  let backupOk = false;
   try {
-    await CRM.backup.exportJSON(); // Sicherung ZUERST — bei Fehler kein Löschen
+    backupOk = await CRM.backup.exportJSON(); // Sicherung ZUERST — bei Fehler kein Löschen
   } catch (e) {
     CRM.toast('Backup fehlgeschlagen — Löschen abgebrochen. (' + (e && e.message || e) + ')', 'error');
+    if (go) { go.disabled = false; go.textContent = '🗑️ Backup + löschen'; }
+    return;
+  }
+  // exportJSON gibt nur bei WIRKLICH gespeichertem/geteiltem Backup true zurück.
+  // Bricht der Nutzer den Teilen-Dialog ab (mobiler AbortError), ist nichts
+  // gesichert → dann NICHT löschen, sonst wären Kontakte ohne Backup weg.
+  if (!backupOk) {
+    CRM.toast('Kein Backup gespeichert — Löschen abgebrochen.', 'error');
     if (go) { go.disabled = false; go.textContent = '🗑️ Backup + löschen'; }
     return;
   }
@@ -1573,16 +1582,25 @@ CRM.checkBackupReminder = function () {
       CRM.db.saveSettings({ lastBackupPromptAt: today });
     }, 1500);
   }
-  window.addEventListener('beforeunload', (e) => {
-    const s = CRM.db.getSettings();
-    const last = s.lastBackupAt ? new Date(s.lastBackupAt) : null;
-    const days = last ? Math.floor((Date.now() - last) / 86400000) : Infinity;
-    if (days >= 1 && CRM.db.getContacts().length) {
-      e.preventDefault();
-      e.returnValue = '';
-      return '';
-    }
-  });
+  // „Seite verlassen?"-Warnung nur als letztes Sicherheitsnetz — und entschärft:
+  // Wer in DIESER Sitzung schon ein Backup gemacht hat, wird gar nicht mehr
+  // gefragt. (Daten liegen ohnehin dauerhaft in localStorage; die Warnung zielt
+  // nur auf das zusätzliche Datei-Backup.) Listener registriert sich nur einmal.
+  if (!CRM._beforeUnloadArmed) {
+    CRM._beforeUnloadArmed = true;
+    const sessionStart = Date.now();
+    window.addEventListener('beforeunload', (e) => {
+      const s = CRM.db.getSettings();
+      const last = s.lastBackupAt ? new Date(s.lastBackupAt).getTime() : 0;
+      if (last >= sessionStart) return; // in dieser Sitzung bereits gesichert → nicht nerven
+      const days = last ? Math.floor((Date.now() - last) / 86400000) : Infinity;
+      if (days >= 1 && CRM.db.getContacts().length) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    });
+  }
 };
 
 /* Handlungsfähige Erinnerung: Toast mit „Jetzt sichern"-Button */

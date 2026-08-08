@@ -473,9 +473,10 @@ body.resizing-col{cursor:col-resize;user-select:none}
   }
   .more-sheet-item:active{background:var(--bg-elev2)}
 
-  /* Touch-Targets vergrößern */
-  .btn{min-height:40px}
-  .qf-btn{min-height:36px}
+  /* Touch-Targets vergrößern (Charter Punkt 6: ≥44px am Handy).
+     Feinschliff der Icon-/Aktions-Buttons siehe Block am Dateiende. */
+  .btn{min-height:44px}
+  .qf-btn{min-height:44px}
 
   /* Typ-Filter als horizontale Chip-Leiste statt Dropdown */
   .mobile-only-filter{display:inline-flex}
@@ -840,3 +841,32 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .dash-lager-icon{font-size:18px;flex-shrink:0}
 .dash-lager-txt{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-lager-chev{color:var(--text-dim);font-size:18px;flex-shrink:0}
+
+/* ============================================================
+   Touch-Targets am Handy — Charter Punkt 6 (≥44px)
+   Steht bewusst GANZ am Ende, damit diese Regeln per Quell-
+   reihenfolge die vielen kleinen Icon-Buttons (32–38px) über-
+   schreiben, die weiter oben global definiert sind. Gilt nur
+   mobil; am Desktop (Maus) bleiben die Buttons kompakt.
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Icon-only-Buttons: mind. 44×44, sonst Fehlgriff einhandig */
+  .btn-icon,
+  .act-del, .act-edit,
+  .dash-del, .dash-vcard,
+  .lager-btns .btn {
+    min-height: 44px; min-width: 44px;
+  }
+  /* Aktions-Cluster (Aktivitäten, Nearby, Kontakt-Kopf) auf 44px */
+  .act-actions .btn,
+  .nearby-actions .btn,
+  .cd-header .li-badges .btn,
+  .cd-header .btn-icon {
+    min-height: 44px;
+  }
+  /* Kontakt-Kopf bleibt schmal (nur Symbol), aber tap-sicher hoch */
+  .cd-header .li-badges .btn,
+  .cd-header .btn-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+}

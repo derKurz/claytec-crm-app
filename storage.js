@@ -1071,7 +1071,7 @@ CRM.backup = {
         await w.close();
         CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
         CRM.toast('💾 Backup gespeichert in „' + folder.name + '" (' + name + ').', 'success');
-        return data;
+        return true; // wirklich gespeichert
       } catch (e) {
         // Fällt auf Download zurück, falls Schreiben scheitert
       }
@@ -1088,9 +1088,12 @@ CRM.backup = {
         await navigator.share({ files: [file], title: 'Claytec CRM Backup', text: 'Backup speichern (z.B. Google Drive)' });
         CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
         CRM.toast('💾 Backup geteilt — Zielordner in der App wählen.', 'success');
-        return data;
+        return true; // wirklich geteilt/gespeichert
       } catch (e) {
-        if (e.name === 'AbortError') return data; // Nutzer hat abgebrochen
+        if (e.name === 'AbortError') {
+          CRM.toast('Backup abgebrochen — nichts gespeichert.', 'error');
+          return false; // Nutzer hat den Teilen-Dialog abgebrochen → KEIN Backup
+        }
         // sonstiger Fehler → normaler Download unten
       }
     }
@@ -1105,7 +1108,7 @@ CRM.backup = {
     URL.revokeObjectURL(url);
     CRM.db.saveSettings({ lastBackupAt: new Date().toISOString() });
     CRM.toast('💾 Backup heruntergeladen: ' + name, 'success');
-    return data;
+    return true; // heruntergeladen
   },
 
   /* Excel-Export inkl. Notizen, Besuchshistorie, Status, Verknüpfungen.

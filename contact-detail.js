@@ -5,12 +5,12 @@
 var CRM = window.CRM || {};
 window.CRM = CRM;
 
-function escAttr(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-}
-function esc2(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-}
+// Eine einzige HTML-Escape-Implementierung: esc() (in app.js). esc2/escAttr
+// sind nur noch Aliase, damit die vielen bestehenden Aufrufstellen unverändert
+// bleiben. app.js lädt zuletzt, aber diese Aliase werden erst zur Render-Zeit
+// aufgerufen — dann existiert esc() garantiert global.
+function escAttr(s) { return esc(s); }
+function esc2(s) { return esc(s); }
 
 /* Kontakt formatiert (Adresse, Ansprechpartner, Notiz, To Do, Besuchshistorie)
    in die Zwischenablage legen — als Rich-Text, damit OneNote/Word die
@@ -509,35 +509,6 @@ CRM.addContactTask = function (contactId) {
 CRM.toggleContactTask = function (taskId, contactId) {
   const t = CRM.db.getTask(taskId);
   if (t) CRM.db.updateTask(taskId, { done: !t.done, doneAt: !t.done ? new Date().toISOString() : null });
-  CRM.renderContactDetailModal(contactId);
-};
-
-/* ---------- Kontaktjournal (fortlaufend, kein Besuchsbericht) ---------- */
-CRM.renderJournalForContact = function (contactId) {
-  const entries = CRM.db.getJournalForContact(contactId).slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  if (!entries.length) return '<p style="color:var(--text-dim);font-size:13px">Noch keine Journal-Einträge.</p>';
-  return entries.map((j) => `
-    <div class="list-item" style="cursor:default;align-items:flex-start">
-      <div class="li-main">
-        <div class="li-title">${esc2(CRM.JOURNAL_TYPE_LABELS[j.entryType] || j.entryType)} · ${new Date(j.createdAt).toLocaleDateString('de-DE')}</div>
-        <div class="li-sub">${esc2(j.content)}</div>
-      </div>
-      <button class="btn btn-sm" title="Löschen" onclick="CRM.deleteJournalEntryFromDetail('${contactId}','${j.id}')">🗑</button>
-    </div>`).join('');
-};
-CRM.addJournalEntryFromDetail = function (contactId) {
-  const type = document.getElementById('cd-journal-type').value;
-  const text = document.getElementById('cd-journal-text').value.trim();
-  if (!text) {
-    CRM.toast('Bitte Text eingeben.', 'error');
-    return;
-  }
-  CRM.db.addJournalEntry({ contactId, entryType: type, content: text, inputMethod: 'manual' });
-  CRM.renderContactDetailModal(contactId);
-};
-CRM.deleteJournalEntryFromDetail = function (contactId, journalId) {
-  if (!confirm('Diesen Journal-Eintrag wirklich löschen?')) return;
-  CRM.db.deleteJournalEntry(journalId);
   CRM.renderContactDetailModal(contactId);
 };
 
