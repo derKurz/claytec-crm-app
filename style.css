@@ -589,8 +589,15 @@ body.resizing-col{cursor:col-resize;user-select:none}
    jetzt schlanker, damit Aufgaben + Aktivitäten sofort sichtbar sind. */
 @media (max-width:768px){
   .modal{padding:14px}
-  .cd-header{margin-bottom:8px;gap:6px}
-  .cd-header > div:first-child{min-width:0}
+  /* Kopf am Handy UMBRECHEN: Die 4 Icon-Buttons (je min-width 44px = ~194px)
+     und der Titel konkurrierten um dieselbe Zeile -> Inhalt wurde auf ~114px
+     gequetscht, rechts blieb ein großer leerer Block ("weißes Kabel").
+     Fix: Aktions-/Schließen-Leiste (2. Kind) als eigene OBERE Zeile
+     rechtsbündig (✕ bleibt oben erreichbar), Titel/Inhalt (1. Kind) darunter
+     über die VOLLE Breite. */
+  .cd-header{margin-bottom:8px;gap:6px;flex-wrap:wrap}
+  .cd-header > div:last-child{order:1;flex:1 1 100%;justify-content:flex-end}
+  .cd-header > div:first-child{order:2;flex:1 1 100%;min-width:0}
   .cd-header h2{font-size:17px;line-height:1.15;word-break:break-word}
   .cd-header .li-badges{gap:4px;margin-top:4px}
   .cd-header .badge{font-size:11px;padding:2px 7px}
