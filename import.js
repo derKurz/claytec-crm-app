@@ -101,7 +101,7 @@ function clean(v) {
 CRM.importer.rowToContact = function (row, mapping, defaults) {
   const c = CRM.makeEmptyContact();
   c.source = defaults.source;
-  c.type = defaults.type || 'sonstige';
+  c.type = defaults.type || 'privatbauherr';
   c.isPartner = !!defaults.isPartner;
   c.abc = defaults.abc || 'C';
 

@@ -75,7 +75,7 @@ CRM.win.openDraftFromForm = function () {
   }
   const typeEl = document.getElementById('ep-type');
   const srcEl = document.getElementById('ep-source');
-  const draftContact = CRM.emailParser.toContact(data, typeEl ? typeEl.value : 'sonstige', srcEl ? srcEl.value : 'eigene');
+  const draftContact = CRM.emailParser.toContact(data, typeEl ? typeEl.value : 'privatbauherr', srcEl ? srcEl.value : 'eigene');
 
   const already = CRM.win._wins.find((w) => w.kind === 'draft');
   if (already) {

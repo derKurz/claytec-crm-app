@@ -368,7 +368,7 @@ CRM.emailParser.parse = function (rawText) {
 /* ---------- in CRM-Kontakt umwandeln ---------- */
 CRM.emailParser.toContact = function (data, type, source) {
   const c = CRM.makeEmptyContact();
-  c.type = type || 'sonstige';
+  c.type = type || 'privatbauherr';
   c.source = source || 'eigene';
   c.firma1 = data.company || data.name || 'Neuer Kontakt';
   c.firma2 = data.company2 || '';
@@ -679,6 +679,7 @@ CRM.emailParser.openDialog = function () {
       </div>
     </div>
     <div class="li-badges" id="ep-link-chips" style="margin-top:8px"></div>
+    <div id="ep-dup-warning"></div>
     <div class="modal-footer">
       <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
       <button class="btn btn-primary" onclick="CRM.emailParser.createContact()">Kontakt anlegen</button>
@@ -688,6 +689,7 @@ CRM.emailParser.openDialog = function () {
   document.getElementById('ep-link-search').addEventListener('input', CRM.emailParser.renderLinkSearch);
   document.getElementById('ep-link-search').addEventListener('focus', CRM.emailParser.renderLinkSearch);
   CRM.wirePlzOrtAutofill(document.getElementById('ep-postal'), document.getElementById('ep-city'));
+  CRM.wireLineSelectOnCtrlA(document.getElementById('ep-input'));
   if (!CRM.emailParser._outsideHandlerAttached) {
     CRM.emailParser._outsideHandlerAttached = true;
     document.addEventListener('click', (e) => {
@@ -768,18 +770,28 @@ CRM.emailParser.createContact = function () {
   // einfache Duplikatprüfung: gleicher Firmenname (normalisiert) + gleiche PLZ
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-zäöüß0-9]/g, '');
   const dup = CRM.db.getContacts().find((x) => norm(x.firma1) === norm(c.firma1) && (!c.plz || x.plz === c.plz));
+  const warnEl = document.getElementById('ep-dup-warning');
   if (dup) {
-    CRM.openModal(`
-      <h2>Möglicher Doppelkontakt</h2>
-      <p>„<strong>${esc(c.firma1)}</strong>" (${esc(c.plz)} ${esc(c.ort)}) ähnelt einem bestehenden Kontakt:</p>
-      <div class="list-item" style="cursor:default"><div class="li-main"><div class="li-title">${esc(dup.firma1)}</div><div class="li-sub">${esc(dup.plz)} ${esc(dup.ort)}</div></div></div>
-      <div class="modal-footer">
-        <button class="btn" onclick="CRM.openContactDetail('${dup.id}')">Bestehenden öffnen</button>
-        <button class="btn btn-primary" onclick='CRM.emailParser._forceAdd(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Trotzdem neu anlegen</button>
-      </div>
-    `);
+    // WICHTIG: hier bewusst KEIN CRM.openModal(...) — das würde per closeModal()
+    // sofort dieses "+ Neuer Kontakt"-Formular schließen und alle Eingaben
+    // verwerfen (Ur-Auslöser von "mein Eingabefeld ist weg"). Stattdessen ein
+    // nicht-destruktiver Hinweis INNERHALB desselben Formulars, das Formular
+    // bleibt vollständig erhalten. "Vergleichen" öffnet zusätzlich das additive
+    // CRM.win-Fenstersystem (windows.js), das ebenfalls nie closeModal() ruft.
+    if (warnEl) {
+      warnEl.innerHTML = `
+        <div class="card" style="border-color:var(--orange);margin-top:10px;padding:10px 12px">
+          <div style="font-size:13px;margin-bottom:8px">⚠️ Möglicher Doppelkontakt: „<strong>${esc(dup.firma1)}</strong>" (${esc(dup.plz)} ${esc(dup.ort)}) existiert bereits. Deine Eingaben oben bleiben erhalten.</div>
+          <div class="row" style="gap:6px">
+            <button type="button" class="btn btn-sm" onclick="CRM.win.openDraftFromForm()" title="Öffnet ein Vergleichsfenster mit diesem Kontakt — dieses Formular bleibt geöffnet">🔍 Vergleichen</button>
+            <button type="button" class="btn btn-sm btn-primary" onclick='CRM.emailParser._forceAdd(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Trotzdem neu anlegen</button>
+          </div>
+        </div>`;
+      warnEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
     return;
   }
+  if (warnEl) warnEl.innerHTML = '';
   CRM.emailParser._forceAdd(c);
 };
 

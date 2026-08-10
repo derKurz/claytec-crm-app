@@ -808,7 +808,7 @@ CRM.importFlow = {
   sheetsData: [], // [{name, rows, headerRowIdx, headers, dataRows}]
   currentSheetIdx: 0,
   mapping: {},
-  defaults: { source: 'eigene', type: 'sonstige', isPartner: false, abc: 'C' },
+  defaults: { source: 'eigene', type: 'privatbauherr', isPartner: false, abc: 'C' },
 };
 
 /* Farbschema anwenden — Standard ist HELL (bessere Lesbarkeit),
@@ -1124,11 +1124,10 @@ CRM.goToContactFromSearch = function (id) {
   if (results) { results.classList.add('hidden'); results.innerHTML = ''; }
   const c = CRM.db.getContact(id);
   if (!c) return;
-  if (c.lat != null && c.lng != null) {
-    CRM.showContactOnMap(id);
-  } else {
-    CRM.openContactDetail(id);
-  }
+  // Klick aus der Kopf-Suche öffnet IMMER das volle Profil (nicht die Karte) —
+  // konsistent mit dem Klick in der Kontaktliste (CRM.contactRowHtml). Wer die
+  // Karte will, nutzt gezielt das 📍-Symbol in der Kontaktliste/im Profil.
+  CRM.openContactDetail(id);
 };
 
 /* Aus der Schnellsuche in die Kontaktliste springen, gefiltert nach Ort/PLZ. */

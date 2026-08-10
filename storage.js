@@ -24,20 +24,22 @@ CRM.JOURNAL_TYPE_LABELS = {
   reklamation: '⚠️ Reklamation', schulung: '🎓 Schulung/Workshop',
 };
 
-CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'sonstige'];
+CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'privatbauherr', 'behoerde'];
 CRM.TYPE_LABELS = {
   haendler: 'Händler',
   verarbeiter: 'Verarbeiter',
   architekt: 'Architekt',
   bauherr: 'Bauherr',
-  sonstige: 'Sonstige',
+  privatbauherr: 'Private Bauherren',
+  behoerde: 'Behörden',
 };
 CRM.TYPE_SHORT = {
   haendler: 'HA',
   verarbeiter: 'BU',
   architekt: 'AR',
   bauherr: 'BH',
-  sonstige: 'SO',
+  privatbauherr: 'PB',
+  behoerde: 'BÖ',
 };
 CRM.SOURCES = ['eigene', 'eurobaustoff', 'partner', 'baywa'];
 CRM.SOURCE_LABELS = {
@@ -135,6 +137,20 @@ CRM.db = {
     this._settings = Object.assign({}, CRM.DEFAULT_SETTINGS, CRM.storage.read(CRM.KEYS.SETTINGS, {}));
     this._meta = CRM.storage.read(CRM.KEYS.META, { importedFiles: [] });
     this._repairJournal();
+    this._migrateContactTypes();
+  },
+
+  /* Einmalige, idempotente Migration (Batch 5, 2026-08): Kategorie "sonstige"
+     wurde in "Private Bauherren" (privatbauherr) umbenannt. Alte Kontakte mit
+     dem alten type werden beim Laden automatisch umgeschrieben — läuft bei
+     jedem Init, ist aber ein No-Op sobald kein Kontakt mehr type==='sonstige'
+     hat. */
+  _migrateContactTypes() {
+    let changed = 0;
+    this._contacts.forEach((c) => {
+      if (c.type === 'sonstige') { c.type = 'privatbauherr'; changed++; }
+    });
+    if (changed) this.saveContacts();
   },
 
   /* Reparatur: Musterbestellungen wurden zeitweise mit den falschen
@@ -432,7 +448,7 @@ CRM.makeEmptyComm = function () {
 CRM.makeEmptyContact = function () {
   return {
     id: null,
-    type: 'sonstige',
+    type: 'privatbauherr',
     isPartner: false,
     source: 'eigene',
     abc: 'C',
@@ -1064,6 +1080,26 @@ CRM.wirePlzOrtAutofill = function (plzInput, ortInput, onFilled) {
   };
   plzInput.addEventListener('change', tryFill);
   plzInput.addEventListener('input', () => { if (/^\d{5}$/.test(plzInput.value.trim())) tryFill(); });
+};
+
+/* Strg/Cmd+A in einem mehrzeiligen Feld (z.B. eingefügter Adress-/
+   Signaturblock) markiert per Browser-Standard den GESAMTEN Inhalt — das ist
+   beim Korrigieren nur einer Zeile lästig. Diese Verdrahtung schränkt Strg/
+   Cmd+A auf die Zeile ein, in der der Cursor gerade steht. Nur für das
+   übergebene <textarea> — einzeilige <input>-Felder bleiben unangetastet
+   (dort greift weiterhin das normale "alles markieren"). */
+CRM.wireLineSelectOnCtrlA = function (textareaEl) {
+  if (!textareaEl) return;
+  textareaEl.addEventListener('keydown', (e) => {
+    if (!(e.key === 'a' || e.key === 'A') || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    const val = textareaEl.value;
+    const pos = textareaEl.selectionStart;
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+    const nextBreak = val.indexOf('\n', pos);
+    const lineEnd = nextBreak === -1 ? val.length : nextBreak;
+    textareaEl.setSelectionRange(lineStart, lineEnd);
+  });
 };
 
 /* Distanz in km (Haversine) */

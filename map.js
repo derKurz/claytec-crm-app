@@ -4,13 +4,16 @@
 var CRM = window.CRM || {};
 window.CRM = CRM;
 
-CRM.TYPE_COLORS = { haendler: '#3da9fc', verarbeiter: '#4cd17b', architekt: '#ff9f43', bauherr: '#c9a66b', sonstige: '#9aa4b5' };
+CRM.TYPE_COLORS = { haendler: '#3da9fc', verarbeiter: '#4cd17b', architekt: '#ff9f43', bauherr: '#c9a66b', privatbauherr: '#9aa4b5', behoerde: '#9b7fe6' };
 
 CRM.map = {
   instance: null,
   markersLayer: null,
   selectedIds: new Set(),
-  filters: { types: { haendler: true, verarbeiter: true, architekt: true, sonstige: true }, partnerOnly: false, query: '' },
+  // Alle CRM.TYPES defaultmäßig sichtbar (fehlender Key hier hätte bei
+  // der Sichtbarkeitsprüfung unten sonst "unsichtbar" bedeutet, siehe
+  // filters.types[c.type]-Check).
+  filters: { types: Object.fromEntries(CRM.TYPES.map((t) => [t, true])), partnerOnly: false, query: '' },
 };
 
 CRM.map.init = function () {

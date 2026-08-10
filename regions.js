@@ -47,7 +47,7 @@ CRM.goToRegion = function (rid) {
 
 /* Typ/Listenquelle-Filter für den Regionen-Tab — wirkt auf Zahlen in den
    Regionskarten UND auf die Kontaktliste darunter. */
-CRM._regionTypeFilter = CRM._regionTypeFilter || { haendler: true, verarbeiter: true, architekt: true, bauherr: true, sonstige: true };
+CRM._regionTypeFilter = CRM._regionTypeFilter || Object.fromEntries(CRM.TYPES.map((t) => [t, true]));
 CRM._regionSourceFilter = CRM._regionSourceFilter || { eigene: true, eurobaustoff: true, partner: true, baywa: true };
 
 CRM.regionContactPassesFilter = function (c) {

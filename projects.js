@@ -104,10 +104,11 @@ CRM.projectCard = function (p) {
 };
 
 CRM.projectContactsByRole = function (p) {
-  const out = { architekt: [], haendler: [], verarbeiter: [], sonstige: [] };
+  const out = {};
+  CRM.TYPES.forEach((t) => { out[t] = []; });
   (p.contactIds || []).forEach((id) => {
     const c = CRM.db.getContact(id);
-    if (c) (out[c.type] || out.sonstige).push(c);
+    if (c && out[c.type]) out[c.type].push(c);
   });
   return out;
 };
@@ -334,12 +335,7 @@ CRM.deleteProjectConfirm = function (id) {
 /* ---------- Beteiligte Kontakte nach Rolle ---------- */
 CRM.renderProjectContacts = function (p) {
   const roles = CRM.projectContactsByRole(p);
-  const groups = [
-    { key: 'architekt', label: 'Architekten' },
-    { key: 'haendler', label: 'Händler' },
-    { key: 'verarbeiter', label: 'Verarbeiter' },
-    { key: 'sonstige', label: 'Sonstige' },
-  ];
+  const groups = CRM.TYPES.map((t) => ({ key: t, label: CRM.TYPE_LABELS[t] }));
   let html = '';
   groups.forEach((g) => {
     if (!roles[g.key].length) return;

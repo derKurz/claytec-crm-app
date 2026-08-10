@@ -12,6 +12,7 @@
   --green:#4cd17b;
   --orange:#ff9f43;
   --red:#ff5c5c;
+  --purple:#9b7fe6;
   --radius:10px;
   --shadow:0 4px 16px rgba(0,0,0,.35);
 }
@@ -115,7 +116,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .badge-haendler{color:var(--blue);border-color:var(--blue)}
 .badge-verarbeiter{color:var(--green);border-color:var(--green)}
 .badge-architekt{color:var(--orange);border-color:var(--orange)}
-.badge-sonstige{color:var(--text-dim)}
+.badge-bauherr{color:#c9a66b;border-color:#c9a66b}
+.badge-privatbauherr{color:var(--text-dim)}
+.badge-behoerde{color:var(--purple);border-color:var(--purple)}
 .badge-partner{color:var(--gold);border-color:var(--gold);background:rgba(230,185,77,.12)}
 .badge-A{color:var(--red);border-color:var(--red)}
 .badge-B{color:var(--orange);border-color:var(--orange)}
