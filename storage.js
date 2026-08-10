@@ -634,18 +634,23 @@ CRM.smartMatch = function (query, fields) {
 };
 
 /* Kontakt-Suche mit PLZ-Logik: reine Zahlen-Tokens wirken als
-   PLZ-ANFANG („9" → 9xxxx, „92" → 92xxx, „923" → 923xx) oder
-   ERP-Nr.-Anfang — nicht mehr als Treffer irgendwo in Telefon-/
-   Hausnummern. Text-Tokens wie gehabt (Umlaute/Reihenfolge egal). */
+   PLZ-ANFANG („9" → 9xxxx, „92" → 92xxx, „923" → 923xx) — nicht mehr als
+   Treffer irgendwo in Telefon-/Hausnummern. Die ERP-/Kundennummer ist ab
+   3 Ziffern ein vollwertiges eigenes Suchkriterium: exakter Treffer ODER
+   Teiltreffer irgendwo in der Ziffernfolge (nicht nur Präfix — die Nummer
+   kann z.B. mit führenden Nullen in der Quelle abweichen). Text-Tokens wie
+   gehabt (Umlaute/Reihenfolge egal). */
 CRM.contactQueryMatch = function (query, c) {
   const tokens = CRM.searchNorm(query).split(' ').filter(Boolean);
   if (!tokens.length) return false;
   let hay = null;
   return tokens.every((t) => {
     if (/^\d+$/.test(t)) {
-      // 1–3 Ziffern: eindeutig PLZ-Anfang. Ab 4 Ziffern auch ERP-Nr.-Anfang.
+      // 1–2 Ziffern: eindeutig PLZ-Anfang.
       if (String(c.plz || '').startsWith(t)) return true;
-      return t.length >= 4 && String(c.erpNr || '').replace(/\D/g, '').startsWith(t);
+      const erpDigits = String(c.erpNr || '').replace(/\D/g, '');
+      if (t.length >= 3 && erpDigits && erpDigits.includes(t)) return true;
+      return false;
     }
     if (hay === null) hay = ' ' + CRM.searchNorm(CRM.contactSearchFields(c).filter(Boolean).join(' ')) + ' ';
     return hay.includes(t);
@@ -662,9 +667,18 @@ CRM.contactSearchFields = function (c) {
 /* Relevanz-Rang für die Trefferreihenfolge (kleiner = relevanter).
    Ein Firmenname-Treffer soll VOR einem Treffer über Ansprechpartner/
    Nebenfelder stehen — sonst verdrängen bei einem Kürzel wie „thiem"
-   viele „Thiemer"-Ansprechpartner den gesuchten „Atelier Thiemann". */
+   viele „Thiemer"-Ansprechpartner den gesuchten „Atelier Thiemann".
+   Eine eingetippte ERP-/Kundennummer ist ein sehr bewusster, eindeutiger
+   Suchbegriff (niemand tippt sie aus Versehen) — daher immer ganz oben. */
 CRM.contactSearchRank = function (qNorm, c) {
   if (!qNorm) return 5;
+  if (/^\d+$/.test(qNorm) && qNorm.length >= 3) {
+    const erpDigits = String(c.erpNr || '').replace(/\D/g, '');
+    if (erpDigits) {
+      if (erpDigits === qNorm) return -1; // exakter ERP-Treffer: immer zuoberst
+      if (erpDigits.includes(qNorm)) return 0.5; // ERP-Teiltreffer: sehr hoher Rang
+    }
+  }
   const firma = CRM.searchNorm(c.firma1 || '');
   if (firma.startsWith(qNorm)) return 0;
   if ((' ' + firma).includes(' ' + qNorm)) return 1; // Wortanfang innerhalb des Namens
@@ -675,9 +689,13 @@ CRM.contactSearchRank = function (qNorm, c) {
 };
 
 /* Rang für die Kontaktliste bei aktiver Mehrwort-Suche (z.B. „b m").
-   Firmenname-Treffer zuerst, Nebenfeld-Treffer zuletzt — kleiner = besser. */
+   Firmenname-Treffer zuerst, Nebenfeld-Treffer zuletzt — kleiner = besser.
+   Ein Treffer auf die ERP-/Kundennummer bekommt denselben hohen Rang wie
+   ein exakter Firmenname-Treffer (siehe CRM.contactSearchRank). */
 CRM.contactListSearchRank = function (tokens, c) {
   if (!tokens || !tokens.length) return 9;
+  const erpDigits = String(c.erpNr || '').replace(/\D/g, '');
+  if (erpDigits && tokens.some((t) => /^\d{3,}$/.test(t) && erpDigits.includes(t))) return 0;
   const firma = CRM.searchNorm(c.firma1 || '');
   const inFirma = tokens.filter((t) => firma.includes(t)).length;
   if (inFirma === tokens.length) return firma.startsWith(tokens[0]) ? 0 : 1;

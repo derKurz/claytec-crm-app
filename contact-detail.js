@@ -179,9 +179,13 @@ CRM.cdSectionState = function () {
   return CRM._cdOpen;
 };
 
-CRM.cdSection = function (key, titel, inhalt, defaultOpen) {
+CRM.cdSection = function (key, titel, inhalt, defaultOpen, forceOpen) {
   const st = CRM.cdSectionState();
-  const offen = (st[key] === undefined) ? !!defaultOpen : !!st[key];
+  // forceOpen überstimmt den gemerkten Zugeklappt-Zustand — der ist GLOBAL
+  // über alle Kontakte gespeichert (ein einziges Mal "Aufgaben" zuklappen
+  // würde sonst offene Aufgaben bei JEDEM anderen Kontakt unsichtbar
+  // machen). Wird für "Aufgaben" genutzt, solange welche offen sind.
+  const offen = forceOpen ? true : ((st[key] === undefined) ? !!defaultOpen : !!st[key]);
   return `
     <div class="card cd-sec" data-sec="${key}">
       <h3 class="cd-sec-head" onclick="CRM.cdToggle('${key}')">
@@ -313,7 +317,7 @@ CRM.renderContactDetailModal = function (id) {
         <div class="col" style="max-width:160px"><input type="date" id="cd-task-due" value="${new Date().toISOString().slice(0, 10)}"></div>
         <button class="btn btn-primary" style="min-height:44px" onclick="CRM.addContactTask('${c.id}')">💾 Aufgabe speichern</button>
       </div>
-    `, true)}
+    `, true, offeneAufgaben > 0)}
 
     ${CRM.cdSection('aktivitaeten', `Aktivitäten <span style="font-size:11px;color:var(--text-dim);font-weight:400">— alles zu diesem Kontakt an einer Stelle</span>`, `
       <div class="row" style="margin-bottom:10px;flex-wrap:wrap;gap:6px">
@@ -491,7 +495,8 @@ CRM.renderContactTasks = function (contactId) {
       <div class="li-main"><div class="li-title" style="${t.done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc2(t.title)}</div>
         <div class="li-sub"><span class="badge ${cls}">fällig ${esc2(t.due)}</span></div></div>
       ${musterBtn}
-      <button class="btn btn-sm" onclick="CRM.db.deleteTask('${t.id}');CRM.renderContactDetailModal('${contactId}')">🗑</button>
+      <button class="btn btn-sm" title="Bearbeiten" onclick="CRM.activities.edit('${contactId}','task','${t.id}')">✏️</button>
+      <button class="btn btn-sm" title="Löschen" onclick="CRM.db.deleteTask('${t.id}');CRM.renderContactDetailModal('${contactId}')">🗑</button>
     </div>`;
   }).join('');
 };
