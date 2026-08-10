@@ -199,6 +199,7 @@ CRM.renderSettings = function () {
         Findet Kontakte, die wahrscheinlich doppelt sind (z.B. aus zwei verschiedenen Import-Listen) — gleicher Firmenname (auch bei Schreibvarianten) und gleiche PLZ. Du wählst danach, welcher Eintrag bleibt; Besuche, Aufgaben, Notizen und Verknüpfungen werden übernommen.
       </p>
       <button class="btn btn-sm" onclick="CRM.renderDuplicatesPanel()">🔍 Duplikate suchen</button>
+      <button class="btn btn-sm" onclick="CRM.win.openManualMerge()" title="Öffnet zwei leere Vergleichsfenster mit Suchfeld — beliebige zwei Kontakte wählen und nebeneinander vergleichen">✋ Zwei Kontakte manuell zusammenführen</button>
       <div id="dupe-results"></div>
     </div>
 

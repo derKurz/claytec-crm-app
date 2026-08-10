@@ -843,6 +843,54 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .dash-lager-chev{color:var(--text-dim);font-size:18px;flex-shrink:0}
 
 /* ============================================================
+   Batch 4 (2026-08): Vergleichs-/Zusammenführen-Fenster (CRM.win.*)
+   Eigenes, additives Overlay — NICHT .modal-overlay. Liegt bewusst
+   ÜBER dem Modal (z-index 1000), damit ein aus dem "+ Neuer Kontakt"-
+   Formular geöffnetes Vergleichsfenster bedienbar ist, während das
+   Formular-Modal unverändert im Hintergrund geöffnet bleibt.
+   #crm-win-layer selbst ist "durchklickbar" (pointer-events:none),
+   nur die einzelnen Fenster darin fangen Klicks ab — der Hintergrund
+   (bzw. ein offenes Formular-Modal) bleibt so bedienbar/unverändert.
+   ============================================================ */
+#crm-win-layer{position:fixed;inset:0;z-index:1300;pointer-events:none}
+.crm-window{
+  position:absolute;pointer-events:auto;width:380px;max-width:92vw;
+  max-height:80vh;display:flex;flex-direction:column;
+  background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.crm-win-titlebar{
+  cursor:move;background:var(--bg-elev2);padding:10px 12px;display:flex;
+  align-items:center;justify-content:space-between;gap:8px;
+  border-bottom:1px solid var(--border);touch-action:none;user-select:none;flex-shrink:0;
+}
+.crm-win-title{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crm-win-draft-tag{font-size:10px;font-weight:600;color:var(--orange);border:1px solid var(--orange);border-radius:99px;padding:1px 7px;margin-left:6px;white-space:nowrap}
+.crm-win-close{background:none;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;padding:4px 8px;line-height:1;flex-shrink:0;border-radius:6px}
+.crm-win-close:hover{color:var(--red);background:rgba(255,92,92,.12)}
+.crm-win-body{padding:12px 14px;overflow-y:auto;flex:1}
+.crm-win-field{padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+.crm-win-field:last-child{border-bottom:none}
+.crm-win-field-label{color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.crm-win-field-value{margin-top:2px;word-break:break-word}
+.crm-win-field.diff{background:rgba(255,159,67,.10);border-left:3px solid var(--orange);padding-left:8px;margin-left:-8px;margin-right:-2px;border-radius:4px}
+.crm-win-counts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.crm-win-footer{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.crm-win-search{position:relative;margin-top:2px;width:100%}
+
+@media (max-width:768px){
+  /* Handy: kein Drag-Zwang — vollbreite, gestapelte Panels statt
+     frei ziehbarer Fenster. #crm-win-layer wird selbst zum
+     scrollbaren Stapel-Container (nur wenn Fenster offen sind). */
+  #crm-win-layer.has-windows{
+    pointer-events:auto;overflow-y:auto;background:rgba(0,0,0,.55);
+    padding:10px;display:flex;flex-direction:column;gap:10px;
+  }
+  .crm-window{position:static!important;left:auto!important;top:auto!important;width:100%!important;max-width:100%!important;max-height:none!important}
+  .crm-win-titlebar{cursor:default}
+}
+
+/* ============================================================
    Touch-Targets am Handy — Charter Punkt 6 (≥44px)
    Steht bewusst GANZ am Ende, damit diese Regeln per Quell-
    reihenfolge die vielen kleinen Icon-Buttons (32–38px) über-
@@ -854,14 +902,16 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
   .btn-icon,
   .act-del, .act-edit,
   .dash-del, .dash-vcard,
-  .lager-btns .btn {
+  .lager-btns .btn,
+  .crm-win-close {
     min-height: 44px; min-width: 44px;
   }
   /* Aktions-Cluster (Aktivitäten, Nearby, Kontakt-Kopf) auf 44px */
   .act-actions .btn,
   .nearby-actions .btn,
   .cd-header .li-badges .btn,
-  .cd-header .btn-icon {
+  .cd-header .btn-icon,
+  .crm-win-footer .btn {
     min-height: 44px;
   }
   /* Kontakt-Kopf bleibt schmal (nur Symbol), aber tap-sicher hoch */

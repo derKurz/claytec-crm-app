@@ -658,6 +658,7 @@ CRM.emailParser.openDialog = function () {
     <div class="row" style="margin:8px 0">
       <button class="btn btn-primary" onclick="CRM.emailParser.analyze()">▼ Analysieren</button>
       <button class="btn btn-sm" onclick="document.getElementById('ep-input').value=''">Leeren</button>
+      <button class="btn btn-sm" onclick="CRM.win.openDraftFromForm()" title="Öffnet ein Vergleichsfenster mit ähnlichen bestehenden Kontakten — dieses Formular bleibt dabei geöffnet">🔍 Ähnliche prüfen</button>
     </div>
     <h3 style="margin:6px 0">Erkannte Daten</h3>
     <div class="row" style="flex-wrap:wrap;gap:8px">${fieldInputs}</div>

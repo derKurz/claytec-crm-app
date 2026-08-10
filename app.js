@@ -1623,9 +1623,10 @@ CRM.showBackupReminder = function (daysSince) {
    Zurück-Taste am Handy (Android) — schließt nicht mehr die App.
    Jedes Öffnen eines Dialogs und jeder Tab-Wechsel legt einen
    Verlaufseintrag an; „Zurück" macht genau EINEN Schritt rückgängig:
-     offener Dialog  → Dialog schließen
-     anderer Tab     → zurück zur Startseite
-     Startseite      → App darf schließen (zweites Drücken)
+     Vergleichsfenster (CRM.win) → oberstes Fenster schließen
+     offener Dialog              → Dialog schließen
+     anderer Tab                 → zurück zur Startseite
+     Startseite                  → App darf schließen (zweites Drücken)
    ============================================================ */
 CRM.nav = { _tief: 0 };
 
@@ -1639,27 +1640,35 @@ CRM.nav.init = function () {
   try { history.replaceState({ crm: 'start', tief: 0 }, ''); } catch (e) { /* ignorieren */ }
 
   window.addEventListener('popstate', () => {
-    // 1) Offener Dialog? → nur den schließen
+    // 1) Offenes Vergleichs-/Zusammenführen-Fenster (CRM.win, Batch 4)?
+    //    Liegt optisch ÜBER einem evtl. offenen Formular-Dialog -> zuerst
+    //    nur das oberste Fenster schließen, das Formular bleibt erhalten.
+    if (CRM.win && CRM.win.count && CRM.win.count() > 0) {
+      CRM.win.closeTop();
+      CRM.nav.push('nachFenster');
+      return;
+    }
+    // 2) Offener Dialog? → nur den schließen
     if (document.getElementById('active-modal-overlay')) {
       CRM.closeModal();
       CRM.nav.push('nachDialog'); // Eintrag ersetzen, damit weiter zurück möglich bleibt
       return;
     }
-    // 2) Offenes Karten-Seitenpanel? → schließen
+    // 3) Offenes Karten-Seitenpanel? → schließen
     const panel = document.getElementById('map-side-panel');
     if (panel && panel.classList.contains('open')) {
       CRM.map.closeSidePanel();
       CRM.nav.push('nachPanel');
       return;
     }
-    // 3) Nicht auf der Startseite? → dorthin zurück
+    // 4) Nicht auf der Startseite? → dorthin zurück
     const aktiv = document.querySelector('.view.active');
     if (aktiv && aktiv.id !== 'view-start') {
       CRM.switchTab('start');
       CRM.nav.push('start');
       return;
     }
-    // 4) Startseite ohne Dialog → App darf schließen (kein pushState mehr)
+    // 5) Startseite ohne Dialog → App darf schließen (kein pushState mehr)
   });
 };
 

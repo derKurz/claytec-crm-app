@@ -840,6 +840,11 @@ CRM.mergeContacts = function (keepId, dropId) {
   simpleFields.forEach((f) => {
     if (!String(keep[f] || '').trim() && String(drop[f] || '').trim()) keep[f] = drop[f];
   });
+  // Defensiv: sehr alte/minimale Datensätze haben evtl. kein ansprechpartner-
+  // Objekt — ohne diesen Guard würde der Merge hier abbrechen (Feld-Zugriff auf
+  // undefined). Für wohlgeformte Kontakte ändert das nichts.
+  keep.ansprechpartner = keep.ansprechpartner || {};
+  drop.ansprechpartner = drop.ansprechpartner || {};
   ['anrede', 'name', 'vorname', 'funktion', 'telefon', 'email'].forEach((f) => {
     if (!String(keep.ansprechpartner[f] || '').trim() && String(drop.ansprechpartner[f] || '').trim()) keep.ansprechpartner[f] = drop.ansprechpartner[f];
   });
@@ -851,7 +856,14 @@ CRM.mergeContacts = function (keepId, dropId) {
   if (drop.isPartner) keep.isPartner = true;
   keep.tags = Array.from(new Set([...(keep.tags || []), ...(drop.tags || [])]));
   keep.visits = (keep.visits || []).concat(drop.visits || []).sort((a, b) => (a.date < b.date ? 1 : -1));
-  Object.keys(keep.links || {}).forEach((k) => {
+  // Verknüpfungen vereinigen — WICHTIG über BEIDE Schlüsselmengen: hätte keep
+  // einen Verknüpfungstyp (z.B. verarbeiterIds) noch gar nicht, drop aber schon,
+  // ginge drops Verknüpfung sonst verloren (nur keeps vorhandene Keys wurden
+  // zusammengeführt) → asymmetrische/verlorene Beziehung. Jetzt: alle Keys aus
+  // keep UND drop.
+  keep.links = keep.links || {};
+  const _linkKeys = new Set([...Object.keys(keep.links), ...Object.keys(drop.links || {})]);
+  _linkKeys.forEach((k) => {
     keep.links[k] = Array.from(new Set([...(keep.links[k] || []), ...((drop.links || {})[k] || [])])).filter((x) => x !== keepId);
   });
   if (!keep._sources) keep._sources = [keep.source];
