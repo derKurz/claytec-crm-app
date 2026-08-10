@@ -218,7 +218,7 @@ CRM.activities.remove = function (contactId, quelle, id) {
   else if (quelle === 'journal') CRM.db.deleteJournalEntry(id);
   else if (quelle === 'task') CRM.db.deleteTask(id);
   CRM.renderContactDetailModal(contactId);
-  CRM.toastUndo('Eintrag bei „' + (c ? c.firma1 : '') + '" gelöscht.');
+  CRM.toastUndo('Eintrag bei „' + (c ? CRM.displayNameDisambig(c) : '') + '" gelöscht.');
 };
 
 /* ============================================================

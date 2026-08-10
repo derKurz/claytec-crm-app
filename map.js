@@ -509,7 +509,7 @@ CRM.map.refresh = function () {
     const sel = CRM.map.selectedIds.has(c.id);
     const marker = L.marker([c.lat, c.lng], { icon: CRM.map.makeIcon(c), zIndexOffset: sel ? 1000 : 0 });
     marker.on('click', () => CRM.map.onMarkerClick(c.id));
-    marker.bindTooltip(CRM.displayName(c), { direction: 'top' });
+    marker.bindTooltip(CRM.displayNameDisambig(c), { direction: 'top' });
     CRM.map._markerById[c.id] = marker;
     markers.push(marker);
   });
@@ -572,7 +572,7 @@ CRM.map.openSidePanel = function (id) {
   const panel = document.getElementById('map-side-panel');
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-      <h3 style="margin:0">${esc(CRM.displayName(c))} ${c.isPartner ? '⭐' : ''}</h3>
+      <h3 style="margin:0">${esc(CRM.displayNameDisambig(c))} ${c.isPartner ? '⭐' : ''}</h3>
       <button class="btn btn-icon map-panel-close" onclick="CRM.map.closeSidePanel()">✕ Schließen</button>
     </div>
     <p style="margin:6px 0 4px">${esc(c.plz)} ${esc(c.ort)}</p>

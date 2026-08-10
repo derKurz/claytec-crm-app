@@ -226,7 +226,7 @@ CRM.ablage.chooseFolderDialog = function (c, typeDir, typeFolderName, fuzzy) {
         ? shown.map((f, i) => `<div class="list-item cfd-item" data-idx="${i}" style="cursor:pointer"><div class="li-main"><div class="li-title">📁 ${esc(f.display)}</div></div></div>`).join('')
         : `<p style="color:var(--text-dim);font-size:13px;padding:10px">${state.folders ? 'Kein Ordner passt zur Suche.' : 'Ordner werden geladen…'}</p>`;
       CRM.openModal(`
-        <h2>📂 Ordner wählen — ${esc(c.firma1)}</h2>
+        <h2>📂 Ordner wählen — ${esc(CRM.displayNameDisambig(c))}</h2>
         <p style="font-size:13px;color:var(--text-dim)">Kein exakt passender Ordner in <code>.Kunden\\${esc(typeFolderName)}</code> gefunden. Der Bericht bleibt gespeichert, egal wie oft du hier wechselst.</p>
         ${suggestion}
         <label>Ordner durchsuchen</label>
@@ -259,7 +259,7 @@ CRM.ablage.chooseFolderDialog = function (c, typeDir, typeFolderName, fuzzy) {
 
     const renderCreate = () => {
       CRM.openModal(`
-        <h2>➕ Neuen Ordner anlegen — ${esc(c.firma1)}</h2>
+        <h2>➕ Neuen Ordner anlegen — ${esc(CRM.displayNameDisambig(c))}</h2>
         <p style="font-size:13px;color:var(--text-dim)">Wird angelegt unter <code>.Kunden\\${esc(typeFolderName)}\\…</code>. „Zurück" verwirft nichts — der Bericht bleibt erhalten.</p>
         <label>Ordnername</label>
         <input type="text" id="cfd-newname" value="${escAttr(state.newName)}">
@@ -558,7 +558,7 @@ CRM.ablage.openDialog = function (contactId, visit) {
   const essencePre = CRM.ablage.noteToEssence(visit.note);
   const kundeVorschau = [c.firma1, c.ort].filter(Boolean).join(', ') + (c.erpNr ? ' - ' + c.erpNr : '');
   CRM.openModal(`
-    <h2>📋 In Excel ablegen — ${esc(c.firma1)}</h2>
+    <h2>📋 In Excel ablegen — ${esc(CRM.displayNameDisambig(c))}</h2>
     <p style="color:var(--text-dim);font-size:13px">Schreibt in das Besuchsprotokoll des Kunden <strong>und</strong> in den Monatsbericht. Ziel-Ordner: <code>.Kunden\\${CRM.ablage.TYPE_FOLDER[c.type] || '.BU'}\\…</code></p>
     <label>Besuchsdatum</label>
     <input type="date" id="abl-date" value="${esc(visit.date)}" style="max-width:180px">
@@ -729,7 +729,7 @@ CRM.ablage._renderTagesabschluss = function () {
   const rows = list.length
     ? list.slice(0, 200).map((x) => '<div class="list-item" style="cursor:default">'
         + '<div class="li-main" style="min-width:0">'
-        + '<div class="li-title">' + esc(x.c.firma1) + '</div>'
+        + '<div class="li-title">' + esc(CRM.displayNameDisambig(x.c)) + '</div>'
         + '<div style="font-size:12px;color:var(--text-dim)">' + esc(x.v.date) + ' · ' + esc((x.v.note || '').replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
         + '</div>'
         + '<div class="row" style="gap:4px;flex-shrink:0">'

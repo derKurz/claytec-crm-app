@@ -274,7 +274,7 @@ CRM.renderContactDetailModal = function (id) {
   const html = `
     <div class="cd-header">
       <div>
-        <h2 style="margin:0 0 6px">${esc2(CRM.displayName(c))} ${c.isPartner ? '⭐' : ''}</h2>
+        <h2 style="margin:0 0 6px">${esc2(CRM.displayNameDisambig(c))} ${c.isPartner ? '⭐' : ''}</h2>
         <div class="li-badges cd-meta">
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
@@ -723,7 +723,7 @@ CRM.updateLinkPickerResults = function () {
     <div class="list-item" onclick="${multi ? `CRM.toggleBulkSelect('${c.id}')` : `CRM.pickLink('${c.id}')`}">
       ${multi ? `<input type="checkbox" style="width:auto;margin-right:8px" ${selected.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation();CRM.toggleBulkSelect('${c.id}')">` : ''}
       <div class="li-main">
-        <div class="li-title">${esc2(c.firma1)}</div>
+        <div class="li-title">${esc2(CRM.displayNameDisambig(c))}</div>
         <div class="li-sub">${CRM.TYPE_LABELS[c.type]} · ${esc2(c.plz)} ${esc2(c.ort)}</div>
       </div>
       ${linkedIds.has(c.id) ? '<span class="badge">verknüpft</span>' : ''}

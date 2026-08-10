@@ -262,6 +262,7 @@ CRM.db = {
   saveContacts() {
     CRM.storage.write(CRM.KEYS.CONTACTS, this._contacts);
     CRM._mirrorToDexie('contacts', this._contacts);
+    CRM._invalidateNameIndex(); // Namens-Index für CRM.displayNameDisambig() ist jetzt veraltet
   },
   addContact(contact) {
     contact.id = contact.id || CRM.uid('c');
@@ -614,6 +615,88 @@ CRM._removeVisit = function (contactId, visitId) {
 CRM.displayName = function (c) {
   if (!c) return '';
   return (c.anzeigename && String(c.anzeigename).trim()) || c.firma1 || '';
+};
+
+/* ============================================================
+   Disambiguierter Anzeigename für Mehrfach-Standorte (Batch 3, 2026-08).
+   Kontakte mit identischem Firmennamen an verschiedenen Standorten sahen
+   überall (Liste/Suche/Karte/Profil-Header) gleich aus — das war die
+   eigentliche Ursache des vermeintlichen "Doppel-Notiz"-Effekts (reine
+   Anzeige-Kollision, kein Datenbug, siehe Batch 1.1).
+
+   Regel: manueller `anzeigename` gewinnt IMMER (keine Erweiterung). Sonst
+   Basis = firma1; nur wenn mehrere Kontakte denselben (normalisierten)
+   firma1 haben, wird zur Unterscheidung der Ort angehängt ("Kraft,
+   München"); sind auch Ort UND Name doppelt, zusätzlich die Straße
+   ("Kraft, München — Musterstr. 1"). Fehlt der Ort, wird nichts weiter
+   angehängt (kein Crash, bestmögliche Anzeige).
+
+   WICHTIG: NUR für die UI. CRM.displayName() (Basis für Excel-Ordnernamen,
+   siehe excel-ablage.js customerFolderName) bleibt bewusst unverändert und
+   hängt NICHT vom aktuellen Kontaktbestand ab — sonst würden sich
+   Ordnernamen ändern, sobald irgendwo ein zweiter gleichnamiger Kontakt
+   angelegt oder gelöscht wird (bricht die Ordnersuche aus Batch 2). */
+CRM._nameIndexCache = null;
+CRM._invalidateNameIndex = function () {
+  CRM._nameIndexCache = null;
+};
+/* Baut (bei Bedarf, gecacht) einen Index normalisierter firma1 → Kontakte,
+   damit Namens-Kollisionen nicht bei jeder einzelnen Anzeige den gesamten
+   Bestand erneut durchsuchen/normalisieren müssen. Wird bei jeder
+   Kontakt-Änderung (CRM.db.saveContacts) invalidiert. */
+CRM._nameIndex = function () {
+  if (CRM._nameIndexCache) return CRM._nameIndexCache;
+  const idx = new Map();
+  (CRM.db.getContacts() || []).forEach((c) => {
+    const key = CRM.searchNorm(c.firma1 || '');
+    if (!key) return;
+    if (!idx.has(key)) idx.set(key, []);
+    idx.get(key).push(c);
+  });
+  CRM._nameIndexCache = idx;
+  return idx;
+};
+CRM.displayNameDisambig = function (c) {
+  if (!c) return '';
+  if (c.anzeigename && String(c.anzeigename).trim()) return String(c.anzeigename).trim();
+  const base = c.firma1 || '';
+  if (!base) return '';
+  const key = CRM.searchNorm(base);
+  const group = key ? (CRM._nameIndex().get(key) || [c]) : [c];
+  if (group.length <= 1) return base; // Name eindeutig — nichts anzuhängen
+  const ort = String(c.ort || '').trim();
+  if (!ort) return base; // ohne Ort keine sinnvolle Unterscheidung möglich, nicht raten
+  const ortKey = CRM.searchNorm(ort);
+  const sameOrt = group.filter((g) => CRM.searchNorm(g.ort || '') === ortKey);
+  if (sameOrt.length <= 1) return base + ', ' + ort;
+  const strasse = String(c.strasse || '').trim();
+  if (!strasse) return base + ', ' + ort; // auch bei Ort-Dopplung: bestmögliche Anzeige, kein Crash
+  return base + ', ' + ort + ' — ' + strasse;
+};
+
+/* Kennung für die Handy→Laptop-Übertragung (2.3, Erkenntnis 04.08.2026):
+   anders als CRM.displayNameDisambig() lässt diese Funktion den Ort NICHT
+   weg, auch wenn der Name gerade eindeutig ist — "Maier Baustoffe GmbH"
+   ohne Ort war am Laptop nicht zuordenbar. Format folgt bewusst demselben
+   Muster wie der deterministische Excel-Ordnername (CRM.ablage.
+   customerFolderName: Basis-Name + Ort), damit die Kennung im exportierten
+   Dateinamen erkennbar zum gesuchten Ordner passt. Straße kommt nur bei
+   echter Namens+Ort-Dopplung dazu. */
+CRM.identifyingLabel = function (c) {
+  if (!c) return '';
+  const base = CRM.displayName(c); // anzeigename || firma1 — deterministisch, wie der Ordnername
+  const ort = String(c.ort || '').trim();
+  const label = ort ? base + ', ' + ort : base;
+  if (!base || !ort) return label;
+  const key = CRM.searchNorm(c.firma1 || '');
+  const group = key ? (CRM._nameIndex().get(key) || [c]) : [c];
+  const ortKey = CRM.searchNorm(ort);
+  const sameOrt = group.filter((g) => CRM.searchNorm(g.ort || '') === ortKey);
+  if (sameOrt.length > 1) {
+    const strasse = String(c.strasse || '').trim();
+    if (strasse) return label + ' — ' + strasse;
+  }
+  return label;
 };
 
 CRM.searchNorm = function (s) {

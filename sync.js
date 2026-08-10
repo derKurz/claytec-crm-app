@@ -119,7 +119,16 @@ CRM.sync.exportSingleVisit = async function (contactId, visitId) {
   if (!visit) { CRM.toast('Bericht nicht gefunden.', 'error'); return; }
   const contactExport = Object.assign({}, c, { visits: [visit] });
   const payload = { exportedAt: new Date().toISOString(), contacts: [contactExport] };
-  const safeName = (CRM.ablage && CRM.ablage.sanitizeFile ? CRM.ablage.sanitizeFile(c.firma1 || 'kontakt') : (c.firma1 || 'kontakt')).replace(/\s+/g, '_');
+  // Kennung im Dateinamen bewusst MIT Ort (2.3, Handy→Laptop): "Maier Baustoffe GmbH"
+  // ohne Ort war am Laptop nicht zuordenbar. CRM.identifyingLabel() liefert
+  // Name+Ort (analog zum Excel-Ordnernamen) und bei echter Dopplung zusätzlich
+  // die Straße. Die eigentliche Ordnersuche (findCustomerDir) bleibt davon
+  // unberührt — die liest weiterhin c.firma1/c.ort direkt aus dem
+  // mitgesendeten Kontakt-Objekt.
+  const kennung = CRM.ablage && CRM.ablage.sanitizeFile
+    ? CRM.ablage.sanitizeFile(CRM.identifyingLabel(c))
+    : (c.firma1 || 'kontakt');
+  const safeName = (kennung || 'kontakt').replace(/\s+/g, '_');
   const filename = `bericht-${safeName}-${visit.date || 'ohne-datum'}-${Date.now()}.json`;
   await CRM.sync._shareOrDownloadJSON(payload, filename, '1 Bericht');
 };

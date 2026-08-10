@@ -266,7 +266,7 @@ CRM.contactRowHtml = function (c, opts) {
   const dueRowClass = due.status === 'overdue' ? 'due-overdue' : (due.status === 'ok' ? 'due-ok' : '');
   return `<tr class="${dueRowClass}" ${o.rowStyle ? `style="${o.rowStyle}"` : ''}>
       <td class="col-check"><input type="checkbox" class="${checkboxClass}" data-id="${c.id}" ${checked}></td>
-      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(CRM.displayName(c))} ${c.top25 ? '🏆' : ''}${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span title="aktiv (in OneNote-Notizen erwähnt)" style="color:var(--green)">●</span>' : ''}</td>
+      <td class="mc-title" data-label="" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(CRM.displayNameDisambig(c))} ${c.top25 ? '🏆' : ''}${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span title="aktiv (in OneNote-Notizen erwähnt)" style="color:var(--green)">●</span>' : ''}</td>
       <td class="col-erp" data-label="ERP-Nr." onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.erpNr || '')}</td>
       <td class="col-typ" data-label="Typ" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"><span class="badge badge-${c.type}" title="${CRM.TYPE_LABELS[c.type]}">${CRM.TYPE_SHORT[c.type] || '–'}</span></td>
       <td class="col-ort" data-label="Ort" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(c.plz)} ${esc(c.ort)}</td>
@@ -1076,7 +1076,7 @@ CRM.initHeaderSearch = function () {
     if (matches.length) html += cat('Kontakte') + matches.map((c) => `
       <div class="header-search-item" data-id="${c.id}">
         <span class="badge badge-${c.type}" style="margin-right:6px">${CRM.TYPE_SHORT[c.type] || '–'}</span>
-        <strong>${esc(CRM.displayName(c))}</strong> ${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span style="color:var(--green)">●</span>' : ''}
+        <strong>${esc(CRM.displayNameDisambig(c))}</strong> ${c.isPartner ? '⭐' : ''}${c.aktiv && !c.isPartner ? '<span style="color:var(--green)">●</span>' : ''}
         <span style="color:var(--text-dim);font-size:12px"> · ${esc(c.plz)} ${esc(c.ort)}</span>
       </div>`).join('');
     if (todos.length) html += cat('To-Dos') + todos.map((x) => `
