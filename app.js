@@ -36,6 +36,50 @@ CRM.toast = function (msg, type) {
   setTimeout(() => el.remove(), 3500);
 };
 
+/* ---------- Overflow-Menü ("…") ----------
+   Gemeinsames Muster für ausgedünnte Aktions-Cluster (Batch 5b):
+   Kontaktlisten-Zeile, Kontakt-Kopf, Schnellaktionen. Markup-Konvention:
+   <div class="ov-menu"><button onclick="CRM.toggleOvMenu(this,event)">⋯</button>
+     <div class="ov-menu-list hidden">...Einträge...</div></div>
+   Position wird per JS auf `fixed` gesetzt (statt reinem CSS) UND
+   relativ zum Auslöse-Button berechnet: die Trigger sitzen teils in
+   Tabellenzellen mit overflow:hidden (Kontaktliste) oder in horizontal
+   scrollenden Zeilen mit overflow-x:auto (Kontakt-Kopf mobil) — mit
+   position:absolute würde das Menü dort abgeschnitten. */
+CRM.closeOvMenus = function () {
+  document.querySelectorAll('.ov-menu-list:not(.hidden)').forEach((l) => {
+    l.classList.add('hidden');
+    l.style.position = ''; l.style.top = ''; l.style.left = ''; l.style.right = '';
+  });
+};
+CRM.toggleOvMenu = function (btn, ev) {
+  if (ev) ev.stopPropagation();
+  const list = btn.nextElementSibling;
+  if (!list) return;
+  const willOpen = list.classList.contains('hidden');
+  CRM.closeOvMenus();
+  if (!willOpen) return;
+  list.classList.remove('hidden');
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    const w = list.offsetWidth || 200;
+    const h = list.offsetHeight || 0;
+    let left = r.right - w;
+    if (left < 4) left = 4;
+    if (left + w > window.innerWidth - 4) left = Math.max(4, window.innerWidth - w - 4);
+    let top = r.bottom + 4;
+    if (top + h > window.innerHeight - 4) top = Math.max(4, r.top - h - 4);
+    list.style.position = 'fixed';
+    list.style.right = 'auto';
+    list.style.left = left + 'px';
+    list.style.top = top + 'px';
+  };
+  place();
+  requestAnimationFrame(place); // Breite/Höhe erst nach Layout verlässlich bekannt
+};
+document.addEventListener('click', CRM.closeOvMenus);
+document.addEventListener('scroll', CRM.closeOvMenus, true);
+
 /* ---------- Modal helper ---------- */
 CRM.openModal = function (innerHTML, opts) {
   CRM.closeModal();
@@ -275,7 +319,15 @@ CRM.contactRowHtml = function (c, opts) {
       <td class="col-todo" data-label="To Do" onclick="CRM.openContactDetail('${c.id}')" style="${todoText ? 'cursor:pointer' : ''}">${todo}</td>
       <td class="col-lastvisit" data-label="Letzter Besuch" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${esc(CRM.formatLastVisit(c))}</td>
       <td class="col-status" data-label="Status" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">${due.status === 'overdue' ? `<span class="badge badge-overdue">${dueLabel}</span>` : dueLabel}</td>
-      <td class="col-map" data-label=""><button class="btn btn-sm" title="Auf Karte zeigen" onclick="CRM.showContactOnMap('${c.id}')">📍</button></td>
+      <td class="col-map" data-label="">
+        <div class="ov-menu">
+          <button class="btn btn-sm" title="Weitere Aktionen" onclick="event.stopPropagation();CRM.toggleOvMenu(this,event)">⋯</button>
+          <div class="ov-menu-list hidden">
+            <button onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')">📍 Auf Karte zeigen</button>
+            <button onclick="event.stopPropagation();CRM.win.openContact('${c.id}')">⇄ Vergleichen / Zusammenführen</button>
+          </div>
+        </div>
+      </td>
       ${o.distanceHtml !== undefined ? `<td class="col-dist" data-label="Entfernung">${o.distanceHtml}</td>` : ''}
     </tr>`;
 };

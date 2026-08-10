@@ -145,25 +145,69 @@ CRM.taskRow = function (t, st) {
     </div>`;
 };
 
-/* Schnellaktionen: Klick-to-Call / Mail (mobiler Gewinn) */
-CRM.quickActionButtons = function (c) {
+/* Schnellaktionen: Klick-to-Call / Mail (mobiler Gewinn)
+   opts.compact (Batch 5b, nur Kontakt-Kopf): nur die 1-3 wichtigsten
+   Aktionen (Anruf/Mail/Karte) bleiben sichtbar, der Rest wandert in ein
+   "…"-Overflow-Menü. Ohne opts.compact unverändertes Verhalten (Agenda). */
+CRM.quickActionButtons = function (c, opts) {
+  const o = opts || {};
   const tel = c.telFirma || (c.ansprechpartner && c.ansprechpartner.telefon);
   const mail = c.emailFirma || (c.ansprechpartner && c.ansprechpartner.email);
-  let html = '';
-  if (tel) html += `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()" title="Anrufen">📞</a>`;
-  if (mail) html += `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail schreiben">✉</a>`;
+  const items = []; // {primary, html, menuHtml}
+  if (tel) items.push({
+    primary: true,
+    html: `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()" title="Anrufen">📞</a>`,
+    menuHtml: `<a href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 Anrufen</a>`,
+  });
+  if (mail) items.push({
+    primary: true,
+    html: `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail schreiben">✉</a>`,
+    menuHtml: `<a href="mailto:${esc(mail)}" onclick="event.stopPropagation()">✉ E-Mail schreiben</a>`,
+  });
   if (c.website) {
     const url = /^https?:\/\//i.test(c.website) ? c.website : 'https://' + c.website;
-    html += `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐<span class="btn-lbl"> Web</span></a>`;
+    items.push({
+      primary: false,
+      html: `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐<span class="btn-lbl"> Web</span></a>`,
+      menuHtml: `<a href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🌐 Website öffnen</a>`,
+    });
   }
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍<span class="btn-lbl"> Karte</span></button>`;
+  items.push({
+    primary: true,
+    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍<span class="btn-lbl"> Karte</span></button>`,
+    menuHtml: `<button onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')">📍 Auf Karte zeigen</button>`,
+  });
   const addr = CRM.formatAddress(c);
-  if (addr) html += `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️<span class="btn-lbl"> Maps</span></a>`;
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋<span class="btn-lbl"> Kopieren</span></button>`;
-  html += `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧<span class="btn-lbl"> Weiterleiten</span></button>`;
+  if (addr) items.push({
+    primary: false,
+    html: `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️<span class="btn-lbl"> Maps</span></a>`,
+    menuHtml: `<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ In Google Maps öffnen</a>`,
+  });
+  items.push({
+    primary: false,
+    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋<span class="btn-lbl"> Kopieren</span></button>`,
+    menuHtml: `<button onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')">📋 Kontaktdaten kopieren</button>`,
+  });
+  items.push({
+    primary: false,
+    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧<span class="btn-lbl"> Weiterleiten</span></button>`,
+    menuHtml: `<button onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')">📧 Per E-Mail weiterleiten</button>`,
+  });
   const inRoute = CRM._contactSelection && CRM._contactSelection.has(c.id);
-  html += `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓' : '➕'}<span class="btn-lbl"> ${inRoute ? 'In Route' : 'Zur Route'}</span></button>`;
-  return html;
+  items.push({
+    primary: false,
+    html: `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓' : '➕'}<span class="btn-lbl"> ${inRoute ? 'In Route' : 'Zur Route'}</span></button>`,
+    menuHtml: `<button onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')">${inRoute ? '✓ Aus Route entfernen' : '➕ Zur Route hinzufügen'}</button>`,
+  });
+
+  if (!o.compact) return items.map((i) => i.html).join('');
+  const primaryHtml = items.filter((i) => i.primary).map((i) => i.html).join('');
+  const secondary = items.filter((i) => !i.primary);
+  if (!secondary.length) return primaryHtml;
+  return primaryHtml + `<div class="ov-menu">
+      <button class="btn btn-sm" onclick="CRM.toggleOvMenu(this,event)" title="Weitere Aktionen">⋯</button>
+      <div class="ov-menu-list hidden">${secondary.map((i) => i.menuHtml).join('')}</div>
+    </div>`;
 };
 
 /* Kontakt unabhängig von der Listen-Checkbox zur bestehenden Routenauswahl

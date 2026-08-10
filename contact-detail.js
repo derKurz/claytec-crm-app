@@ -300,14 +300,19 @@ CRM.renderContactDetailModal = function (id) {
           <label style="margin:0">Nächster Schritt</label>
           <input data-field="nextStep" value="${escAttr(c.nextStep || '')}" placeholder="z.B. Angebot nachfassen, Muster vorbeibringen...">
         </div>
-        <div class="li-badges cd-actions" style="margin-top:8px">${CRM.quickActionButtons(c)}</div>
+        <div class="li-badges cd-actions" style="margin-top:8px">${CRM.quickActionButtons(c, { compact: true })}</div>
       </div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;align-items:flex-start">
         <button class="btn btn-icon" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')" style="${c.top25 ? 'border-color:var(--accent-2);background:rgba(255,193,7,.12)' : ''}">🏆</button>
         <button class="btn btn-icon" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren (in die aktive Liste)'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'}</button>
-        <button class="btn btn-icon" title="vCard (.vcf) erstellen — für Google Kontakte" onclick="CRM.vcard.exportContact('${c.id}')">📇</button>
-        <button class="btn btn-icon" title="Vergleichen/Zusammenführen (mit einem zweiten Kontakt nebeneinander legen)" onclick="CRM.win.openContact('${c.id}')">⇄</button>
-        <button class="btn btn-icon" title="Kontakt löschen" onclick="CRM.deleteContactFromDetail('${c.id}')">🗑</button>
+        <div class="ov-menu">
+          <button class="btn btn-icon" title="Weitere Aktionen" onclick="CRM.toggleOvMenu(this,event)">⋯</button>
+          <div class="ov-menu-list hidden">
+            <button onclick="CRM.vcard.exportContact('${c.id}')">📇 vCard exportieren</button>
+            <button onclick="CRM.win.openContact('${c.id}')">⇄ Vergleichen / Zusammenführen</button>
+            <button onclick="CRM.deleteContactFromDetail('${c.id}')" style="color:var(--red)">🗑 Kontakt löschen</button>
+          </div>
+        </div>
         <button class="btn btn-icon" onclick="CRM.closeModal()">✕</button>
       </div>
     </div>
