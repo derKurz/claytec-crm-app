@@ -73,6 +73,57 @@ CRM.sync.exportEingang = async function () {
   CRM.toast(`${contacts.length} Kontakt(e) als Datei heruntergeladen — bitte in den OneDrive-„Eingang"-Ordner verschieben.`, 'success');
 };
 
+/* Teilt/lädt eine einzelne JSON-Datei im selben Format wie exportEingang
+   ({exportedAt, contacts:[...]}) — Basis für den Einzelbericht-Export
+   (2.2): ein Bericht darf nie nur "im großen Eingang-Export" rettbar sein.
+   Rührt NICHT an die Pending-Sync-Queue (CRM.sync.KEY) — das ist ein
+   unabhängiger, jederzeit wiederholbarer Sicherungsweg für genau einen
+   Bericht, unabhängig vom Handy→Laptop-Sync-Zustand. */
+CRM.sync._shareOrDownloadJSON = async function (payload, filename, successMsg) {
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  const file = new File([blob], filename, { type: 'application/json' });
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Claytec CRM — Bericht', text: 'In den OneDrive-Ordner "Eingang" speichern (oder anderswo sichern).' });
+      CRM.toast(successMsg + ' zum Teilen übergeben.', 'success');
+      return true;
+    } catch (e) {
+      if (e.name === 'AbortError') return false; // Nutzer hat abgebrochen — nichts geändert
+      // Sonstiger Fehler: auf Download zurückfallen
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  CRM.toast(successMsg + ' als Datei heruntergeladen.', 'success');
+  return true;
+};
+
+/* Exportiert GENAU EINEN Bericht (Besuch) als eigenständige Datei — damit
+   ein einzelner Bericht gesichert/gerettet werden kann, ohne den kompletten
+   Eingang exportieren zu müssen (Ursache des früheren Datenverlusts). Die
+   Datei hat dasselbe Format wie der normale Eingang-Export und kann bei
+   Bedarf auch manuell in den "Eingang"-Ordner gelegt und dort wie gewohnt
+   verarbeitet werden. */
+CRM.sync.exportSingleVisit = async function (contactId, visitId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) { CRM.toast('Kontakt nicht gefunden.', 'error'); return; }
+  const visit = (c.visits || []).find((v) => v.id === visitId);
+  if (!visit) { CRM.toast('Bericht nicht gefunden.', 'error'); return; }
+  const contactExport = Object.assign({}, c, { visits: [visit] });
+  const payload = { exportedAt: new Date().toISOString(), contacts: [contactExport] };
+  const safeName = (CRM.ablage && CRM.ablage.sanitizeFile ? CRM.ablage.sanitizeFile(c.firma1 || 'kontakt') : (c.firma1 || 'kontakt')).replace(/\s+/g, '_');
+  const filename = `bericht-${safeName}-${visit.date || 'ohne-datum'}-${Date.now()}.json`;
+  await CRM.sync._shareOrDownloadJSON(payload, filename, '1 Bericht');
+};
+
 /* ============================================================
    Notion-Feierabend-Block
    Sammelt alles, was seit dem letzten Notion-Export erfasst wurde

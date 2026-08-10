@@ -165,21 +165,135 @@ CRM.ablage.findCustomerDir = async function (typeDir, c) {
   return { exact, fuzzy };
 };
 
-/* Rückfrage-Dialog, wenn kein sicherer Treffer, aber ein ähnlicher Ordner existiert */
-CRM.ablage.confirmSimilarFolder = function (c, entry) {
+/* Alle Kundenordner in einem Typ-Verzeichnis flach einsammeln (inkl. einer
+   Ebene Unterordner, z.B. Sammelordner "BayWa") — Basis für die manuelle
+   Ordnersuche im Ablage-Dialog (2.1), wenn findCustomerDir keinen exakten
+   Treffer liefert. */
+CRM.ablage.listAllFolders = async function (typeDir) {
+  const out = [];
+  for await (const entry of typeDir.values()) {
+    if (entry.kind !== 'directory') continue;
+    out.push({ entry, display: entry.name, norm: CRM.ablage.normalizeName(entry.name) });
+    try {
+      for await (const sub of entry.values()) {
+        if (sub.kind !== 'directory') continue;
+        const display = entry.name + ' \\ ' + sub.name;
+        out.push({ entry: sub, display, norm: CRM.ablage.normalizeName(display) });
+      }
+    } catch (e) { /* kein Zugriff / keine Unterordner */ }
+  }
+  out.sort((a, b) => a.display.localeCompare(b.display, 'de'));
+  return out;
+};
+
+/* ============================================================
+   Ordner-Auswahl-Dialog (2.1): wenn findCustomerDir keinen exakten Treffer
+   liefert, muss Chris den richtigen Ordner manuell finden können — per
+   angezeigtem Ähnlich-Vorschlag ODER per Live-Suche über ALLE Ordner im
+   Typ-Verzeichnis — oder bewusst einen neuen Ordner anlegen.
+
+   WICHTIG (Datenverlust-Vermeidung, Anlass: verlorener Bericht 04.08.2026):
+   Der Bericht (visit/monthEssence) lebt ausschließlich in der aufrufenden
+   fileVisit()-Funktion, NIE in diesem Dialog/DOM. Wechsel zwischen Suche,
+   Vorschlag und Neuanlage rendern nur diesen Dialog neu (render()) — dabei
+   wird nichts vom Bericht berührt oder verworfen. "Abbrechen" bricht NUR
+   die Ordnerwahl ab; der Besuch bleibt unverändert in der App gespeichert
+   (excelFiled bleibt false) und kann jederzeit erneut abgelegt werden.
+   Gibt bei Erfolg { dirHandle, created, name } zurück, bei Abbruch null.
+   ============================================================ */
+CRM.ablage.chooseFolderDialog = function (c, typeDir, typeFolderName, fuzzy) {
   return new Promise((resolve) => {
-    CRM.openModal(`
-      <h2>Ähnlicher Ordner gefunden</h2>
-      <p style="font-size:13px">Für „<strong>${esc(c.firma1)}</strong>“ gibt es keinen exakt passenden Ordner — aber diesen ähnlichen:</p>
-      <div class="list-item" style="cursor:default"><div class="li-main"><div class="li-title">📁 ${esc(entry.name)}</div></div></div>
-      <p style="font-size:13px;color:var(--text-dim)">Ist das derselbe Kunde? Dann wird dort weitergeschrieben — sonst wird ein neuer Ordner „${esc(CRM.ablage.customerFolderName(c))}“ angelegt.</p>
-      <div class="modal-footer">
-        <button class="btn" id="abl-fuzzy-no">Nein, neuen Ordner anlegen</button>
-        <button class="btn btn-primary" id="abl-fuzzy-yes">Ja, diesen Ordner verwenden</button>
-      </div>
-    `);
-    document.getElementById('abl-fuzzy-yes').addEventListener('click', () => { CRM.closeModal(); resolve(true); });
-    document.getElementById('abl-fuzzy-no').addEventListener('click', () => { CRM.closeModal(); resolve(false); });
+    let settled = false;
+    const done = (result) => { if (settled) return; settled = true; CRM.closeModal(); resolve(result); };
+    const state = { mode: 'search', query: '', folders: null, newName: CRM.ablage.customerFolderName(c) };
+
+    const render = () => { if (state.mode === 'create') renderCreate(); else renderSearch(); };
+
+    const renderSearch = () => {
+      const q = CRM.ablage.normalizeName(state.query);
+      const all = state.folders || [];
+      const filtered = q ? all.filter((f) => f.norm.includes(q)) : all;
+      const shown = filtered.slice(0, 60);
+      const suggestion = fuzzy ? `
+        <div style="border:1px solid var(--border);padding:8px 10px;border-radius:8px;margin-bottom:10px;background:rgba(255,193,7,.08)">
+          <div style="font-size:12px;color:var(--text-dim)">Ähnlichster gefundener Ordner (${Math.round(fuzzy.score * 100)}% Übereinstimmung) — ist das derselbe Kunde?</div>
+          <div class="row" style="align-items:center;gap:8px;margin-top:4px">
+            <div class="li-title" style="flex:1">📁 ${esc(fuzzy.entry.name)}</div>
+            <button class="btn btn-sm btn-primary" id="cfd-use-fuzzy">Diesen Ordner nutzen</button>
+          </div>
+        </div>` : '';
+      const rows = shown.length
+        ? shown.map((f, i) => `<div class="list-item cfd-item" data-idx="${i}" style="cursor:pointer"><div class="li-main"><div class="li-title">📁 ${esc(f.display)}</div></div></div>`).join('')
+        : `<p style="color:var(--text-dim);font-size:13px;padding:10px">${state.folders ? 'Kein Ordner passt zur Suche.' : 'Ordner werden geladen…'}</p>`;
+      CRM.openModal(`
+        <h2>📂 Ordner wählen — ${esc(c.firma1)}</h2>
+        <p style="font-size:13px;color:var(--text-dim)">Kein exakt passender Ordner in <code>.Kunden\\${esc(typeFolderName)}</code> gefunden. Der Bericht bleibt gespeichert, egal wie oft du hier wechselst.</p>
+        ${suggestion}
+        <label>Ordner durchsuchen</label>
+        <input type="text" id="cfd-search" placeholder="Namen eingeben zum Filtern…" value="${escAttr(state.query)}" autocomplete="off">
+        <div style="max-height:32vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;margin-top:8px">${rows}</div>
+        <div class="modal-footer">
+          <button class="btn" id="cfd-cancel">Abbrechen</button>
+          <button class="btn" id="cfd-new">➕ Neuen Ordner anlegen</button>
+        </div>
+      `, { dismissible: false });
+
+      const input = document.getElementById('cfd-search');
+      if (input) {
+        input.focus();
+        const pos = input.value.length;
+        input.setSelectionRange(pos, pos);
+        input.addEventListener('input', () => { state.query = input.value; renderSearch(); });
+      }
+      document.getElementById('cfd-cancel').addEventListener('click', () => done(null));
+      document.getElementById('cfd-new').addEventListener('click', () => { state.mode = 'create'; render(); });
+      const fuzzyBtn = document.getElementById('cfd-use-fuzzy');
+      if (fuzzyBtn) fuzzyBtn.addEventListener('click', () => done({ dirHandle: fuzzy.entry, created: false, name: fuzzy.entry.name }));
+      document.querySelectorAll('.cfd-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          const f = shown[parseInt(el.dataset.idx, 10)];
+          done({ dirHandle: f.entry, created: false, name: f.entry.name });
+        });
+      });
+    };
+
+    const renderCreate = () => {
+      CRM.openModal(`
+        <h2>➕ Neuen Ordner anlegen — ${esc(c.firma1)}</h2>
+        <p style="font-size:13px;color:var(--text-dim)">Wird angelegt unter <code>.Kunden\\${esc(typeFolderName)}\\…</code>. „Zurück" verwirft nichts — der Bericht bleibt erhalten.</p>
+        <label>Ordnername</label>
+        <input type="text" id="cfd-newname" value="${escAttr(state.newName)}">
+        <div class="modal-footer">
+          <button class="btn" id="cfd-back">← Zurück zur Suche</button>
+          <button class="btn" id="cfd-cancel2">Abbrechen</button>
+          <button class="btn btn-primary" id="cfd-create-go">Ordner anlegen</button>
+        </div>
+      `, { dismissible: false });
+      const nameInput = document.getElementById('cfd-newname');
+      nameInput.addEventListener('input', () => { state.newName = nameInput.value; });
+      document.getElementById('cfd-back').addEventListener('click', () => { state.mode = 'search'; render(); });
+      document.getElementById('cfd-cancel2').addEventListener('click', () => done(null));
+      document.getElementById('cfd-create-go').addEventListener('click', async () => {
+        const name = CRM.ablage.sanitizeFile(nameInput.value.trim()) || state.newName;
+        const goBtn = document.getElementById('cfd-create-go');
+        goBtn.disabled = true; goBtn.textContent = 'Lege an…';
+        try {
+          const dirHandle = await typeDir.getDirectoryHandle(name, { create: true });
+          done({ dirHandle, created: true, name });
+        } catch (e) {
+          CRM.toast('Ordner konnte nicht angelegt werden: ' + (e && e.message ? e.message : e), 'error');
+          goBtn.disabled = false; goBtn.textContent = 'Ordner anlegen';
+        }
+      });
+    };
+
+    render();
+    // Ordnerliste im Hintergrund laden (kann bei vielen Kunden etwas dauern),
+    // danach live filterbar — Suchfeld ist bis dahin schon bedienbar.
+    CRM.ablage.listAllFolders(typeDir).then((folders) => {
+      state.folders = folders;
+      if (state.mode === 'search') renderSearch();
+    });
   });
 };
 
@@ -265,19 +379,28 @@ CRM.ablage.fileVisit = async function (contactId, visit, monthEssence, opts) {
 
     const found = await CRM.ablage.findCustomerDir(typeDir, c);
     let custDir = found.exact;
-    let usedFuzzy = false;
-    if (!custDir && found.fuzzy) {
-      usedFuzzy = await CRM.ablage.confirmSimilarFolder(c, found.fuzzy.entry);
-      if (usedFuzzy) custDir = found.fuzzy.entry;
-    }
-    if (!custDir) {
-      const folderName = CRM.ablage.customerFolderName(c);
-      custDir = await typeDir.getDirectoryHandle(folderName, { create: true });
-      log.push('Ordner neu angelegt: ' + typeFolderName + '\\' + folderName);
-    } else if (usedFuzzy) {
-      log.push('Ähnlichen Kundenordner bestätigt und verwendet: ' + typeFolderName + '\\' + custDir.name);
-    } else {
+    if (custDir) {
       log.push('Kundenordner gefunden: ' + typeFolderName + '\\' + custDir.name);
+    } else if (silent) {
+      // Automatischer/stiller Lauf (Eingang-Verarbeitung, Tagesabschluss):
+      // NIE ungefragt einen unsicheren oder neuen Ordner wählen. Der Besuch
+      // ist zu diesem Zeitpunkt bereits sicher als Kontakt-Datensatz in der
+      // App gespeichert (excelFiled bleibt einfach false) und kann jederzeit
+      // manuell über den Kontakt ("📋 In Excel ablegen") nachgeholt werden —
+      // nichts geht verloren, es wird nur nicht automatisch geraten.
+      return { ok: false, needsFolder: true, log: ['Kein exakter Kundenordner gefunden — automatischer Lauf übersprungen, Bericht bleibt gespeichert für manuelle Ablage.'] };
+    } else {
+      // Kein exakter Treffer: Auswahl-Dialog mit Ähnlich-Vorschlag + Suche
+      // über alle Ordner + "neuen Ordner anlegen" (siehe chooseFolderDialog).
+      // visit/monthEssence leben ausschließlich in dieser Funktion, nicht im
+      // Dialog — ein Abbruch dort verwirft daher nichts vom Bericht.
+      const choice = await CRM.ablage.chooseFolderDialog(c, typeDir, typeFolderName, found.fuzzy);
+      if (!choice) {
+        CRM.toast('Ordnerauswahl abgebrochen — Bericht bleibt gespeichert, jederzeit über „📋 In Excel ablegen" erneut versuchbar.', 'error');
+        return { ok: false, aborted: true, log: ['Ordnerauswahl abgebrochen.'] };
+      }
+      custDir = choice.dirHandle;
+      log.push((choice.created ? 'Ordner neu angelegt: ' : 'Ordner manuell ausgewählt: ') + typeFolderName + '\\' + choice.name);
     }
 
     // Protokolldatei finden oder aus Vorlage kopieren
@@ -604,15 +727,20 @@ CRM.ablage._renderTagesabschluss = function () {
   const list = CRM.ablage._taCandidates(scope);
   const kunden = new Set(list.map((x) => x.c.id)).size;
   const rows = list.length
-    ? list.slice(0, 200).map((x) => '<div class="list-item" style="cursor:default"><div class="li-main" style="min-width:0">'
+    ? list.slice(0, 200).map((x) => '<div class="list-item" style="cursor:default">'
+        + '<div class="li-main" style="min-width:0">'
         + '<div class="li-title">' + esc(x.c.firma1) + '</div>'
         + '<div style="font-size:12px;color:var(--text-dim)">' + esc(x.v.date) + ' · ' + esc((x.v.note || '').replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
+        + '</div>'
+        + '<div class="row" style="gap:4px;flex-shrink:0">'
+        + '<button class="btn btn-sm ta-row-file" data-cid="' + escAttr(x.c.id) + '" data-vid="' + escAttr(x.v.id) + '" title="Nur diesen Bericht jetzt ablegen">📋 Ablegen</button>'
+        + '<button class="btn btn-sm ta-row-export" data-cid="' + escAttr(x.c.id) + '" data-vid="' + escAttr(x.v.id) + '" title="Diesen Bericht als Datei sichern/exportieren">⬇ Export</button>'
         + '</div></div>').join('')
       + (list.length > 200 ? '<p style="color:var(--text-dim);font-size:12px;padding:6px">… und ' + (list.length - 200) + ' weitere</p>' : '')
     : '<p style="color:var(--text-dim);font-size:13px;padding:10px">Keine offenen Besuche' + (scope === 'heute' ? ' von heute' : '') + ' — alles abgelegt. ✅</p>';
   CRM.openModal(''
     + '<h2>🗂️ Tagesabschluss — Besuche in Excel ablegen</h2>'
-    + '<p style="color:var(--text-dim);font-size:13px">Legt alle noch nicht abgelegten Besuche (mit Inhalt) gesammelt in die Besuchsprotokolle <strong>und</strong> den Monatsbericht — jeder Besuch genau einmal.</p>'
+    + '<p style="color:var(--text-dim);font-size:13px">Legt alle noch nicht abgelegten Besuche (mit Inhalt) gesammelt in die Besuchsprotokolle <strong>und</strong> den Monatsbericht — jeder Besuch genau einmal. Einzelne Berichte können hier auch separat abgelegt oder gesichert/exportiert werden, ohne die anderen anzufassen.</p>'
     + '<div class="quick-filters" style="margin:8px 0">'
     + '  <button class="qf-btn ' + (scope === 'heute' ? 'active' : '') + '" onclick="CRM.ablage.setTaScope(\'heute\')">Nur heute</button>'
     + '  <button class="qf-btn ' + (scope === 'offen' ? 'active' : '') + '" onclick="CRM.ablage.setTaScope(\'offen\')">Alle offenen</button>'
@@ -623,26 +751,47 @@ CRM.ablage._renderTagesabschluss = function () {
     + '  <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>'
     + '  <button class="btn btn-primary" id="ta-go" ' + (list.length ? '' : 'disabled') + ' onclick="CRM.ablage.runTagesabschluss()">🗂️ ' + list.length + ' jetzt ablegen</button>'
     + '</div>');
+
+  // Einzelaktionen je Zeile — "Ablegen" nutzt bewusst den bestehenden
+  // Ablage-Dialog (CRM.ablage.openDialog), damit derselbe robuste
+  // Ordner-Auswahl-Flow (Suche/Vorschlag/Neuanlage, siehe chooseFolderDialog)
+  // greift und kein zweiter, abweichender Ablageweg entsteht.
+  document.querySelectorAll('.ta-row-file').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const c = CRM.db.getContact(btn.dataset.cid);
+      const v = c && (c.visits || []).find((vv) => vv.id === btn.dataset.vid);
+      if (!c || !v) { CRM.toast('Bericht nicht mehr gefunden — evtl. schon anderweitig verarbeitet.', 'error'); CRM.ablage._renderTagesabschluss(); return; }
+      CRM.ablage.openDialog(c.id, v);
+    });
+  });
+  document.querySelectorAll('.ta-row-export').forEach((btn) => {
+    btn.addEventListener('click', () => CRM.sync.exportSingleVisit(btn.dataset.cid, btn.dataset.vid));
+  });
 };
 CRM.ablage.runTagesabschluss = async function () {
   const list = CRM.ablage._taCandidates(CRM.ablage._taScope);
   if (!list.length) { CRM.toast('Nichts abzulegen.', 'error'); return; }
   const btn = document.getElementById('ta-go');
   if (btn) btn.disabled = true;
-  let ok = 0, fehler = 0;
+  let ok = 0, offenOrdner = 0, fehler = 0;
   for (let i = 0; i < list.length; i++) {
     const c = list[i].c;
     const v = list[i].v;
     if (btn) btn.textContent = 'Lege ab… (' + (i + 1) + '/' + list.length + ')';
     try {
       const res = await CRM.ablage.fileVisit(c.id, v, CRM.ablage.noteToEssence(v.note), { silent: true });
-      if (res && res.ok) ok++; else fehler++;
+      if (res && res.ok) ok++;
+      else if (res && res.needsFolder) offenOrdner++;
+      else fehler++;
     } catch (e) { fehler++; }
   }
   CRM.closeModal();
   if (CRM.renderContactList && document.querySelector('#view-kontakte.active')) CRM.renderContactList();
   if (CRM.renderDashboard && document.querySelector('#view-start.active')) CRM.renderDashboard();
-  CRM.toast('🗂️ Tagesabschluss: ' + ok + ' Besuche in Excel abgelegt' + (fehler ? ', ' + fehler + ' Fehler' : '') + '.', fehler ? 'error' : 'success');
+  const teile = [ok + ' abgelegt'];
+  if (offenOrdner) teile.push(offenOrdner + ' brauchen manuelle Ordnerauswahl (einzeln über „📋 Ablegen")');
+  if (fehler) teile.push(fehler + ' Fehler');
+  CRM.toast('🗂️ Tagesabschluss: ' + teile.join(', ') + '. Nichts geht verloren — offene Berichte bleiben in der Liste.', (fehler || offenOrdner) ? 'error' : 'success');
 };
 
 CRM.ablage.processEingang = async function (silent) {
@@ -665,7 +814,7 @@ CRM.ablage.processEingang = async function (silent) {
     return;
   }
 
-  const stats = { neu: 0, aktualisiert: 0, besucheUebernommen: 0, inExcelAbgelegt: 0, fehler: 0 };
+  const stats = { neu: 0, aktualisiert: 0, besucheUebernommen: 0, inExcelAbgelegt: 0, offenOrdner: 0, fehler: 0, dateienBehalten: 0 };
 
   for (const fileHandle of files) {
     let payload;
@@ -676,6 +825,16 @@ CRM.ablage.processEingang = async function (silent) {
       stats.fehler++;
       continue; // Datei bleibt liegen, falls sie defekt ist — keine Löschung
     }
+
+    // WICHTIG (Datenverlust-Vermeidung): eine Eingang-Datei kann mehrere
+    // Kontakte enthalten. Scheitert das ÜBERNEHMEN (Merge in die App) auch
+    // nur eines einzelnen Kontakts, darf die Datei am Ende NICHT gelöscht
+    // werden — sonst wäre genau dieser Bericht unwiederbringlich weg (das
+    // war die Ursache des Datenverlusts vom 04.08.2026). Ein fehlgeschlagenes
+    // spätere ABLEGEN in Excel gefährdet dagegen keine Daten: der Besuch ist
+    // dann schon sicher im Kontakt gespeichert und bleibt über excelFiled
+    // jederzeit nachholbar (Tagesabschluss / Kontakt selbst).
+    let allContactsMerged = true;
 
     for (const incoming of (payload.contacts || [])) {
       let newVisits = [];
@@ -693,6 +852,7 @@ CRM.ablage.processEingang = async function (silent) {
         stats.besucheUebernommen += newVisits.length;
       } catch (e) {
         stats.fehler++;
+        allContactsMerged = false;
         continue;
       }
 
@@ -701,19 +861,32 @@ CRM.ablage.processEingang = async function (silent) {
         try {
           const essence = CRM.ablage.noteToEssence(v.note);
           const result = await CRM.ablage.fileVisit(contactId, v, essence, { silent: true });
-          if (result && result.ok) stats.inExcelAbgelegt++; else stats.fehler++;
+          if (result && result.ok) stats.inExcelAbgelegt++;
+          else if (result && result.needsFolder) stats.offenOrdner++;
+          else stats.fehler++;
         } catch (e) {
           stats.fehler++;
         }
+        // Absichtlich KEIN Einfluss auf allContactsMerged: der Bericht ist
+        // bereits im Kontakt gespeichert (siehe oben), egal ob die
+        // Excel-Ablage hier klappt.
       }
     }
 
-    await dir.removeEntry(fileHandle.name);
+    if (allContactsMerged) {
+      await dir.removeEntry(fileHandle.name);
+    } else {
+      stats.dateienBehalten++; // Datei bleibt für einen erneuten Versuch liegen
+    }
   }
 
   if (CRM.renderContactList && document.querySelector('#view-kontakte.active')) CRM.renderContactList();
-  const summary = `📥 Eingang verarbeitet: ${stats.neu} neue Kontakte, ${stats.aktualisiert} aktualisiert, ${stats.besucheUebernommen} Besuche übernommen, ${stats.inExcelAbgelegt} in Excel abgelegt${stats.fehler ? `, ${stats.fehler} Fehler` : ''}.`;
-  if (!silent || stats.neu || stats.aktualisiert || stats.fehler) {
-    CRM.toast(summary, stats.fehler ? 'error' : 'success');
+  const teile = [`${stats.neu} neue Kontakte`, `${stats.aktualisiert} aktualisiert`, `${stats.besucheUebernommen} Besuche übernommen`, `${stats.inExcelAbgelegt} in Excel abgelegt`];
+  if (stats.offenOrdner) teile.push(`${stats.offenOrdner} warten auf Ordnerauswahl (siehe Tagesabschluss)`);
+  if (stats.fehler) teile.push(`${stats.fehler} Fehler`);
+  if (stats.dateienBehalten) teile.push(`${stats.dateienBehalten} Datei(en) zur Sicherheit NICHT gelöscht`);
+  const summary = `📥 Eingang verarbeitet: ${teile.join(', ')}.`;
+  if (!silent || stats.neu || stats.aktualisiert || stats.fehler || stats.dateienBehalten) {
+    CRM.toast(summary, (stats.fehler || stats.dateienBehalten) ? 'error' : 'success');
   }
 };

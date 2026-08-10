@@ -262,6 +262,7 @@ CRM.renderContactDetailModal = function (id) {
           <button class="btn btn-sm" title="Bearbeiten" onclick="CRM.editVisit('${v.id}')">✏️</button>
           <button class="btn btn-sm" title="Löschen" onclick="CRM.deleteVisit('${c.id}','${v.id}')">🗑</button>
           <button class="btn btn-sm" title="${v.excelFiled ? 'Erneut in Excel ablegen (fügt eine weitere Zeile hinzu)' : 'In Besuchsprotokoll + Monatsbericht ablegen'}" onclick='CRM.ablage.openDialog("${c.id}", ${JSON.stringify({ id: v.id, date: v.date, note: v.note || '' }).replace(/'/g, "&#39;")})'>📋</button>
+          <button class="btn btn-sm" title="Diesen Bericht als Datei sichern/exportieren (z.B. bevor er abgelegt wird)" onclick="CRM.sync.exportSingleVisit('${c.id}','${v.id}')">⬇</button>
         </div>
       </div>`)(e.v))).join('')
     : '<p style="color:var(--text-dim);font-size:13px">Noch keine Besuche oder E-Mails erfasst.</p>';
