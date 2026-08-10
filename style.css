@@ -604,7 +604,9 @@ body.resizing-col{cursor:col-resize;user-select:none}
   .cd-ap{margin-top:6px;font-size:13px}
   .cd-nextstep{margin-top:6px}
   .cd-nextstep input{min-height:38px}
-  .cd-header .li-badges .btn{min-height:34px;padding:5px 7px;font-size:13px}
+  /* Icons in der Aktionszeile (Anruf/Mail/Karte/Maps) etwas größer als der
+     Fließtext — sonst wirken sie in der 44px-Box winzig (Chris-Feedback). */
+  .cd-header .li-badges .btn{min-height:34px;padding:5px 10px;font-size:18px}
   /* Aktions-Buttons im Kontakt-Kopf am Handy nur als Symbol (Text raus) —
      spart die 6 Umbruch-Zeilen; Tooltip/Long-Press zeigt die Bedeutung. */
   .cd-header .li-badges .btn-lbl{display:none}

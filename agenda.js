@@ -179,7 +179,7 @@ CRM.quickActionButtons = function (c, opts) {
   });
   const addr = CRM.formatAddress(c);
   if (addr) items.push({
-    primary: false,
+    primary: true,
     html: `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️<span class="btn-lbl"> Maps</span></a>`,
     menuHtml: `<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ In Google Maps öffnen</a>`,
   });
