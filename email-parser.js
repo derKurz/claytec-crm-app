@@ -126,7 +126,10 @@ CRM.emailParser.parse = function (rawText) {
       }
     }
     if (!data.street) {
-      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+[a-z]?(?:\s*[-–]\s*\d+[a-z]?)?)$/i);
+      // Hausnummer kann durch Bindestrich ODER Schrägstrich getrennt sein
+      // (z.B. "Bahnhofstraße 27 / 29" bei Doppel-/Nachbargebäuden) — vorher
+      // wurde nur "-" akzeptiert, die Straße ging dann komplett verloren.
+      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+[a-z]?(?:\s*[-–\/]\s*\d+[a-z]?)?)$/i);
       if (streetMatch) data.street = line;
     }
 
@@ -325,6 +328,39 @@ CRM.emailParser.parse = function (rawText) {
     if (!line) continue;
     if (line.toLowerCase().indexOf('standort ') === 0) continue;
     if (!data.academic_title && isAcademicTitle(line)) { data.academic_title = line; continue; }
+
+    // Firma+Name nach Muster "Nachname Branche" / "Vorname Nachname"
+    // (typisch bei Einzelunternehmen/Handwerksbetrieben, z.B. "Meyer
+    // Innenausbau" gefolgt von "David Meyer"). isCompanyName() erkennt
+    // Branchen nur über eine feste Wortliste (GmbH, Bau, Handels, …) — bei
+    // Wörtern wie "Innenausbau", "Trockenbau", "Sanierung" usw. schlägt das
+    // fehl. Die generische Namens-Erkennung achtet nur auf Großschreibung,
+    // nicht auf Bedeutung, und reißt die Firmenzeile dann fälschlich als
+    // Name an sich — der echte Name in der Folgezeile geht komplett
+    // verloren (real passiert, wiederholt gemeldet). Generischer Fix statt
+    // weiterer Wortlisten-Flickerei: teilen sich Zeile und Folgezeile einen
+    // Nachnamen, UND die Folgezeile ist für sich genommen eindeutig ein
+    // Personenname, dann ist die AKTUELLE Zeile die Firma — unabhängig
+    // davon, welches Branchenwort sie enthält.
+    if (!companyFound && !nameFound && !isCompanyName(line)) {
+      const ownerWords = splitWs(line);
+      const looksLikeTwoCapWords = ownerWords.length === 2
+        && ownerWords.every((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
+      if (looksLikeTwoCapWords) {
+        const next = textLines[i + 1];
+        if (next && isPersonName(next)) {
+          const nextWords = splitWs(next);
+          const nextSurname = nextWords[nextWords.length - 1].toLowerCase();
+          const sharesSurname = ownerWords.some((w) => w.toLowerCase() === nextSurname);
+          if (sharesSurname) {
+            companyFound = line;
+            nameFound = correctName(next);
+            textLines[i + 1] = '';
+            continue;
+          }
+        }
+      }
+    }
 
     if (!companyFound && isCompanyName(line)) {
       companyFound = line;
