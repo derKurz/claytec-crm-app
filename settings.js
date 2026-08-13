@@ -277,26 +277,44 @@ CRM.renderDuplicatesPanel = function () {
     el.innerHTML = '<p style="color:var(--text-dim);font-size:13px;margin-top:10px">Keine Duplikate gefunden.</p>';
     return;
   }
+  // Gleichnamige Duplikate ließen sich vorher nicht auseinanderhalten: beide
+  // Spalten und beide Knöpfe zeigten denselben Firmennamen (Chris: „sonst
+  // wähle ich hier den Falschen aus"). Jetzt klare Seiten-Kennzeichnung
+  // A/B + Straße/ERP/Ansprechpartner + die Datenmengen je Seite.
+  // Außerdem: Zusammenführen ist die Hauptaktion (nichts geht verloren),
+  // reines Löschen ist bewusst zurückgestuft (vernichtet Daten).
+  const seite = (kennung, c) => {
+    const cnt = CRM._mergeSideCounts(c);
+    return `
+      <div style="flex:1;min-width:230px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="badge" style="border-color:var(--accent);color:var(--accent)">${kennung}</span>
+          <strong>${esc(CRM.displayNameDisambig(c))}</strong>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:3px">${CRM._mergeSideInfo(c)}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:3px">📍 ${cnt.besuche} Besuche · ✅ ${cnt.aufgaben} Aufgaben · 🔗 ${cnt.verknuepfungen} Verknüpfungen${cnt.notiz ? ' · 📝 Notiz' : ''}</div>
+      </div>`;
+  };
   el.innerHTML = pairs.map((p) => `
     <div class="card" style="margin-top:10px;padding:10px 12px">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px">
-          <strong>${esc(p.a.firma1)}</strong><br>
-          <span style="font-size:12px;color:var(--text-dim)">${esc(p.a.plz)} ${esc(p.a.ort)} · ${esc(CRM.SOURCE_LABELS[p.a.source] || p.a.source)}${(p.a.visits || []).length ? ` · ${p.a.visits.length} Besuche` : ''}</span>
-        </div>
-        <div style="flex:1;min-width:200px">
-          <strong>${esc(p.b.firma1)}</strong><br>
-          <span style="font-size:12px;color:var(--text-dim)">${esc(p.b.plz)} ${esc(p.b.ort)} · ${esc(CRM.SOURCE_LABELS[p.b.source] || p.b.source)}${(p.b.visits || []).length ? ` · ${p.b.visits.length} Besuche` : ''}</span>
-        </div>
+        ${seite('A', p.a)}
+        ${seite('B', p.b)}
         <div style="font-size:12px;color:var(--text-dim);align-self:center">${Math.round(p.score * 100)}% ähnlich</div>
       </div>
-      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-primary" onclick="CRM.confirmMergeContacts('${p.a.id}','${p.b.id}')">→ „${escAttr(p.a.firma1)}" behalten</button>
-        <button class="btn btn-sm btn-primary" onclick="CRM.confirmMergeContacts('${p.b.id}','${p.a.id}')">→ „${escAttr(p.b.firma1)}" behalten</button>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm btn-primary" onclick="CRM.confirmMergeContacts('${p.a.id}','${p.b.id}')">⇄ Zusammenführen — <strong>A</strong> behalten</button>
+        <button class="btn btn-sm btn-primary" onclick="CRM.confirmMergeContacts('${p.b.id}','${p.a.id}')">⇄ Zusammenführen — <strong>B</strong> behalten</button>
+        <button class="btn btn-sm" onclick="CRM.win.closeAll();CRM.win.openContact('${p.a.id}');CRM.win.openContact('${p.b.id}')" title="Beide nebeneinander öffnen und im Detail vergleichen">🔍 Vergleichen</button>
         <button class="btn btn-sm" onclick="CRM.dismissDupe('${p.key}')">Kein Duplikat</button>
-        <button class="btn btn-sm" style="margin-left:auto" onclick="CRM.confirmDeleteDuplicate('${p.a.id}')">🗑 „${escAttr(p.a.firma1)}" löschen</button>
-        <button class="btn btn-sm" onclick="CRM.confirmDeleteDuplicate('${p.b.id}')">🗑 „${escAttr(p.b.firma1)}" löschen</button>
       </div>
+      <details style="margin-top:8px">
+        <summary style="font-size:12px;color:var(--text-dim);cursor:pointer">Einen Eintrag stattdessen löschen (Daten gehen verloren)</summary>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="CRM.confirmDeleteDuplicate('${p.a.id}')">🗑 A löschen</button>
+          <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="CRM.confirmDeleteDuplicate('${p.b.id}')">🗑 B löschen</button>
+        </div>
+      </details>
     </div>`).join('');
 };
 
@@ -319,16 +337,69 @@ CRM.dismissDupe = function (key) {
   CRM.renderDuplicatesPanel();
 };
 
+/* Kompakte Kennzeichnung eines Kontakts für Merge-Dialoge: bei
+   gleichnamigen Kontakten reicht der Firmenname NICHT zur Unterscheidung
+   (Chris: „nur den Namen ohne Zuordnung, ohne Ort — sonst wähle ich den
+   Falschen aus"). Darum immer mit Straße/Ort/ERP-Nr. und den Datenmengen,
+   die am Kontakt hängen. */
+CRM._mergeSideInfo = function (c) {
+  const zeilen = [];
+  if (c.strasse) zeilen.push(esc(c.strasse));
+  const ortZeile = [c.plz, c.ort].filter(Boolean).join(' ');
+  if (ortZeile) zeilen.push(esc(ortZeile));
+  if (c.erpNr) zeilen.push('ERP-Nr. ' + esc(c.erpNr));
+  zeilen.push(esc(CRM.SOURCE_LABELS[c.source] || c.source || ''));
+  const ap = c.ansprechpartner || {};
+  const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
+  if (apName) zeilen.push('AP: ' + esc(apName));
+  return zeilen.filter(Boolean).join(' · ');
+};
+CRM._mergeSideCounts = function (c) {
+  return {
+    besuche: (c.visits || []).length,
+    aufgaben: CRM.db.getTasksForContact(c.id).length,
+    verknuepfungen: Object.keys(c.links || {}).reduce((s, k) => s + ((c.links[k] || []).length), 0),
+    notiz: !!(c.notiz && String(c.notiz).trim()),
+  };
+};
+
 CRM.confirmMergeContacts = function (keepId, dropId) {
   const keep = CRM.db.getContact(keepId);
   const drop = CRM.db.getContact(dropId);
   if (!keep || !drop) return;
+  const kName = CRM.displayNameDisambig(keep);
+  const dName = CRM.displayNameDisambig(drop);
+  const kc = CRM._mergeSideCounts(keep);
+  const dc = CRM._mergeSideCounts(drop);
+  // Konkret zeigen, was übernommen wird — Chris' Sorge war ausdrücklich,
+  // dass beim Zusammenführen Informationen verloren gehen.
+  const uebernahme = [];
+  if (dc.besuche) uebernahme.push(dc.besuche + ' Besuch(e)');
+  if (dc.aufgaben) uebernahme.push(dc.aufgaben + ' Aufgabe(n)');
+  if (dc.verknuepfungen) uebernahme.push(dc.verknuepfungen + ' Verknüpfung(en)');
+  if (dc.notiz) uebernahme.push('Notiz');
+  const seite = (titel, name, c, counts, farbe) => `
+    <div style="flex:1;min-width:220px;border:1px solid ${farbe};border-radius:8px;padding:10px 12px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${farbe}">${titel}</div>
+      <div style="font-weight:600;margin-top:2px">${esc(name)}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${CRM._mergeSideInfo(c)}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:6px">📍 ${counts.besuche} Besuche · ✅ ${counts.aufgaben} Aufgaben · 🔗 ${counts.verknuepfungen} Verknüpfungen${counts.notiz ? ' · 📝 Notiz' : ''}</div>
+    </div>`;
   CRM.openModal(`
     <h2 style="margin-top:0">Kontakte zusammenführen?</h2>
-    <p style="color:var(--text-dim);font-size:13px">„${esc(drop.firma1)}“ wird in „${esc(keep.firma1)}“ eingefügt und danach gelöscht. Leere Felder bei „${esc(keep.firma1)}“ werden aus „${esc(drop.firma1)}“ ergänzt. Besuche, Aufgaben, Notizen und Verknüpfungen bleiben erhalten.</p>
+    <div class="row" style="gap:10px;flex-wrap:wrap">
+      ${seite('Bleibt bestehen', kName, keep, kc, 'var(--green)')}
+      ${seite('Wird eingefügt &amp; entfernt', dName, drop, dc, 'var(--orange)')}
+    </div>
+    <p style="font-size:13px;margin-top:12px">
+      ${uebernahme.length
+        ? '<strong>Wird übernommen:</strong> ' + esc(uebernahme.join(', ')) + '.'
+        : 'Beim eingefügten Kontakt hängen keine Besuche/Aufgaben/Verknüpfungen.'}
+      Leere Felder oben links werden aus dem rechten Kontakt ergänzt — <strong>es gehen keine Daten verloren</strong>, und „↶ Rückgängig" stellt beide sofort wieder her.
+    </p>
     <div class="modal-footer">
       <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
-      <button class="btn btn-primary" onclick="CRM.doMergeContacts('${keepId}','${dropId}')">Zusammenführen</button>
+      <button class="btn btn-primary" onclick="CRM.doMergeContacts('${keepId}','${dropId}')">⇄ Jetzt zusammenführen</button>
     </div>
   `);
 };
@@ -336,7 +407,11 @@ CRM.confirmMergeContacts = function (keepId, dropId) {
 CRM.doMergeContacts = function (keepId, dropId) {
   const keep = CRM.mergeContacts(keepId, dropId);
   CRM.closeModal();
-  if (keep) CRM.toastUndo(`Kontakte zu „${keep.firma1}“ zusammengeführt.`);
+  if (!keep) { CRM.toast('Zusammenführen fehlgeschlagen — Kontakt nicht gefunden.', 'error'); return; }
+  // Gemeinsame Nachbereitung (Undo-Toast, Listen/Karte/Duplikat-Panel
+  // aktualisieren) — auch vom Vergleichsfenster genutzt.
+  if (CRM.win && CRM.win._afterMerge) { CRM.win._afterMerge(keep); return; }
+  CRM.toastUndo(`Kontakte zu „${CRM.displayNameDisambig(keep)}“ zusammengeführt.`);
   CRM.renderDuplicatesPanel();
   if (CRM.renderContactList) CRM.renderContactList();
 };

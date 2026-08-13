@@ -438,11 +438,21 @@ CRM.win.mergeKeep = function (keepId, dropId) {
   const keep = CRM.db.getContact(keepId);
   const drop = CRM.db.getContact(dropId);
   if (!keep || !drop) return;
-  const ok = confirm('„' + CRM.displayNameDisambig(drop) + '" wird in „' + CRM.displayNameDisambig(keep)
-    + '" eingefügt und danach gelöscht. Besuche, Aufgaben, Notizen und Verknüpfungen bleiben erhalten. Fortfahren?');
-  if (!ok) return;
-  const merged = CRM.mergeContacts(keepId, dropId);
+  // KEIN natives confirm() mehr (gemeldet: "Klick auf Zusammenführen — es
+  // passiert nichts"): Browser unterdrücken confirm() stumm, sobald der
+  // Nutzer einmal "keine weiteren Dialoge anzeigen" bestätigt hat — der
+  // Aufruf liefert dann kommentarlos false und der Merge wurde nie
+  // ausgeführt. Stattdessen der app-eigene Bestätigungsdialog mit
+  // Übernahme-Vorschau (CRM.confirmMergeContacts). Die Fenster werden
+  // vorher geschlossen, weil das Fenster-Layer (z-index 1300) sonst über
+  // dem Modal (1000) läge und den Dialog verdecken würde.
   CRM.win.closeAll();
+  CRM.confirmMergeContacts(keepId, dropId);
+};
+
+/* Führt den Merge nach Bestätigung aus (wird von CRM.doMergeContacts
+   genutzt) — Oberfläche aktualisieren, Undo anbieten. */
+CRM.win._afterMerge = function (merged) {
   if (!merged) return;
   // Ein evtl. offenes Kontaktprofil-Modal (Merge kann aus dem Profil heraus
   // gestartet worden sein) zeigt sonst veraltete/gelöschte Daten neu zeichnen.
