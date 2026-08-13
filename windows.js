@@ -120,10 +120,16 @@ CRM.win.close = function (winId) {
 };
 
 CRM.win.closeTop = function () {
-  const layer = CRM.win._layerEl();
-  const topEl = layer.lastElementChild;
-  if (!topEl) return;
-  CRM.win.close(topEl.dataset.winId);
+  // "Oberstes" Fenster = höchster z-index (seit _bringToFront nicht mehr
+  // per DOM-Reihenfolge arbeitet, siehe dort). Fallback: zuletzt geöffnetes.
+  if (!CRM.win._wins.length) return;
+  let top = CRM.win._wins[CRM.win._wins.length - 1];
+  let topZ = -1;
+  CRM.win._wins.forEach((w) => {
+    const z = parseInt(w.el && w.el.style.zIndex, 10) || 0;
+    if (z >= topZ) { topZ = z; top = w; }
+  });
+  CRM.win.close(top.winId);
 };
 
 CRM.win.closeAll = function () {
@@ -190,9 +196,20 @@ CRM.win._positionNew = function (el) {
   el.style.top = top + 'px';
 };
 
+/* Nach vorne holen NUR per z-index — NICHT per DOM-Umhängen.
+   Bug (gemeldet: "Fenster lassen sich nicht schließen / nicht
+   zusammenführen"): _bringToFront lief bei JEDEM pointerdown auf ein
+   Fenster und hat das Fenster per appendChild im DOM verschoben. Ein
+   DOM-Move zwischen pointerdown und pointerup bricht die Klick-Erkennung
+   des Browsers — der abschließende click auf Buttons IM Fenster (Schließen,
+   Zusammenführen, Vollständig bearbeiten) wurde dadurch nie ausgelöst.
+   (Die Trefferliste funktionierte nur deshalb, weil sie auf pointerdown
+   reagiert, also VOR dem Verschieben.) z-index ändert nichts am DOM und
+   lässt Klicks unangetastet. */
+CRM.win._z = 0;
 CRM.win._bringToFront = function (el) {
-  const layer = CRM.win._layerEl();
-  layer.appendChild(el); // letztes Kind = oben (kein z-index-Zähler nötig)
+  if (!el) return;
+  el.style.zIndex = String(++CRM.win._z);
 };
 
 /* Verschiebbar per Titelleiste (Pointer Events), im Viewport geklammert.
