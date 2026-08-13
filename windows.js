@@ -404,7 +404,9 @@ CRM.win._onSearchInput = function (winId, q, resultsEl) {
       </div>`).join('')
     : '<div class="header-search-empty">Keine Treffer</div>';
   resultsEl.querySelectorAll('.header-search-item').forEach((row) => {
-    row.addEventListener('mousedown', (e) => {
+    // pointerdown statt mousedown: löst auch per Touch/Stift zuverlässig aus
+    // (am Handy feuerte mousedown nicht immer -> Treffer ließ sich nicht wählen).
+    row.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       const w = CRM.win._wins.find((x) => x.winId === winId);
       if (w && w.kind === 'empty') CRM.win._assignContact(winId, row.dataset.id);

@@ -946,6 +946,17 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .crm-win-counts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .crm-win-footer{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
 .crm-win-search{position:relative;margin-top:2px;width:100%}
+/* Trefferliste im Vergleichsfenster NICHT als schwebendes Overlay (wie in
+   der Kopfzeilen-Suche), sondern als normaler Inhalt: .crm-window hat
+   overflow:hidden — ein absolut positioniertes Dropdown wurde am Fensterrand
+   abgeschnitten und war damit unsichtbar UND nicht klickbar ("Kontakt wird
+   nicht gefunden" / "Klick funktioniert nicht jedes Mal"). Inline wächst das
+   Fenster stattdessen mit, der Treffer ist immer direkt darunter sichtbar. */
+.crm-win-search .header-search-dropdown{
+  position:static;margin-top:6px;max-height:280px;overflow-y:auto;
+  box-shadow:none;z-index:auto;
+}
+.crm-win-search .header-search-item{padding:10px 12px}
 
 @media (max-width:768px){
   /* Handy: kein Drag-Zwang — vollbreite, gestapelte Panels statt
