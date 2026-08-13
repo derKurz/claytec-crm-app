@@ -94,11 +94,19 @@ CRM.win.openDraftFromForm = function () {
   }
 };
 
-/* Für Einstellungen → "Zwei Kontakte manuell zusammenführen": zwei leere
-   Fenster mit Suchfeld, Chris wählt beliebige zwei Kontakte. */
+/* Für Einstellungen → "Zwei Kontakte manuell zusammenführen": EIN leeres
+   Suchfenster (Chris-Feedback 2026-08: zwei leere Fenster gleichzeitig zu
+   öffnen war "Quatsch" — bei 380px Fensterbreite lagen sie fast komplett
+   übereinander, das obenliegende zweite Fenster fing dabei Klicks und
+   Suchergebnisse des ersten ab ("Schließen reagiert nicht",
+   "Kontakte werden nicht gefunden"). Jetzt: erst EIN Fenster, darin einen
+   Kontakt suchen/laden (_assignContact); sobald es einen Kontakt zeigt,
+   erscheint automatisch ein zweites Suchfeld im Footer (siehe
+   _footerHtml, total<2-Zweig) — das zweite Fenster wird erst dann,
+   separat, über CRM.win.openContact() geöffnet (landet dank _positionNew
+   nebeneinander, nicht überlappend). */
 CRM.win.openManualMerge = function () {
   CRM.win.closeAll();
-  CRM.win._addWindow({ winId: 'w' + (++CRM.win._seq), kind: 'empty' });
   CRM.win._addWindow({ winId: 'w' + (++CRM.win._seq), kind: 'empty' });
 };
 
@@ -148,14 +156,36 @@ CRM.win._addWindow = function (winObj) {
   if (CRM.nav && CRM.nav.push) CRM.nav.push('crmWindow');
 };
 
+/* Bug (gemeldet, 2026-08): "Zwei Kontakte manuell zusammenführen" und
+   "🔍 Ähnliche prüfen" öffnen BEIDE Fenster sofort gleichzeitig, ohne dass
+   der Nutzer dazwischen ziehen kann. Der alte diagonale 34px-Versatz ist
+   bei 380px Fensterbreite viel zu klein — die Fenster lagen fast komplett
+   übereinander, das ZULETZT geöffnete (im DOM oben, siehe _bringToFront)
+   fing dabei Klicks/Suchergebnisse des ERSTEN Fensters ab (per
+   elementFromPoint bestätigt: an der Stelle der Ergebnisliste von Fenster 1
+   saß tatsächlich das Eingabefeld von Fenster 2). Das erklärte sowohl
+   "Schließen reagiert nicht" (traf oft das falsche, obenliegende Fenster)
+   als auch "Kontakte werden nicht gefunden" (Ergebnisliste optisch verdeckt).
+   Fix: genügend breiter Viewport -> echtes Nebeneinander (Fenster 0 links,
+   Fenster 1 rechts, wie von Chris ursprünglich gewünscht "nebeneinander
+   legen, um sie zu vergleichen"); schmaler Viewport -> alter Diagonal-
+   Versatz als Fallback. */
 CRM.win._positionNew = function (el) {
   const n = CRM.win._wins.length; // Position VOR dem Push -> 0,1,2,...
   const vw = window.innerWidth, vh = window.innerHeight;
   const w = 380, minVisible = 200;
-  let left = 24 + (n % 5) * 34;
-  let top = 60 + (n % 5) * 34;
-  left = Math.min(left, Math.max(0, vw - w - 16));
-  top = Math.min(top, Math.max(0, vh - minVisible));
+  let left, top;
+  if (vw >= w * 2 + 48) {
+    const col = n % 2; // 0 = linke Spalte, 1 = rechte Spalte
+    const stackInCol = Math.floor(n / 2); // 3./5./... Fenster: leichter Versatz je Spalte
+    left = col === 0 ? (24 + stackInCol * 24) : (vw - w - 24 - stackInCol * 24);
+    top = 60 + stackInCol * 34;
+  } else {
+    left = 24 + (n % 5) * 34;
+    top = 60 + (n % 5) * 34;
+  }
+  left = Math.min(Math.max(left, 0), Math.max(0, vw - w - 16));
+  top = Math.min(Math.max(top, 0), Math.max(0, vh - minVisible));
   el.style.left = left + 'px';
   el.style.top = top + 'px';
 };
