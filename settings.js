@@ -319,13 +319,30 @@ CRM.renderDuplicatesPanel = function () {
 };
 
 /* Reine Löschung ohne Zusammenführen — für den Fall, dass einer der
-   beiden Kandidaten schlicht überflüssig ist (kein Datenabgleich nötig). */
+   beiden Kandidaten schlicht überflüssig ist (kein Datenabgleich nötig).
+   App-eigene Bestätigung statt nativem confirm() (Lehre: Browser
+   unterdrücken confirm() teils stumm — scheitert dort zwar sicher, aber
+   ein ganzer Kontakt samt Besuchen/Aufgaben/Journal soll trotzdem einen
+   bewussten zweiten Klick brauchen, nicht nur einen Undo-Toast danach;
+   gleiches Muster wie CRM.deleteContactFromDetail/deleteProjectConfirm). */
 CRM.confirmDeleteDuplicate = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
-  if (!confirm('„' + c.firma1 + '" wirklich löschen (ohne Zusammenführen)? Besuche, Aufgaben und Journal-Einträge gehen mit verloren.')) return;
+  CRM.openModal(`
+    <h2 style="color:var(--red)">Kontakt löschen (ohne Zusammenführen)?</h2>
+    <p>„<strong>${esc(CRM.displayNameDisambig ? CRM.displayNameDisambig(c) : c.firma1)}</strong>“ wird gelöscht — Besuche, Aufgaben und Journal-Einträge gehen mit verloren (per „↶ Rückgängig" direkt danach wiederherstellbar).</p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn" style="border-color:var(--red);color:var(--red)" onclick="CRM._doDeleteDuplicate('${id}')">Endgültig löschen</button>
+    </div>
+  `);
+};
+CRM._doDeleteDuplicate = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
   CRM.takeSnapshot('Vor Löschen von Duplikat „' + c.firma1 + '"');
   CRM.db.deleteContact(id);
+  CRM.closeModal();
   CRM.renderDuplicatesPanel();
   if (CRM.renderContactList) CRM.renderContactList();
   CRM.toastUndo('Kontakt „' + c.firma1 + '" gelöscht.');

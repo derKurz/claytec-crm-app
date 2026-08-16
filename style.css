@@ -1001,3 +1001,37 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
     display: inline-flex; align-items: center; justify-content: center;
   }
 }
+
+/* ============================================================
+   Sprachsteuerung (Batch 9) — Bestätigungs-Vorschau + Mikrofon-Einstiege
+   ============================================================ */
+.voice-cmd-list{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.voice-cmd{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-elev)}
+.voice-cmd-ready{border-color:var(--green)}
+.voice-cmd-ambiguous{border-color:var(--gold)}
+.voice-cmd-blocked{border-color:var(--red);opacity:.9}
+.voice-cmd-muted{opacity:.6;border-style:dashed}
+.voice-cmd-badge{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--bg-elev2)}
+.voice-cmd-ready .voice-cmd-badge{color:var(--green)}
+.voice-cmd-ambiguous .voice-cmd-badge{color:var(--gold)}
+.voice-cmd-blocked .voice-cmd-badge{color:var(--red)}
+.voice-cmd-body{flex:1;min-width:0}
+.voice-cmd-desc{font-size:14px;line-height:1.4}
+.voice-cand-list{margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.voice-cand-hint{padding:6px 10px;font-size:12px;color:var(--text-dim);background:var(--bg)}
+.voice-cand-row{min-height:44px;display:flex;flex-direction:column;justify-content:center}
+
+/* Mikrofon-Einstiege: Desktop-Kopfzeilenknopf ist ein normaler .btn
+   (immer sichtbar, header ist tab-übergreifend). Mobiler FAB spiegelt
+   #fab-new auf der linken Seite, unabhängig vom aktiven Tab sichtbar
+   (nicht an fab-hidden gekoppelt — "von jedem Tab erreichbar"). */
+#fab-voice{display:none}
+@media (max-width:768px){
+  #fab-voice{
+    display:flex;align-items:center;justify-content:center;
+    position:fixed;left:16px;bottom:76px;width:56px;height:56px;border-radius:50%;
+    background:var(--accent);color:#06121c;border:none;font-size:24px;cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,.45);z-index:601;
+  }
+  #fab-voice:active{transform:scale(.94)}
+}

@@ -81,6 +81,7 @@ CRM.renderDashboard = function () {
       </div>
 
       <div class="dash-actions">
+        <button class="dash-action dash-action-primary" onclick="CRM.voice.openCapture()">🎙️ Sprachbefehl (Beta)</button>
         <button class="dash-action dash-action-primary" onclick="CRM.dashboardVoiceNote()">🎤 Sprachnotiz aufnehmen</button>
         <button class="dash-action" onclick="CRM.mailAblage.open()">📧 E-Mail ablegen</button>
         <div class="dash-actions-row">

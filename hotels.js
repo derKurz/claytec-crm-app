@@ -124,9 +124,29 @@ CRM.hotels.openMapsSearch = function () {
   window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q), '_blank');
 };
 
+/* Hotels liegen in CRM.db.getSettings().hotels — außerhalb des
+   Kontakte/Projekte/Aufgaben-Snapshots von CRM.takeSnapshot(). Ein
+   CRM.toastUndo() hier würde "wiederhergestellt" melden, ohne das Hotel
+   zurückzuholen. Darum ein eigener, gleich aussehender Undo-Toast statt
+   des gemeinsamen Snapshots. */
 CRM.hotels.remove = function (id) {
-  if (!confirm('Hotel wirklich löschen?')) return;
-  CRM.hotels.save(CRM.hotels.all().filter((h) => h.id !== id));
+  const list = CRM.hotels.all();
+  const removed = list.find((h) => h.id === id);
+  if (!removed) return;
+  CRM.hotels.save(list.filter((h) => h.id !== id));
   if (CRM.hotels._editId === id) CRM.hotels._editId = null;
   CRM.hotels.openDialog();
+  const host = document.getElementById('toast-container') || document.body;
+  const el = document.createElement('div');
+  el.className = 'toast success';
+  el.innerHTML = '<span>Hotel „' + esc(removed.name || '') + '" gelöscht.</span> '
+    + '<button class="btn btn-sm" style="margin-left:10px">↶ Rückgängig</button>';
+  el.querySelector('button').addEventListener('click', () => {
+    CRM.hotels.save(CRM.hotels.all().concat([removed]));
+    CRM.hotels.openDialog();
+    CRM.toast('Rückgängig gemacht — Hotel wiederhergestellt.', 'success');
+    el.remove();
+  });
+  host.appendChild(el);
+  setTimeout(() => el.remove(), 12000);
 };
