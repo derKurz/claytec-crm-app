@@ -126,7 +126,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .badge-verarbeiter{color:var(--green);border-color:var(--green)}
 .badge-architekt{color:var(--orange);border-color:var(--orange)}
 .badge-bauherr{color:#c9a66b;border-color:#c9a66b}
-.badge-privatbauherr{color:var(--text-dim)}
 .badge-behoerde{color:var(--purple);border-color:var(--purple)}
 .badge-partner{color:var(--gold);border-color:var(--gold);background:rgba(230,185,77,.12)}
 .badge-A{color:var(--red);border-color:var(--red)}
@@ -693,6 +692,7 @@ body.resizing-col{cursor:col-resize;user-select:none}
 .dash-next-title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-next-sub{font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-next-chev{color:var(--text-dim);font-size:18px;flex-shrink:0}
+.dash-task-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
 .dash-empty{color:var(--text-dim);font-size:13px;padding:10px 2px}
 
 .dash-actions{margin-top:auto;padding-top:8px}
@@ -983,7 +983,8 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
   .act-del, .act-edit,
   .dash-del, .dash-vcard,
   .lager-btns .btn,
-  .crm-win-close {
+  .crm-win-close,
+  .dash-task-actions .btn {
     min-height: 44px; min-width: 44px;
   }
   /* Aktions-Cluster (Aktivitäten, Nearby, Kontakt-Kopf) auf 44px */

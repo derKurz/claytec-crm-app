@@ -404,7 +404,7 @@ CRM.emailParser.parse = function (rawText) {
 /* ---------- in CRM-Kontakt umwandeln ---------- */
 CRM.emailParser.toContact = function (data, type, source) {
   const c = CRM.makeEmptyContact();
-  c.type = type || 'privatbauherr';
+  c.type = type || 'bauherr';
   c.source = source || 'eigene';
   c.firma1 = data.company || data.name || 'Neuer Kontakt';
   c.firma2 = data.company2 || '';

@@ -489,23 +489,44 @@ CRM.formatProvenance = function (c) {
   return txt;
 };
 
-/* Aufgaben im Kontaktprofil */
+/* Aufgaben im Kontaktprofil (Batch 6a: erledigte Aufgaben waren bisher
+   komplett unsichtbar — "Keine offenen Aufgaben" erschien selbst dann,
+   wenn erledigte existierten. Jetzt ein-/ausblendbar, plus dieselben
+   Aktionen (Verschieben/Bearbeiten & Verknüpfen/Löschen) wie auf der
+   Startseite und in der Agenda, über CRM.taskActions.*). */
+CRM._cdShowDoneTasks = CRM._cdShowDoneTasks || {};
 CRM.renderContactTasks = function (contactId) {
-  const tasks = CRM.db.getTasksForContact(contactId).sort((a, b) => (a.done - b.done) || ((a.due || '') < (b.due || '') ? -1 : 1));
-  if (!tasks.length) return '<p style="color:var(--text-dim);font-size:13px">Keine offenen Aufgaben.</p>';
-  return tasks.map((t) => {
+  const all = CRM.db.getTasksForContact(contactId).sort((a, b) => (a.done - b.done) || ((a.due || '') < (b.due || '') ? -1 : 1));
+  const doneCount = all.filter((t) => t.done).length;
+  const showDone = !!CRM._cdShowDoneTasks[contactId];
+  const tasks = showDone ? all : all.filter((t) => !t.done);
+  const toggleBtn = doneCount
+    ? `<button class="btn btn-sm" onclick="CRM.toggleCdShowDoneTasks('${contactId}')">${showDone ? 'Erledigte ausblenden' : `Erledigte anzeigen (${doneCount})`}</button>`
+    : '';
+
+  if (!tasks.length) {
+    const emptyText = doneCount ? `Keine offenen Aufgaben (${doneCount} erledigte).` : 'Keine offenen Aufgaben.';
+    return `<p style="color:var(--text-dim);font-size:13px">${emptyText}</p>${toggleBtn ? `<div style="margin-top:6px">${toggleBtn}</div>` : ''}`;
+  }
+
+  const rows = tasks.map((t) => {
     const st = CRM.getTaskDueStatus(t);
     const cls = st.status === 'overdue' ? 'badge-overdue' : '';
     const musterBtn = t.done ? '' : `<button class="btn btn-sm" title="Muster/Musterbuch für diese Aufgabe bestellen und Aufgabe erledigen" onclick="CRM.muster.open('${contactId}','${t.id}')">📦 Muster</button>`;
     return `<div class="list-item" style="cursor:default">
-      <input type="checkbox" style="width:auto;margin-right:10px" ${t.done ? 'checked' : ''} onchange="CRM.toggleContactTask('${t.id}','${contactId}')">
+      <input type="checkbox" style="width:auto;margin-right:10px" ${t.done ? 'checked' : ''} onchange="CRM.taskActions.toggleDone('${t.id}',CRM.taskActions.uiCtx('contact','${contactId}'))">
       <div class="li-main"><div class="li-title" style="${t.done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc2(t.title)}</div>
         <div class="li-sub"><span class="badge ${cls}">fällig ${esc2(t.due)}</span></div></div>
       ${musterBtn}
-      <button class="btn btn-sm" title="Bearbeiten" onclick="CRM.activities.edit('${contactId}','task','${t.id}')">✏️</button>
-      <button class="btn btn-sm" title="Löschen" onclick="CRM.db.deleteTask('${t.id}');CRM.renderContactDetailModal('${contactId}')">🗑</button>
+      ${CRM.taskActions.menuHtml(t.id, 'contact', contactId)}
     </div>`;
   }).join('');
+  return rows + (toggleBtn ? `<div style="margin-top:6px">${toggleBtn}</div>` : '');
+};
+CRM.toggleCdShowDoneTasks = function (contactId) {
+  CRM._cdShowDoneTasks[contactId] = !CRM._cdShowDoneTasks[contactId];
+  const wrap = document.getElementById('cd-tasks');
+  if (wrap) wrap.innerHTML = CRM.renderContactTasks(contactId);
 };
 CRM.addContactTask = function (contactId) {
   const title = document.getElementById('cd-task-title').value.trim();
@@ -516,11 +537,6 @@ CRM.addContactTask = function (contactId) {
   }
   CRM.db.addTask({ title, due, contactId });
   CRM.toast(`✓ Aufgabe gespeichert: „${title}" (fällig ${due})`, 'success');
-  CRM.renderContactDetailModal(contactId);
-};
-CRM.toggleContactTask = function (taskId, contactId) {
-  const t = CRM.db.getTask(taskId);
-  if (t) CRM.db.updateTask(taskId, { done: !t.done, doneAt: !t.done ? new Date().toISOString() : null });
   CRM.renderContactDetailModal(contactId);
 };
 

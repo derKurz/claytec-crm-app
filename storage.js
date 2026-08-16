@@ -24,13 +24,12 @@ CRM.JOURNAL_TYPE_LABELS = {
   reklamation: '⚠️ Reklamation', schulung: '🎓 Schulung/Workshop',
 };
 
-CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'privatbauherr', 'behoerde'];
+CRM.TYPES = ['haendler', 'verarbeiter', 'architekt', 'bauherr', 'behoerde'];
 CRM.TYPE_LABELS = {
   haendler: 'Händler',
   verarbeiter: 'Verarbeiter',
   architekt: 'Architekt',
   bauherr: 'Bauherr',
-  privatbauherr: 'Private Bauherren',
   behoerde: 'Behörden',
 };
 CRM.TYPE_SHORT = {
@@ -38,7 +37,6 @@ CRM.TYPE_SHORT = {
   verarbeiter: 'BU',
   architekt: 'AR',
   bauherr: 'BH',
-  privatbauherr: 'PB',
   behoerde: 'BÖ',
 };
 CRM.SOURCES = ['eigene', 'eurobaustoff', 'partner', 'baywa'];
@@ -138,17 +136,33 @@ CRM.db = {
     this._meta = CRM.storage.read(CRM.KEYS.META, { importedFiles: [] });
     this._repairJournal();
     this._migrateContactTypes();
+    this._migrateBauherrTypes();
   },
 
   /* Einmalige, idempotente Migration (Batch 5, 2026-08): Kategorie "sonstige"
      wurde in "Private Bauherren" (privatbauherr) umbenannt. Alte Kontakte mit
      dem alten type werden beim Laden automatisch umgeschrieben — läuft bei
      jedem Init, ist aber ein No-Op sobald kein Kontakt mehr type==='sonstige'
-     hat. */
+     hat. (privatbauherr selbst existiert seit Batch 6c nicht mehr als eigene
+     Kategorie — siehe _migrateBauherrTypes direkt darunter, das läuft danach.) */
   _migrateContactTypes() {
     let changed = 0;
     this._contacts.forEach((c) => {
       if (c.type === 'sonstige') { c.type = 'privatbauherr'; changed++; }
+    });
+    if (changed) this.saveContacts();
+  },
+
+  /* Einmalige, idempotente Migration (Batch 6c, 2026-08): Chris-Korrektur zu
+     Batch 5a — "Bauherr" und "Private Bauherren" waren eine unerwünschte
+     Doppelung ("ich möchte nur Bauherr haben"). Alte Kontakte mit
+     type==='privatbauherr' (inkl. der noch älteren, über _migrateContactTypes
+     bereits umgeschriebenen "sonstige"-Kontakte) werden auf 'bauherr'
+     zusammengeführt. "Behörden" ist davon nicht betroffen. */
+  _migrateBauherrTypes() {
+    let changed = 0;
+    this._contacts.forEach((c) => {
+      if (c.type === 'privatbauherr') { c.type = 'bauherr'; changed++; }
     });
     if (changed) this.saveContacts();
   },
@@ -416,6 +430,7 @@ CRM.makeEmptyProject = function () {
     status: 'planung',
     kategorie: 'baustelle', // 'baustelle' (EFH, normale Bauvorhaben) | 'gross' (Großprojekt)
     erpNr: '',
+    strasse: '',
     ort: '',
     plz: '',
     contactIds: [],
@@ -448,7 +463,7 @@ CRM.makeEmptyComm = function () {
 CRM.makeEmptyContact = function () {
   return {
     id: null,
-    type: 'privatbauherr',
+    type: 'bauherr',
     isPartner: false,
     source: 'eigene',
     abc: 'C',

@@ -106,25 +106,34 @@ CRM.dashboardNextUpHtml = function (visits, tasks) {
           <span class="dash-next-icon">📍</span>
           <div class="dash-next-main">
             <div class="dash-next-title">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
-            <div class="dash-next-sub">${c.abc}-Kunde · ${esc(c.plz)} ${esc(c.ort)} · ${label}</div>
+            <div class="dash-next-sub">Besuch · ${c.abc}-Kunde · ${esc(c.plz)} ${esc(c.ort)} · ${label}</div>
           </div>
           <span class="dash-next-chev">›</span>
         </div>`;
     }
+    // Aufgaben-Zeile: Typ im Text sichtbar ("Aufgabe ·"), plus direkte
+    // Aktionen (✓ Erledigt, "⋯"-Menü) — behebt, dass sich Aufgaben von
+    // der Startseite aus bisher weder abhaken noch bearbeiten ließen.
     const t = it.t;
     const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
     const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
     const label = it.diff < 0 ? `${-it.diff} Tage überfällig` : 'heute fällig';
     const open = c ? `CRM.openContactDetail('${c.id}')` : (p ? `CRM.openProjectDetail('${p.id}')` : `CRM.switchTab('agenda')`);
     const who = [c && c.firma1, p && (((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ') + p.name)].filter(Boolean).join(' · ');
+    const returnType = c ? 'contact' : (p ? 'project' : 'dashboard');
+    const returnId = c ? c.id : (p ? p.id : null);
+    const ctxExpr = `CRM.taskActions.uiCtx('${returnType}',${returnId ? `'${returnId}'` : 'null'})`;
     return `
       <div class="dash-next" onclick="${open}">
         <span class="dash-next-icon">✓</span>
         <div class="dash-next-main">
           <div class="dash-next-title">${esc(t.title)}</div>
-          <div class="dash-next-sub">${who ? esc(who) + ' · ' : ''}${label}</div>
+          <div class="dash-next-sub">Aufgabe · ${who ? esc(who) + ' · ' : ''}${label}</div>
         </div>
-        <span class="dash-next-chev">›</span>
+        <div class="dash-task-actions">
+          <button class="btn btn-sm" title="Erledigt" onclick="event.stopPropagation();CRM.taskActions.toggleDone('${t.id}',${ctxExpr})">✓</button>
+          ${CRM.taskActions.menuHtml(t.id, returnType, returnId)}
+        </div>
       </div>`;
   }).join('');
 };

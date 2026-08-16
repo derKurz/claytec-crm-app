@@ -9,7 +9,7 @@ window.CRM = CRM;
 
 CRM.ablage = {
   rootHandle: null, // Handle auf den "Claytec"-Ordner
-  TYPE_FOLDER: { architekt: '.AR', haendler: '.BH', verarbeiter: '.BU', privatbauherr: '.BU', behoerde: '.BU' },
+  TYPE_FOLDER: { architekt: '.AR', haendler: '.BH', verarbeiter: '.BU', behoerde: '.BU' },
   PROTO_TEMPLATE_DIR: 'Berichte - Reisekosten - Spesen',
   PROTO_TEMPLATE_FILE: 'Besuchsprotokoll - CK.xlsx',
   MONTH_BASE_DIR: 'Berichte - Reisekosten - Spesen',

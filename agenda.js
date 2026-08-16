@@ -132,16 +132,19 @@ CRM.taskRow = function (t, st) {
   if (p) parts.push(`${(p.kategorie || 'baustelle') === 'gross' ? '🏢' : '🏠'} ${esc(p.name)}`);
   const sub = parts.join(' · ') || 'Allgemeine Aufgabe';
   const dueLabel = st.diffDays < 0 ? `${-st.diffDays} Tage überfällig` : (st.diffDays === 0 ? 'heute' : `in ${st.diffDays} Tagen`);
+  // Dieselben Aktionen wie Startseite/Kontaktprofil (Batch 6a), über
+  // CRM.taskActions.* — kein eigener Verschieben-/Bearbeiten-Code hier.
+  const ctxExpr = `CRM.taskActions.uiCtx('agenda')`;
   return `
     <div class="list-item">
-      <input type="checkbox" style="width:auto;margin-right:10px" onchange="CRM.toggleTaskDone('${t.id}')">
+      <input type="checkbox" style="width:auto;margin-right:10px" onchange="CRM.taskActions.toggleDone('${t.id}',${ctxExpr})">
       <div class="li-main" ${c ? `onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"` : (p ? `onclick="CRM.openProjectDetail('${p.id}')" style="cursor:pointer"` : '')}>
         <div class="li-title">✓ ${esc(t.title)}</div>
         <div class="li-sub">${sub} · ${dueLabel}</div>
       </div>
       ${c ? `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.muster.open('${c.id}','${t.id}')" title="Muster/Musterbuch bestellen und Aufgabe erledigen">📦 Muster</button>` : ''}
       <button class="btn btn-sm li-cal" onclick="event.stopPropagation();CRM.exportTaskICS('${t.id}')" title="In Kalender">📅</button>
-      <button class="btn btn-sm" onclick="event.stopPropagation();CRM.db.deleteTask('${t.id}');CRM.renderAgenda()" title="Löschen">🗑</button>
+      ${CRM.taskActions.menuHtml(t.id, 'agenda')}
     </div>`;
 };
 
@@ -242,14 +245,6 @@ CRM.quickAddTask = function (contactId) {
   CRM.db.addTask({ title, due: dueEl ? dueEl.value : new Date().toISOString().slice(0, 10), contactId: contactId || null });
   CRM.toast('Aufgabe angelegt.', 'success');
   CRM.renderAgenda();
-};
-
-CRM.toggleTaskDone = function (id) {
-  const t = CRM.db.getTask(id);
-  if (!t) return;
-  CRM.db.updateTask(id, { done: !t.done, doneAt: !t.done ? new Date().toISOString() : null });
-  CRM.toast(t.done ? 'Aufgabe wieder geöffnet.' : 'Aufgabe erledigt. ✓', 'success');
-  setTimeout(() => { if (CRM._heuteView === 'liste') CRM.renderAgenda(); }, 300);
 };
 
 CRM.exportTaskICS = function (id) {

@@ -196,6 +196,9 @@ CRM.openProjectDetail = function (id) {
         <div class="col" style="max-width:180px"><label>Kategorie</label><select id="proj-kategorie">${CRM.PROJECT_KATEGORIEN.map((k) => `<option value="${k}" ${(p.kategorie || 'baustelle') === k ? 'selected' : ''}>${CRM.PROJECT_KATEGORIE_LABELS[k]}</option>`).join('')}</select></div>
       </div>
       <div class="row">
+        <div class="col"><label>Straße</label><input id="proj-strasse" value="${escAttr(p.strasse || '')}"></div>
+      </div>
+      <div class="row">
         <div class="col" style="max-width:120px"><label>PLZ</label><input id="proj-plz" value="${escAttr(p.plz || '')}"></div>
         <div class="col"><label>Ort</label><input id="proj-ort" value="${escAttr(p.ort || '')}"></div>
       </div>
@@ -304,19 +307,37 @@ CRM.removeProjVariant = function (idx, projectId) {
   CRM.refreshProjProducts(projectId);
 };
 
-CRM.saveProjectDetail = function (id) {
+/* Liest die aktuell im Projekt-Formular stehenden Werte aus und speichert sie
+   STILL (kein Toast, kein Re-Render). Genutzt von saveProjectDetail (normaler
+   Speichern-Klick) UND von openProjectContactPicker (Batch 6b: verhindert
+   Datenverlust, wenn von einem offenen, ungespeicherten Projekt-Formular aus
+   der Kontakt-Picker geöffnet wird — CRM.openModal() schließt zwangsläufig
+   zuerst das aktuelle Modal, siehe CRM.closeModal() in app.js; ohne dieses
+   stille Zwischenspeichern ging der eingetippte Projektname dabei verloren).
+   Kein Effekt, wenn gerade gar kein Projekt-Formular offen ist. */
+CRM._captureProjectFormValues = function (id) {
+  const nameEl = document.getElementById('proj-name');
+  if (!nameEl) return; // kein offenes Projekt-Formular -> nichts zu sichern
+  const p = CRM.db.getProject(id);
+  if (!p) return;
+  const val = (elId, fallback) => { const el = document.getElementById(elId); return el ? el.value : fallback; };
   const products = Array.from(document.querySelectorAll('.proj-product:checked')).map((el) => el.value)
-    .concat(CRM._projCustomProducts || []);
+    .concat(CRM._projCustomProducts || p.products || []);
   CRM.db.updateProject(id, {
-    name: document.getElementById('proj-name').value.trim() || '(ohne Namen)',
-    erpNr: document.getElementById('proj-erp').value.trim(),
-    status: document.getElementById('proj-status').value,
-    kategorie: document.getElementById('proj-kategorie').value,
-    plz: document.getElementById('proj-plz').value.trim(),
-    ort: document.getElementById('proj-ort').value.trim(),
-    notes: document.getElementById('proj-notes').value,
+    name: (nameEl.value || '').trim() || '(ohne Namen)',
+    erpNr: (val('proj-erp', p.erpNr) || '').trim(),
+    status: val('proj-status', p.status),
+    kategorie: val('proj-kategorie', p.kategorie),
+    strasse: (val('proj-strasse', p.strasse) || '').trim(),
+    plz: (val('proj-plz', p.plz) || '').trim(),
+    ort: (val('proj-ort', p.ort) || '').trim(),
+    notes: val('proj-notes', p.notes),
     products,
   });
+};
+
+CRM.saveProjectDetail = function (id) {
+  CRM._captureProjectFormValues(id);
   CRM.toast('Projekt gespeichert.', 'success');
   CRM.openProjectDetail(id);
   CRM.renderProjects();
@@ -354,6 +375,7 @@ CRM.unlinkProjectContact = function (projectId, contactId) {
 
 /* ---------- Kontakt-Picker für Projekt ---------- */
 CRM.openProjectContactPicker = function (projectId) {
+  CRM._captureProjectFormValues(projectId); // ungespeicherte Formularwerte sichern (Batch 6b) — sonst zerstört das gleich folgende openModal() das Projekt-Formular
   CRM._projPicker = { projectId, query: '' };
   CRM.openModal(`
     <h2>Kontakt mit Projekt verknüpfen</h2>

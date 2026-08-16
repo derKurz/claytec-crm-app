@@ -860,7 +860,7 @@ CRM.importFlow = {
   sheetsData: [], // [{name, rows, headerRowIdx, headers, dataRows}]
   currentSheetIdx: 0,
   mapping: {},
-  defaults: { source: 'eigene', type: 'privatbauherr', isPartner: false, abc: 'C' },
+  defaults: { source: 'eigene', type: 'bauherr', isPartner: false, abc: 'C' },
 };
 
 /* Farbschema anwenden — Standard ist HELL (bessere Lesbarkeit),

@@ -75,7 +75,7 @@ CRM.win.openDraftFromForm = function () {
   }
   const typeEl = document.getElementById('ep-type');
   const srcEl = document.getElementById('ep-source');
-  const draftContact = CRM.emailParser.toContact(data, typeEl ? typeEl.value : 'privatbauherr', srcEl ? srcEl.value : 'eigene');
+  const draftContact = CRM.emailParser.toContact(data, typeEl ? typeEl.value : 'bauherr', srcEl ? srcEl.value : 'eigene');
 
   const already = CRM.win._wins.find((w) => w.kind === 'draft');
   if (already) {
@@ -159,6 +159,14 @@ CRM.win._addWindow = function (winObj) {
   CRM.win._wireDrag(el);
   CRM.win._updateLayerState();
   CRM.win._renderAll();
+  // Autofokus NUR beim Öffnen eines leeren Suchfensters (Batch 6d, Chris:
+  // "der Cursor immer in diesem automatischen Suchfeld springt") — bewusst
+  // NICHT bei jedem _renderAll(), sonst reißt es den Cursor während des
+  // Tippens in einem ANDEREN offenen Fenster weg.
+  if (winObj.kind === 'empty') {
+    const input = el.querySelector('.crm-win-body .crm-win-search input');
+    if (input) setTimeout(() => input.focus(), 30);
+  }
   if (CRM.nav && CRM.nav.push) CRM.nav.push('crmWindow');
 };
 
@@ -176,12 +184,37 @@ CRM.win._addWindow = function (winObj) {
    Fenster 1 rechts, wie von Chris ursprünglich gewünscht "nebeneinander
    legen, um sie zu vergleichen"); schmaler Viewport -> alter Diagonal-
    Versatz als Fallback. */
+/* Batch 6d (Chris, 2026-08): "Suchfeld in der Mitte des Bildschirms" statt
+   oben links; ein zweites Fenster soll DIREKT neben dem ersten erscheinen
+   ("das nicht rumziehen müssen"), nicht an die Bildschirmränder springen. */
 CRM.win._positionNew = function (el) {
   const n = CRM.win._wins.length; // Position VOR dem Push -> 0,1,2,...
   const vw = window.innerWidth, vh = window.innerHeight;
   const w = 380, minVisible = 200;
   let left, top;
-  if (vw >= w * 2 + 48) {
+  if (n === 0) {
+    // Erstes Fenster: horizontal zentriert, fester angenehmer Abstand von
+    // oben (nicht exakt vertikal zentriert, da die Höhe inhaltsabhängig ist).
+    left = (vw - w) / 2;
+    top = 60;
+  } else if (n === 1 && CRM.win._wins[0] && CRM.win._wins[0].el) {
+    // Zweites Fenster: direkt neben Fenster 1 (kein Sprung an den Bildschirmrand).
+    const first = CRM.win._wins[0].el;
+    const firstLeft = parseFloat(first.style.left) || 0;
+    const firstTop = parseFloat(first.style.top) || 60;
+    const gap = 16;
+    if (firstLeft + w + gap + w <= vw) {
+      left = firstLeft + w + gap; // rechts daneben
+      top = firstTop;
+    } else if (firstLeft - gap - w >= 0) {
+      left = firstLeft - gap - w; // sonst links daneben
+      top = firstTop;
+    } else {
+      // Sehr schmaler Viewport: alter Diagonal-Versatz als Fallback
+      left = 24 + (n % 5) * 34;
+      top = 60 + (n % 5) * 34;
+    }
+  } else if (vw >= w * 2 + 48) {
     const col = n % 2; // 0 = linke Spalte, 1 = rechte Spalte
     const stackInCol = Math.floor(n / 2); // 3./5./... Fenster: leichter Versatz je Spalte
     left = col === 0 ? (24 + stackInCol * 24) : (vw - w - 24 - stackInCol * 24);
@@ -444,6 +477,13 @@ CRM.win._assignContact = function (winId, contactId) {
   w.contactId = contactId;
   delete w.draftContact;
   CRM.win._renderAll();
+  // Sobald dadurch zum ERSTEN Mal ein Footer-Suchfeld für einen zweiten
+  // Kontakt erscheint (siehe _footerHtml, total<2-Zweig), dorthin
+  // fokussieren (Batch 6d) — nur bei diesem Übergang, nicht generell.
+  if (CRM.win._wins.length < 2) {
+    const input = w.el.querySelector('.crm-win-footer .crm-win-search input');
+    if (input) setTimeout(() => input.focus(), 30);
+  }
 };
 
 /* ---------- Zusammenführen (B1: einen als Master behalten) ----------
