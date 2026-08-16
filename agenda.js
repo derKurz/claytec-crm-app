@@ -216,7 +216,10 @@ CRM.toggleRouteSelection = function (id) {
   else CRM._contactSelection.add(id);
   if (document.getElementById('active-modal-overlay') && CRM.renderContactDetailModal) CRM.renderContactDetailModal(id);
   if (document.querySelector('#view-kontakte.active') && CRM.renderContactList) CRM.renderContactList();
-  if (document.querySelector('#view-agenda.active') && CRM.renderAgenda) CRM.renderAgenda();
+  // #view-start, NICHT mehr #view-agenda: seit dem Start/Heute-Zusammenlegen
+  // (Batch 8a) rendert die Fälligkeits-Liste in #view-start; die alte
+  // Bedingung traf nie mehr zu, der Button aktualisierte sich dort nicht.
+  if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
 };
 
 CRM.updateAgendaSelectionCount = function () {
