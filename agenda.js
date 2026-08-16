@@ -141,14 +141,76 @@ CRM.taskRow = function (t, st) {
     </div>`;
 };
 
-/* Schnellaktionen: Klick-to-Call / Mail (mobiler Gewinn)
-   opts.compact (Batch 5b, nur Kontakt-Kopf): nur die 1-3 wichtigsten
-   Aktionen (Anruf/Mail/Karte) bleiben sichtbar, der Rest wandert in ein
-   "…"-Overflow-Menü. Ohne opts.compact unverändertes Verhalten (Agenda). */
-CRM.quickActionButtons = function (c, opts) {
-  const o = opts || {};
-  const tel = c.telFirma || CRM.mainAnsprechpartner(c).telefon;
-  const mail = c.emailFirma || CRM.mainAnsprechpartner(c).email;
+/* ============================================================
+   EINE Quelle für Telefon/Mail eines Kontakts.
+
+   Vorher gab es zwei Stellen mit GEGENSÄTZLICHER Rangfolge: der
+   Ansprechpartner-Block im Kontaktkopf nahm die Person zuerst, die
+   Schnellaktionen die Firma zuerst. Ergebnis: zwei optisch identische
+   Hörer-Symbole direkt untereinander, die verschiedene Nummern wählten
+   (nachgemessen 2026-08: Durchwahl vs. Zentrale). Jetzt gilt überall
+   „Person zuerst, Firma als Rückfall" — wen Chris anruft, ist der
+   Ansprechpartner, nicht die Telefonzentrale.
+   ============================================================ */
+CRM.contactReach = function (c) {
+  const ap = CRM.mainAnsprechpartner(c);
+  return {
+    tel: ap.telefon || c.telFirma || '',
+    mail: ap.email || c.emailFirma || '',
+    person: [ap.vorname, ap.name].filter(Boolean).join(' '),
+  };
+};
+
+/* Die drei Hauptaktionen im Kontaktkopf — MIT Beschriftung.
+   Unbeschriftete Symbole sind nach dem sechsten Termin nicht mehr
+   eindeutig, und Tooltips gibt es am Handy nicht (UXE-Empfehlung,
+   von Chris bestätigt). Alles Seltenere steckt im "…"-Menü. */
+CRM.contactMainActions = function (c) {
+  const r = CRM.contactReach(c);
+  const addr = CRM.formatAddress(c);
+  const btn = (inner, attrs) => `<a class="btn cd-mainaction" ${attrs} onclick="event.stopPropagation()">${inner}</a>`;
+  const out = [];
+  if (r.tel) {
+    out.push(btn(`<span class="ma-icon">📞</span><span>${esc(r.person || 'Anrufen')}</span>`,
+      `href="tel:${esc(r.tel)}" title="Anrufen: ${esc(r.tel)}"`));
+  }
+  if (r.mail) {
+    out.push(btn(`<span class="ma-icon">✉</span><span>E-Mail</span>`,
+      `href="mailto:${esc(r.mail)}" title="E-Mail an ${esc(r.mail)}"`));
+  }
+  if (addr) {
+    out.push(btn(`<span class="ma-icon">🗺️</span><span>Route</span>`,
+      `href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" title="Route in Google Maps"`));
+  }
+  return out.length ? `<div class="cd-actions-main">${out.join('')}</div>` : '';
+};
+
+/* Die selteneren Aktionen als Einträge für EIN gemeinsames "…"-Menü.
+   Vorher hatte der Kopf ZWEI getrennte "…"-Menüs (eins bei den
+   Statusknöpfen, eins bei den Schnellaktionen) — niemand konnte raten,
+   was in welchem steckt. */
+CRM.contactSecondaryMenuItems = function (c) {
+  const items = [];
+  items.push(`<button onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')">📍 Auf Karte zeigen</button>`);
+  if (c.website) {
+    const url = /^https?:\/\//i.test(c.website) ? c.website : 'https://' + c.website;
+    items.push(`<a href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🌐 Website öffnen</a>`);
+  }
+  const inRoute = CRM._contactSelection && CRM._contactSelection.has(c.id);
+  items.push(`<button onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')">${inRoute ? '✓ Aus Route entfernen' : '➕ Zur Route hinzufügen'}</button>`);
+  items.push(`<button onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')">📋 Kontaktdaten kopieren</button>`);
+  items.push(`<button onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')">📧 Per E-Mail weiterleiten</button>`);
+  return items;
+};
+
+/* Schnellaktionen für die LISTEN-Zeilen (Startseite). Am Handy ohnehin
+   ausgeblendet, siehe #view-start .li-quick in style.css. Der frühere
+   opts.compact-Zweig für den Kontaktkopf ist entfallen — der Kopf nutzt
+   jetzt contactMainActions + contactSecondaryMenuItems. */
+CRM.quickActionButtons = function (c) {
+  const r = CRM.contactReach(c);
+  const tel = r.tel;
+  const mail = r.mail;
   const items = []; // {primary, html, menuHtml}
   if (tel) items.push({
     primary: true,
@@ -196,14 +258,7 @@ CRM.quickActionButtons = function (c, opts) {
     menuHtml: `<button onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')">${inRoute ? '✓ Aus Route entfernen' : '➕ Zur Route hinzufügen'}</button>`,
   });
 
-  if (!o.compact) return items.map((i) => i.html).join('');
-  const primaryHtml = items.filter((i) => i.primary).map((i) => i.html).join('');
-  const secondary = items.filter((i) => !i.primary);
-  if (!secondary.length) return primaryHtml;
-  return primaryHtml + `<div class="ov-menu">
-      <button class="btn btn-sm" onclick="CRM.toggleOvMenu(this,event)" title="Weitere Aktionen">⋯</button>
-      <div class="ov-menu-list hidden">${secondary.map((i) => i.menuHtml).join('')}</div>
-    </div>`;
+  return items.map((i) => i.html).join('');
 };
 
 /* Kontakt unabhängig von der Listen-Checkbox zur bestehenden Routenauswahl

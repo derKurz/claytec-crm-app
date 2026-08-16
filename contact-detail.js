@@ -276,6 +276,8 @@ CRM.renderContactDetailModal = function (id) {
       <div>
         <h2 style="margin:0 0 6px">${esc2(CRM.displayNameDisambig(c))} ${c.isPartner ? '⭐' : ''}</h2>
         <div class="li-badges cd-meta">
+          <button class="badge badge-toggle ${c.top25 ? 'badge-on-gold' : ''}" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')">🏆 Top-25</button>
+          <button class="badge badge-toggle ${c.aktiv ? 'badge-on-gold' : ''}" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'} Aktiv</button>
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
           <span class="badge">${CRM.SOURCE_LABELS[c.source]}</span>
@@ -289,26 +291,25 @@ CRM.renderContactDetailModal = function (id) {
           const ap = CRM.mainAnsprechpartner(c);
           const n = [ap.vorname, ap.name].filter(Boolean).join(' ');
           if (!n) return '';
-          const tel = ap.telefon || c.telFirma;
-          const mail = ap.email || c.emailFirma;
+          // Nur noch die INFORMATION, wer der Ansprechpartner ist. Die
+          // Anruf-/Mail-Symbole standen hier ein zweites Mal (mit anderer
+          // Nummer!) — sie stecken jetzt einmalig in CRM.contactMainActions.
           return `<div class="cd-ap">
             <span>👤 <strong>${esc2(n)}</strong>${ap.funktion ? ' · ' + esc2(ap.funktion) : ''}</span>
-            ${tel ? `<a class="btn btn-sm" href="tel:${escAttr(tel)}" title="Anrufen">📞</a>` : ''}
-            ${mail ? `<a class="btn btn-sm" href="mailto:${escAttr(mail)}" title="E-Mail">✉</a>` : ''}
           </div>`;
         })()}
         <div class="cd-nextstep">
           <label style="margin:0">Nächster Schritt</label>
           <input data-field="nextStep" value="${escAttr(c.nextStep || '')}" placeholder="z.B. Angebot nachfassen, Muster vorbeibringen...">
         </div>
-        <div class="li-badges cd-actions" style="margin-top:8px">${CRM.quickActionButtons(c, { compact: true })}</div>
+        ${CRM.contactMainActions(c)}
       </div>
       <div style="display:flex;gap:6px;align-items:flex-start">
-        <button class="btn btn-icon" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')" style="${c.top25 ? 'border-color:var(--accent-2);background:rgba(255,193,7,.12)' : ''}">🏆</button>
-        <button class="btn btn-icon" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren (in die aktive Liste)'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'}</button>
         <div class="ov-menu">
           <button class="btn btn-icon" title="Weitere Aktionen" onclick="CRM.toggleOvMenu(this,event)">⋯</button>
           <div class="ov-menu-list hidden">
+            ${CRM.contactSecondaryMenuItems(c).join('')}
+            <hr style="border:0;border-top:1px solid var(--border);margin:4px 0">
             <button onclick="CRM.vcard.exportContact('${c.id}')">📇 vCard exportieren</button>
             <button onclick="CRM.win.openContact('${c.id}')">⇄ Vergleichen / Zusammenführen</button>
             <button onclick="CRM.deleteContactFromDetail('${c.id}')" style="color:var(--red)">🗑 Kontakt löschen</button>

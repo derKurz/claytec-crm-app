@@ -610,11 +610,13 @@ body.resizing-col{cursor:col-resize;user-select:none}
      spart die 6 Umbruch-Zeilen; Tooltip/Long-Press zeigt die Bedeutung. */
   .cd-header .li-badges .btn-lbl{display:none}
   .cd-header .btn-icon{min-height:34px;padding:4px 8px}
-  /* Badge-Infos UND Aktionssymbole je in EINER Zeile (bei Bedarf scrollbar) */
-  .cd-header .cd-meta,.cd-header .cd-actions{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scrollbar-width:none}
-  .cd-header .cd-meta::-webkit-scrollbar,.cd-header .cd-actions::-webkit-scrollbar{display:none}
+  /* Badge-Zeile in EINER Zeile (bei Bedarf seitlich scrollbar).
+     .cd-actions gibt es hier nicht mehr — die Aktionen stehen seit dem
+     Kopf-Umbau 2026-08 als beschriftetes 3er-Raster in .cd-actions-main. */
+  .cd-header .cd-meta{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scrollbar-width:none}
+  .cd-header .cd-meta::-webkit-scrollbar{display:none}
   .cd-header .cd-meta .badge,.cd-header .cd-meta .badge *{white-space:nowrap}
-  .cd-header .cd-meta > *,.cd-header .cd-actions > *{flex:none}
+  .cd-header .cd-meta > *{flex:none}
   .cd-sec{padding:12px}
   .cd-sec-body{margin-top:8px}
   .cd-sec-head{min-height:30px}
@@ -1025,6 +1027,32 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .voice-edit-input{width:100%;margin-top:2px}
 .voice-cand-collapsed .voice-cand-toggle-body{display:none}
 .voice-cand-toggle{margin:6px 8px}
+
+/* ============================================================
+   Kontaktkopf: die drei Hauptaktionen (Anrufen/E-Mail/Route).
+   Bewusst MIT Text unter dem Symbol — die alte reine Symbolleiste war
+   nicht mehr eindeutig, seit dort bis zu fünf Symbole nebeneinander
+   standen (Chris-Rückmeldung 2026-08: "sieht optisch viel zu überladen
+   aus"). Gleich breite Spalten, damit der Daumen nicht zielen muss.
+   ============================================================ */
+.cd-actions-main{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.cd-mainaction{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  min-height:52px;padding:7px 4px;font-size:12px;text-align:center;text-decoration:none;
+  line-height:1.15;overflow:hidden;
+}
+.cd-mainaction .ma-icon{font-size:18px;line-height:1}
+.cd-mainaction > span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* Antippbare Status-Chips (Top-25 / Aktiv) in der Badge-Zeile.
+   Bewusst HÖHER als die reinen Info-Badges daneben: das macht sie am
+   Daumen treffbar (CLAUDE.md: Touch-Targets, Einhand-Bedienung) UND
+   unterscheidet sie sichtbar von den nicht klickbaren Badges — sonst
+   ist nicht erkennbar, was überhaupt tippbar ist. */
+.badge-toggle{
+  cursor:pointer;border:1px solid var(--border);background:none;color:var(--text-dim);
+  font:inherit;font-size:11px;min-height:34px;padding:0 10px;display:inline-flex;align-items:center;gap:3px;
+}
+.badge-on-gold{border-color:var(--accent-2);color:var(--accent-2);background:rgba(255,193,7,.12)}
 
 /* Mikrofon-Einstiege: Desktop-Kopfzeilenknopf ist ein normaler .btn
    (immer sichtbar, header ist tab-übergreifend). Mobiler FAB spiegelt
