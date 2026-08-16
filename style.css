@@ -574,14 +574,14 @@ body.resizing-col{cursor:col-resize;user-select:none}
    quetschten sonst den Firmennamen weg. Alles davon steckt im Kontakt,
    den ein Tipp auf die Zeile oeffnet. */
 @media (max-width:768px){
-  #view-agenda .li-quick{display:none}
-  #view-agenda .list-item .li-badges{display:none}
-  #view-agenda .list-item .li-cal{display:none}
-  #view-agenda .list-item{padding:8px 10px}
-  #view-agenda .li-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #view-start .li-quick{display:none}
+  #view-start .list-item .li-badges{display:none}
+  #view-start .list-item .li-cal{display:none}
+  #view-start .list-item{padding:8px 10px}
+  #view-start .li-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 /* Betreff-Zeile (was beim faelligen Besuch ansteht) hervorheben */
-#view-agenda .li-betreff{color:var(--text);font-weight:600;margin-top:2px}
+#view-start .li-betreff{color:var(--text);font-weight:600;margin-top:2px}
 
 /* Kontakt-Detailansicht am Handy kompakter: der Kopfbereich (Badges,
    Nächster Schritt, viele Aktions-Buttons) fraß die ganze erste Seite —
