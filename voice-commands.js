@@ -49,7 +49,10 @@ CRM.voice = {
    einem anderen Wort) fälschlich anschlägt.
    ============================================================ */
 CRM.voice._TRIGGERS = [
-  { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s+bei\b/gi },
+  // "anlegen"/"erstellen" zwischen "Besuch" und "bei" toleriert (Chris-
+  // Beispiel 2026-08: "Besuch ANLEGEN bei ..." schlug bisher komplett fehl
+  // und riss den kompletten Satzrest mit in den unrecognized-Topf).
+  { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s*(?:anlegen\s+|erstellen\s+)?bei\b/gi },
   { type: 'note', re: /\bneue\s+notiz\b\s*:?/gi },
   { type: 'muster', re: /\bmuster\s+(?:versenden|schicken|senden)\b/gi },
   { type: 'task', re: /\baufgabe\s*:\s*/gi },
@@ -300,9 +303,19 @@ CRM.voice.buildPreview = function (commands) {
   let n = 0;
   const rows = commands.map((cmd, idx) => {
     if (cmd.intent === 'unrecognized') {
+      // Chris-Feedback (2026-08): Text, der keinem Trigger-Wort zugeordnet
+      // werden konnte, wurde bisher stillschweigend ignoriert ("wird
+      // ignoriert") ohne jede Möglichkeit, ihn nachträglich doch noch einer
+      // Notiz/Aufgabe zuzuordnen. Jetzt gibt's dafür zwei Buttons, die den
+      // Rohtext in einen echten (danach normal bearbeitbaren) Teilbefehl
+      // umwandeln, statt ihn zu verwerfen.
       return '<div class="voice-cmd voice-cmd-muted" data-idx="' + idx + '">'
         + '<span class="voice-cmd-badge">–</span>'
-        + '<div class="voice-cmd-body"><div class="voice-cmd-desc">„' + esc(cmd.rawText) + '" — nicht zugeordnet, wird ignoriert.</div></div>'
+        + '<div class="voice-cmd-body"><div class="voice-cmd-desc">„' + esc(cmd.rawText) + '" — nicht zugeordnet.</div>'
+        + '<div class="row" style="margin-top:6px;gap:6px">'
+        + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnrecognized(' + idx + ',\'note\')">→ als Notiz verwenden</button>'
+        + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnrecognized(' + idx + ',\'task\')">→ als Aufgabe verwenden</button>'
+        + '</div></div>'
         + '</div>';
     }
     n++;
@@ -317,20 +330,62 @@ CRM.voice.buildPreview = function (commands) {
   return '<ol class="voice-cmd-list" style="list-style:none;padding:0;margin:0">' + rows + '</ol>';
 };
 
-CRM.voice._candListHtml = function (res, idx, side, kind) {
-  if (!res || res.status !== 'ambiguous') return '';
-  const rowsHtml = (res.candidates || []).map((x) => {
-    const label = kind === 'project' ? CRM.voice._projectLabel(x) : CRM.voice._contactLabel(x);
-    const sub = kind === 'project' ? [x.plz, x.ort].filter(Boolean).join(' ') : [x.plz, x.ort].filter(Boolean).join(' ');
-    return '<div class="header-search-item voice-cand-row" data-id="' + x.id + '">'
-      + '<strong>' + esc(label) + '</strong>'
-      + '<span style="color:var(--text-dim);font-size:12px"> · ' + esc(sub) + '</span>'
-      + '</div>';
-  }).join('');
-  return '<div class="voice-cand-list" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
-    + '<div class="voice-cand-hint">Mehrere Treffer für „' + esc(res.query) + '" — bitte wählen:</div>'
-    + rowsHtml
+CRM.voice._candRowHtml = function (x, kind) {
+  const label = kind === 'project' ? CRM.voice._projectLabel(x) : CRM.voice._contactLabel(x);
+  const sub = [x.plz, x.ort].filter(Boolean).join(' ');
+  return '<div class="header-search-item voice-cand-row" data-id="' + x.id + '">'
+    + '<strong>' + esc(label) + '</strong>'
+    + '<span style="color:var(--text-dim);font-size:12px"> · ' + esc(sub) + '</span>'
     + '</div>';
+};
+
+/* Chris-Feedback (2026-08): bei 0 Treffern ("notfound") gab es bisher GAR
+   KEINE Möglichkeit, den Kontakt/das Projekt manuell zuzuordnen — nur eine
+   graue, tote Zeile ("nicht gefunden"). Jetzt bekommt jede unvollständige
+   Auflösung (notfound UND ambiguous) immer ein Suchfeld dazu, das live
+   gegen CRM.contactQueryMatch/projectQueryMatch filtert (dieselbe Logik
+   wie überall sonst in der App, keine neue Fuzzy-Suche erfunden).
+   Auch bereits AUFGELÖSTE Zeilen bekommen (eingeklappt) dasselbe Suchfeld:
+   ein aus dem Satz-Kontext übernommener Kontakt (z.B. bei einer aus
+   "nicht zugeordnet" nachträglich erzeugten Notiz) kann falsch sein und
+   muss ohne Umweg korrigierbar bleiben. */
+CRM.voice._entityPickerHtml = function (res, idx, side, kind) {
+  if (!res) return '';
+  const searchBox = '<input type="text" class="voice-search-input" placeholder="' + (kind === 'project' ? 'Projekt/Baustelle suchen…' : 'Name suchen…') + '" oninput="CRM.voice._onSearchInput(this,' + idx + ',\'' + side + '\',\'' + kind + '\')">'
+    + '<div class="voice-search-results"></div>';
+
+  if (res.status === 'resolved') {
+    return '<div class="voice-cand-list voice-cand-collapsed" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
+      + '<button type="button" class="btn btn-sm voice-cand-toggle" onclick="this.closest(\'.voice-cand-list\').classList.toggle(\'voice-cand-collapsed\')">✎ anderen ' + (kind === 'project' ? 'Baustelle/Projekt' : 'Kontakt') + ' wählen</button>'
+      + '<div class="voice-cand-toggle-body">' + searchBox + '</div>'
+      + '</div>';
+  }
+
+  const hint = res.status === 'ambiguous'
+    ? 'Mehrere Treffer für „' + esc(res.query) + '" — bitte wählen, oder unten neu suchen:'
+    : '„' + esc(res.query) + '" nicht gefunden — bitte suchen und zuordnen:';
+  const candRows = res.status === 'ambiguous'
+    ? (res.candidates || []).map((x) => CRM.voice._candRowHtml(x, kind)).join('')
+    : '';
+  return '<div class="voice-cand-list" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
+    + '<div class="voice-cand-hint">' + hint + '</div>'
+    + candRows
+    + searchBox
+    + '</div>';
+};
+
+CRM.voice._onSearchInput = function (input, idx, side, kind) {
+  const q = input.value.trim();
+  const list = input.closest('.voice-cand-list');
+  const results = list ? list.querySelector('.voice-search-results') : null;
+  if (!results) return;
+  if (!q) { results.innerHTML = ''; return; }
+  const items = kind === 'project'
+    ? CRM.db.getProjects().filter((p) => CRM.projectQueryMatch(q, p)).slice(0, 8)
+    : CRM.db.getContacts().filter((c) => CRM.contactQueryMatch(q, c)).slice(0, 8);
+  results.innerHTML = items.length
+    ? items.map((x) => CRM.voice._candRowHtml(x, kind)).join('')
+    : '<div style="color:var(--text-dim);font-size:12px;padding:4px 2px">Keine Treffer.</div>';
 };
 
 CRM.voice._cmdRowHtml = function (cmd, idx, num) {
@@ -342,28 +397,31 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
   if (cmd.intent === 'visit') {
     desc = 'Besuch anlegen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong> — heute';
     check(cmd.resolution);
-    candidatesHtml += CRM.voice._candListHtml(cmd.resolution, idx, 'target', 'contact');
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.resolution, idx, 'target', 'contact');
   } else if (cmd.intent === 'note') {
-    desc = 'Notiz hinzufügen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong>'
-      + (cmd.content ? ': „' + esc(cmd.content) + '"' : ' <span style="color:var(--text-dim)">(kein Text erkannt)</span>');
+    desc = 'Notiz hinzufügen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong>';
     check(cmd.resolution);
-    candidatesHtml += CRM.voice._candListHtml(cmd.resolution, idx, 'target', 'contact');
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.resolution, idx, 'target', 'contact');
+    candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Notiztext <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren)</span></label>'
+      + '<input type="text" class="voice-edit-input" value="' + esc(cmd.content || '') + '" placeholder="(kein Text erkannt)" oninput="CRM.voice._updateCmdField(' + idx + ',\'content\',this.value)">';
   } else if (cmd.intent === 'muster') {
     desc = '📦 Muster-Dialog öffnen für <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong>';
     check(cmd.resolution);
-    candidatesHtml += CRM.voice._candListHtml(cmd.resolution, idx, 'target', 'contact');
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.resolution, idx, 'target', 'contact');
   } else if (cmd.intent === 'task') {
     const title = cmd.title || '';
     if (!title) ready = false;
-    desc = title ? 'Aufgabe anlegen: „' + esc(title) + '" — fällig heute' : 'Aufgabe erkannt, aber kein Aufgabentext gefunden';
+    desc = 'Aufgabe anlegen — fällig heute';
+    candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Aufgabentext <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren)</span></label>'
+      + '<input type="text" class="voice-edit-input" value="' + esc(title) + '" placeholder="Aufgabentext eingeben…" oninput="CRM.voice._updateCmdField(' + idx + ',\'title\',this.value)">';
   } else if (cmd.intent === 'link') {
     desc = '<strong>' + CRM.voice._resDesc(cmd.leftResolution, 'contact') + '</strong> verknüpfen mit '
       + (cmd.rightKind === 'project' ? 'Projekt ' : '')
       + '<strong>' + CRM.voice._resDesc(cmd.rightResolution, cmd.rightKind) + '</strong>';
     check(cmd.leftResolution);
     check(cmd.rightResolution);
-    candidatesHtml += CRM.voice._candListHtml(cmd.leftResolution, idx, 'left', 'contact');
-    candidatesHtml += CRM.voice._candListHtml(cmd.rightResolution, idx, 'right', cmd.rightKind);
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.leftResolution, idx, 'left', 'contact');
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.rightResolution, idx, 'right', cmd.rightKind);
   }
 
   const cls = ready ? 'voice-cmd-ready' : 'voice-cmd-ambiguous';
@@ -422,7 +480,11 @@ CRM.voice.reparseFromConfirm = function () {
 };
 
 CRM.voice._wirePreviewCandidates = function () {
-  document.querySelectorAll('.voice-cand-row').forEach((row) => {
+  // Delegiert auf den (stabilen) .voice-cand-list-Container statt auf
+  // einzelne .voice-cand-row-Elemente: die Suchergebnis-Zeilen entstehen
+  // erst NACH diesem Aufruf dynamisch (Tippen im Suchfeld, s.
+  // _onSearchInput) und müssten sonst separat neu verdrahtet werden.
+  document.querySelectorAll('.voice-cand-list').forEach((list) => {
     // BEWUSST 'click', NICHT 'pointerdown' (Opus-Review-Korrektur, 2026-08):
     // CRM.voice._pickCandidate ruft CRM.openModal() erneut auf, was das
     // GESAMTE Modal-DOM entfernt und NEU aufbaut (nicht nur verschiebt wie
@@ -436,10 +498,10 @@ CRM.voice._wirePreviewCandidates = function () {
     // ausgetauscht. (Die pointerdown-Regel bleibt korrekt für Fälle, in
     // denen ein Element per appendChild nur VERSCHOBEN wird, siehe
     // windows.js — hier ist es aber ein voller DOM-Neubau, ein anderer Fall.)
-    row.addEventListener('click', (e) => {
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('.voice-cand-row');
+      if (!row || !list.contains(row)) return;
       e.preventDefault();
-      const list = row.closest('.voice-cand-list');
-      if (!list) return;
       CRM.voice._pickCandidate(parseInt(list.dataset.idx, 10), list.dataset.side, list.dataset.kind, row.dataset.id);
     });
   });
@@ -460,6 +522,59 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   if (kind === 'project') res.project = entity; else res.contact = entity;
   // Neu zeichnen: dank geteilter Objekt-Referenz aktualisieren sich
   // davon abhängige Zeilen (z.B. "neue Notiz" nach diesem Besuch) mit.
+  CRM.voice._renderConfirmModal();
+};
+
+/* Chris-Feedback (2026-08): der Aufgabentext/Notiztext einer einzelnen
+   Zeile war bisher nur über "ganzen Satz neu diktieren/korrigieren + neu
+   prüfen" korrigierbar — das zerlegt bei komplexeren Sätzen aber auch
+   bereits korrekt erkannte Nachbar-Zeilen neu. Direktes Editieren EINER
+   Zeile ändert nur cmd.title/cmd.content, ohne den Rest neu zu parsen.
+   Bewusst OHNE komplettes CRM.voice._renderConfirmModal() (das würde bei
+   jedem Tastendruck den Fokus aus dem Eingabefeld reißen) — nur die
+   Bereit/Unklar-Markierung der betroffenen Zeile wird direkt im DOM
+   nachgezogen. */
+CRM.voice._updateCmdField = function (idx, field, value) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd[field] = value;
+  if (cmd.intent === 'task' && field === 'title') {
+    const row = document.querySelector('.voice-cmd[data-idx="' + idx + '"]');
+    if (!row) return;
+    const ready = !!(cmd.title || '').trim();
+    row.classList.toggle('voice-cmd-ready', ready);
+    row.classList.toggle('voice-cmd-ambiguous', !ready);
+    const badge = row.querySelector('.voice-cmd-badge');
+    if (badge) badge.textContent = ready ? '✓' : '?';
+  }
+};
+
+/* Wandelt einen bisher nicht zugeordneten Satzteil (intent:'unrecognized')
+   in einen echten Teilbefehl um — danach normal editierbar/zuordenbar wie
+   jede andere Zeile (Kontaktsuche, Textfeld). Übernimmt einen im Satz
+   vorher schon aufgelösten Kontakt als VORSCHLAG (wie bei "neue Notiz"
+   ohne eigene Namensnennung), lässt sich in der Vorschau aber jederzeit
+   über das Suchfeld ändern.
+   WICHTIG: bewusst eine KOPIE der resolution (Object.assign), keine
+   geteilte Objektreferenz wie beim regulären Kontext-Mechanismus (s.
+   _contextContact-Kommentar oben). Ein promoteter Satzteil war vom Parser
+   ausdrücklich NICHT verstanden worden — der übernommene Kontakt ist nur
+   eine Rate-Hilfe, kein bestätigter Bezug. Mit geteilter Referenz hätte
+   eine spätere Korrektur HIER (z.B. "eigentlich Recep Yasar, nicht die
+   Firma vom Besuch") den bereits korrekt aufgelösten Besuchs-Kontakt
+   MIT-verändert — gefunden beim Testen mit Chris' Beispielsatz. */
+CRM.voice._promoteUnrecognized = function (idx, newIntent) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  if (newIntent === 'note') {
+    cmd.intent = 'note';
+    cmd.content = cmd.rawText;
+    const ctx = CRM.voice._contextContact(CRM.voice._pending, idx);
+    cmd.resolution = ctx ? Object.assign({}, ctx) : { status: 'notfound', query: '', contact: null };
+  } else if (newIntent === 'task') {
+    cmd.intent = 'task';
+    cmd.title = cmd.rawText;
+  }
   CRM.voice._renderConfirmModal();
 };
 

@@ -1020,6 +1020,11 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .voice-cand-list{margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .voice-cand-hint{padding:6px 10px;font-size:12px;color:var(--text-dim);background:var(--bg)}
 .voice-cand-row{min-height:44px;display:flex;flex-direction:column;justify-content:center}
+.voice-search-input{width:calc(100% - 16px);margin:6px 8px;display:block}
+.voice-search-results:empty{display:none}
+.voice-edit-input{width:100%;margin-top:2px}
+.voice-cand-collapsed .voice-cand-toggle-body{display:none}
+.voice-cand-toggle{margin:6px 8px}
 
 /* Mikrofon-Einstiege: Desktop-Kopfzeilenknopf ist ein normaler .btn
    (immer sichtbar, header ist tab-übergreifend). Mobiler FAB spiegelt
