@@ -246,6 +246,10 @@ CRM.openProjectDetail = function (id) {
   `;
   const overlay = CRM.openModal(html);
   overlay.querySelector('.modal').classList.add('modal-wide');
+  // Batch 8b: markiert, welches Projekt gerade offen ist — damit
+  // CRM._refreshAllVisibleViews() nach einem Undo weiß, welches Projekt
+  // neu gezeichnet werden muss.
+  overlay.dataset.projectId = p.id;
   CRM.wirePlzOrtAutofill(document.getElementById('proj-plz'), document.getElementById('proj-ort'));
 };
 
@@ -370,14 +374,30 @@ CRM.saveProjectDetail = function (id) {
   CRM.renderProjects();
 };
 
+/* App-eigene Bestätigung statt nativem confirm() (Lehre: Browser
+   unterdrücken confirm() teils stumm — scheitert dort zwar sicher, aber
+   ein ganzes Projekt samt Verknüpfungen soll trotzdem einen bewussten
+   zweiten Klick brauchen, nicht nur einen Undo-Toast danach). */
 CRM.deleteProjectConfirm = function (id) {
   const p = CRM.db.getProject(id);
-  if (confirm(`Projekt „${p.name}" wirklich löschen? Verknüpfungen werden entfernt, Kontakte bleiben erhalten.`)) {
-    CRM.db.deleteProject(id);
-    CRM.closeModal();
-    CRM.renderProjects();
-    CRM.toast('Projekt gelöscht.', 'success');
-  }
+  if (!p) return;
+  CRM.openModal(`
+    <h2 style="color:var(--red)">Projekt löschen?</h2>
+    <p>„<strong>${esc(p.name)}</strong>“ wird gelöscht — Verknüpfungen zu Kontakten werden entfernt (die Kontakte selbst bleiben erhalten), per „↶ Rückgängig" direkt danach wiederherstellbar.</p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn" style="border-color:var(--red);color:var(--red)" onclick="CRM._doDeleteProject('${id}')">Endgültig löschen</button>
+    </div>
+  `);
+};
+CRM._doDeleteProject = function (id) {
+  const p = CRM.db.getProject(id);
+  if (!p) return;
+  CRM.takeSnapshot('Vor Löschen von Projekt „' + p.name + '"');
+  CRM.db.deleteProject(id);
+  CRM.closeModal();
+  CRM.renderProjects();
+  CRM.toastUndo('Projekt „' + p.name + '" gelöscht.');
 };
 
 /* ---------- Beteiligte Kontakte nach Rolle ---------- */

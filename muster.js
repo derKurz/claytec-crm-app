@@ -379,8 +379,8 @@ CRM.muster.send = function () {
     + '?subject=' + encodeURIComponent(res.betreff)
     + '&body=' + encodeURIComponent(res.body);
   CRM.toast('✓ Bestell-Mail vorbereitet (' + res.zeilen.length + ' Positionen) — im Journal vermerkt.' + taskInfo, 'success');
-  // betroffene Ansichten aktualisieren
-  if (document.querySelector('#view-agenda.active') && CRM.renderAgenda) CRM.renderAgenda();
+  // betroffene Ansichten aktualisieren (Batch 8a: "Heute" ist Teil von
+  // view-start, ein separater view-agenda-Check ist damit hinfällig)
   if (document.querySelector('#view-kontakte.active') && CRM.renderContactList) CRM.renderContactList();
   if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
 };

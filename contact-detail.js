@@ -412,15 +412,38 @@ CRM.renderContactDetailModal = function (id) {
 
   const overlay = CRM.openModal(html);
   overlay.querySelector('.modal').classList.add('modal-wide');
+  // Batch 8b: markiert, welcher Kontakt gerade offen ist — damit
+  // CRM._refreshAllVisibleViews() nach einem Undo weiß, welches Profil
+  // neu gezeichnet werden muss (ohne dass jede aufrufende Stelle die
+  // contactId separat durchreichen muss).
+  overlay.dataset.contactId = c.id;
   CRM.wireContactDetailEvents(c.id);
 };
 
 /* Kontakt vollständig löschen — mit Undo-Snapshot, da unwiderruflich
-   ohne Backup (Lehre aus der Merge-Funktion, siehe CRM.takeSnapshot). */
+   ohne Backup (Lehre aus der Merge-Funktion, siehe CRM.takeSnapshot).
+   App-eigene Bestätigung statt nativem confirm(): ein ganzer Kontakt
+   samt Besuchen/Aufgaben/Journal/Verknüpfungen ist eine hohe Tragweite —
+   dafür reicht der bloße Undo-Toast danach nicht als einzige Bremse
+   (Browser unterdrücken natives confirm() teils stumm, siehe die
+   Merge-Klick-Lehre, aber ein Ausfall dort scheitert sicher — nichts
+   passiert; ein sofortiges Löschen ganzer Datensätze soll trotzdem
+   einen bewussten zweiten Klick brauchen, kein Einzeiler ohne Bremse). */
 CRM.deleteContactFromDetail = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
-  if (!confirm('„' + c.firma1 + '" wirklich vollständig löschen? Besuche, Aufgaben, Journal-Einträge und Verknüpfungen gehen mit verloren.')) return;
+  CRM.openModal(`
+    <h2 style="color:var(--red)">Kontakt vollständig löschen?</h2>
+    <p>„<strong>${esc(CRM.displayNameDisambig ? CRM.displayNameDisambig(c) : c.firma1)}</strong>“ wird gelöscht — Besuche, Aufgaben, Journal-Einträge und Verknüpfungen gehen mit verloren (per „↶ Rückgängig" direkt danach wiederherstellbar).</p>
+    <div class="modal-footer">
+      <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
+      <button class="btn" style="border-color:var(--red);color:var(--red)" onclick="CRM._doDeleteContactFromDetail('${id}')">Endgültig löschen</button>
+    </div>
+  `);
+};
+CRM._doDeleteContactFromDetail = function (id) {
+  const c = CRM.db.getContact(id);
+  if (!c) return;
   CRM.takeSnapshot('Vor Löschen von Kontakt „' + c.firma1 + '"');
   CRM.db.deleteContact(id);
   CRM.closeModal();
@@ -707,11 +730,11 @@ CRM.saveVisitEdit = function (contactId, visitId) {
   CRM.renderContactList();
 };
 CRM.deleteVisit = function (contactId, visitId) {
-  if (!confirm('Diesen Besuchseintrag wirklich löschen?')) return;
+  CRM.takeSnapshot('Vor Löschen eines Besuchseintrags');
   CRM._removeVisit(contactId, visitId);
-  CRM.toast('Besuch gelöscht.', 'success');
   CRM.renderContactDetailModal(contactId);
   CRM.renderContactList();
+  CRM.toastUndo('Besuch gelöscht.');
 };
 
 /* ============================================================

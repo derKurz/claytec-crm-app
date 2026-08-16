@@ -27,18 +27,14 @@ CRM.taskActions.uiCtx = function (returnType, returnId) {
 };
 
 /* Zeichnet nach einer Aktion defensiv alle Oberflächen neu, auf denen die
-   Aufgabe sichtbar sein könnte (Funktion/Element vorhanden? nur dann tun). */
+   Aufgabe sichtbar sein könnte (Funktion/Element vorhanden? nur dann tun).
+   Batch 8b: nutzt die gemeinsame CRM._refreshAllVisibleViews() (app.js) —
+   dieselbe Logik, die auch CRM.toastUndo nach einem Undo verwendet, statt
+   einer zweiten, separat gepflegten Refresh-Liste. */
 CRM.taskActions._refresh = function (opts) {
   opts = opts || {};
   if (opts.after) { opts.after(); return; }
-  if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
-  if (document.querySelector('#view-agenda.active') && CRM.renderAgenda) CRM.renderAgenda();
-  const modalEl = document.getElementById('active-modal-overlay');
-  if (modalEl && opts.contactId && document.getElementById('cd-tasks') && CRM.renderContactDetailModal) {
-    CRM.renderContactDetailModal(opts.contactId);
-  } else if (modalEl && opts.projectId && document.getElementById('proj-tasks') && CRM.openProjectDetail) {
-    CRM.openProjectDetail(opts.projectId);
-  }
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews({ contactId: opts.contactId, projectId: opts.projectId });
 };
 
 /* Nach Bearbeiten (Editor) gezielt zurückkehren — opts.returnTo sagt,
@@ -54,14 +50,19 @@ CRM.taskActions._returnAfterEdit = function (opts, contactId, projectId) {
   CRM.taskActions._refresh({ contactId: contactId, projectId: projectId });
 };
 
-/* ---------- Abhaken / wieder öffnen ---------- */
+/* ---------- Abhaken / wieder öffnen ----------
+   Batch 8b: genau wie CRM.taskActions.remove bekommt auch das Abhaken
+   einen Undo-Snapshot — ein versehentliches Erledigen/Wiederöffnen war
+   bisher nicht rückgängig zu machen. */
 CRM.taskActions.toggleDone = function (taskId, opts) {
   opts = opts || {};
   const t = CRM.db.getTask(taskId);
   if (!t) return;
+  CRM.takeSnapshot('Vor Aufgabe erledigt/wieder geöffnet');
+  const wasDone = t.done;
   CRM.db.updateTask(taskId, { done: !t.done, doneAt: !t.done ? new Date().toISOString() : null });
-  CRM.toast(t.done ? 'Aufgabe wieder geöffnet.' : 'Aufgabe erledigt. ✓', 'success');
   CRM.taskActions._refresh(Object.assign({ contactId: t.contactId, projectId: t.projectId }, opts));
+  CRM.toastUndo(wasDone ? 'Aufgabe wieder geöffnet.' : 'Aufgabe erledigt. ✓');
 };
 
 /* ---------- Verschieben ---------- */

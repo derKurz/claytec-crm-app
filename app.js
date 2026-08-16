@@ -139,6 +139,11 @@ CRM.hideProgress = function () {
    Tabs
    ============================================================ */
 CRM.switchTab = function (tabId) {
+  // Batch 8a: „Heute" wurde vollständig in die Startseite integriert — kein
+  // eigener Tab mehr. Alias hier (statt an jeder Aufrufstelle einzeln), damit
+  // KPI-Kacheln, Kommandopalette, "Alle in Heute" & Co. unverändert
+  // funktionieren, ohne jede Stelle umzuschreiben.
+  if (tabId === 'agenda') tabId = 'start';
   document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
   document.querySelectorAll('.bn-btn[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tabId));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + tabId));
@@ -150,7 +155,6 @@ CRM.switchTab = function (tabId) {
   if (tabId === 'kontakte') CRM.renderContactList();
   if (tabId === 'projekte' && CRM.renderProjects) CRM.renderProjects();
   if (tabId === 'netzwerk' && CRM.renderNetzwerk) CRM.renderNetzwerk();
-  if (tabId === 'agenda' && CRM.renderAgenda) CRM.renderAgenda();
   if (tabId === 'regionen' && CRM.renderRegionen) {
     // Bereits in Kontakte ausgewählte Kontakte mitnehmen: ihre Regionen
     // automatisch markieren, damit sie in der Liste vorausgewählt erscheinen
@@ -688,7 +692,6 @@ CRM.runCleanup = async function () {
 CRM.deleteSelectedContacts = async function () {
   const ids = Array.from(CRM._contactSelection || []);
   if (!ids.length) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
-  if (!confirm(ids.length + ' ausgewählte Kontakte löschen? (Partner/besuchte bleiben geschützt, vorher wird ein Backup erstellt.)')) return;
   await CRM._performContactDeletion(ids, { protect: true });
 };
 
@@ -1138,8 +1141,17 @@ CRM.initHeaderSearch = function () {
 
     results.innerHTML = html || '<div class="header-search-empty">Keine Treffer</div>';
     results.querySelectorAll('.header-search-item').forEach((row) => {
-      row.addEventListener('mousedown', (e) => {
-        e.preventDefault();
+      // mousedown blendet NICHT mehr sofort aus (nur preventDefault gegen
+      // Fokusverlust) — die Auswahl passiert erst bei click. Grund: ragt das
+      // Dropdown bis auf den #tabs-Reiter darunter (Desktop/Tablet), traf ein
+      // echter Mausklick dort zwar per mousedown noch die Dropdown-Zeile,
+      // aber sobald mousedown die Zeile synchron ausblendete, hat der
+      // Browser beim folgenden mouseup/click neu getroffen — und landete auf
+      // dem jetzt freiliegenden Tab-Button darunter, der seinerseits die
+      // Navigation ausloeste/ueberschrieb. Bleibt die Zeile bis zum click
+      // sichtbar, treffen mousedown UND click dasselbe Element.
+      row.addEventListener('mousedown', (e) => e.preventDefault());
+      row.addEventListener('click', () => {
         const d = row.dataset;
         if (d.action != null) {
           input.value = ''; results.classList.add('hidden');
@@ -1554,6 +1566,40 @@ CRM.finalizeImport = function () {
   if (CRM.geocoding && CRM.geocoding.geocodeAllPending) CRM.geocoding.geocodeAllPending();
 };
 
+/* ============================================================
+   Batch 8b: gemeinsame "alles Sichtbare aktualisieren"-Hilfsfunktion.
+   Vorher aktualisierte CRM.toastUndo nach restoreSnapshot() NUR die
+   Kontaktliste + Karte — Dashboard/Heute-Bereich (Batch 8a) und ein
+   offenes Kontakt-/Projekt-Profil oder das Duplikate-Panel blieben nach
+   JEDEM Undo im ganzen Programm optisch veraltet, bis man den Tab
+   wechselte. Genutzt von CRM.toastUndo UND CRM.taskActions._refresh
+   (task-actions.js) — eine Implementierung statt zwei auseinanderlaufender
+   Refresh-Listen. opts.contactId/opts.projectId übersteuern optional, WEM
+   das offene Profil-Modal gehört (falls der Aufrufer das schon konkret
+   weiß, z.B. aus dem Aufgaben-Kontext) — ohne Angabe wird das über
+   data-contact-id/data-project-id am Modal-Overlay ermittelt (siehe
+   contact-detail.js renderContactDetailModal / projects.js
+   openProjectDetail). */
+CRM._refreshAllVisibleViews = function (opts) {
+  opts = opts || {};
+  if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
+  if (document.querySelector('#view-kontakte.active') && CRM.renderContactList) CRM.renderContactList();
+  if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+
+  const overlay = document.getElementById('active-modal-overlay');
+  if (overlay) {
+    const contactId = opts.contactId || overlay.dataset.contactId;
+    const projectId = opts.projectId || overlay.dataset.projectId;
+    if (contactId && document.getElementById('cd-tasks') && CRM.renderContactDetailModal) {
+      CRM.renderContactDetailModal(contactId);
+    } else if (projectId && document.getElementById('proj-tasks') && CRM.openProjectDetail) {
+      CRM.openProjectDetail(projectId);
+    }
+  }
+  // Duplikate-Panel (Einstellungen), falls gerade offen
+  if (document.getElementById('dupe-results') && CRM.renderDuplicatesPanel) CRM.renderDuplicatesPanel();
+};
+
 /* Toast mit Rückgängig-Button (stellt letzten Snapshot wieder her) */
 CRM.toastUndo = function (msg) {
   const host = document.getElementById('toast-container') || document.body;
@@ -1562,9 +1608,8 @@ CRM.toastUndo = function (msg) {
   el.innerHTML = `<span>${esc(msg)}</span> <button class="btn btn-sm" style="margin-left:10px">↶ Rückgängig</button>`;
   el.querySelector('button').addEventListener('click', () => {
     if (CRM.restoreSnapshot()) {
-      CRM.toast('Import rückgängig gemacht — vorheriger Stand wiederhergestellt.', 'success');
-      CRM.renderContactList();
-      if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+      CRM.toast('Rückgängig gemacht — vorheriger Stand wiederhergestellt.', 'success');
+      CRM._refreshAllVisibleViews();
     }
     el.remove();
   });
@@ -1731,7 +1776,7 @@ CRM.nav.init = function () {
    Kanban-Board.
    ============================================================ */
 CRM.swipe = {
-  REIHENFOLGE: ['start', 'karte', 'kontakte', 'agenda', 'projekte', 'netzwerk', 'regionen', 'einstellungen'],
+  REIHENFOLGE: ['start', 'karte', 'kontakte', 'projekte', 'netzwerk', 'regionen', 'einstellungen'],
   MIN_X: 55,     // Mindeststrecke, damit ein Tippen nicht auslöst
   ENTSCHEID: 10, // ab hier wird entschieden: waagrecht (Reiter) oder senkrecht (Scrollen)
 };

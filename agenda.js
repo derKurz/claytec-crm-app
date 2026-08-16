@@ -24,24 +24,17 @@ CRM.ymd = function (d) {
   return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
 };
 
+/* Batch 8a: „Heute" wurde vollständig in die Startseite integriert (siehe
+   dashboard.js CRM.renderDashboard — baut Kopf/KPIs/Heute-Bereich/Audit-Log/
+   Schnellaktionen als EINE Seite, inkl. des Liste/Kalender-Umschalters und
+   #heute-body, das die Funktionen weiter unten in dieser Datei befüllen).
+   renderAgenda bleibt als dünner Alias bestehen, statt jede Aufrufstelle
+   (task-actions.js, speech.js, muster.js, hier selbst: setHeuteView,
+   quickAddTask, quickVisitFromAgenda, setCalMode, calShift, calToday)
+   einzeln umzuschreiben — die rufen weiterhin CRM.renderAgenda() und
+   bekommen dadurch die volle, aktualisierte Startseite. */
 CRM.renderAgenda = function () {
-  const container = document.getElementById('view-agenda');
-  const today = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  container.innerHTML = `
-    <div class="heute-head">
-      <div>
-        <h2 style="margin:0">Heute</h2>
-        <div style="color:var(--text-dim);font-size:13px">${today} · Wer ist wichtig? · Was zuletzt? · Was als Nächstes?</div>
-      </div>
-      <div class="seg-toggle">
-        <button class="seg ${CRM._heuteView === 'liste' ? 'active' : ''}" onclick="CRM.setHeuteView('liste')">Liste</button>
-        <button class="seg ${CRM._heuteView === 'kalender' ? 'active' : ''}" onclick="CRM.setHeuteView('kalender')">Kalender</button>
-      </div>
-    </div>
-    <div id="heute-body"></div>
-  `;
-  if (CRM._heuteView === 'liste') CRM.renderHeuteListe();
-  else CRM.renderKalender();
+  if (CRM.renderDashboard) CRM.renderDashboard();
 };
 
 CRM.setHeuteView = function (v) {

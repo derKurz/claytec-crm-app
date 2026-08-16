@@ -1,9 +1,12 @@
 /* ============================================================
-   Claytec CRM — Start-Dashboard
-   Cockpit beim App-Start: 4 Kennzahlen (Ampel-Überblick), die zwei
-   dringendsten Einträge als Teaser (Rest über „Heute"), Schnellaktionen
-   in der Daumen-Zone. Reine Lese-Aggregation über bestehende Funktionen
-   (computeAgenda, computeTaskBuckets, getProjects) — kein eigener State.
+   Claytec CRM — Startseite (Batch 8a: fusioniert mit „Heute")
+   Cockpit beim App-Start: 4 Kennzahlen (Ampel-Überblick), direkt darunter
+   der VOLLE Heute-Bereich (Liste/Kalender-Umschalter aus agenda.js, mit
+   allen Aufgaben+Besuchen — vormals eigener Tab „Heute", jetzt hier
+   eingebettet, keine verkürzte Teaser-Liste mehr), Audit-Log „Heute
+   erfasst", Schnellaktionen in der Daumen-Zone.
+   CRM.renderAgenda (agenda.js) ist nur noch ein Alias auf diese Funktion —
+   siehe dort für die Begründung (viele bestehende Aufrufstellen).
    ============================================================ */
 var CRM = window.CRM || {};
 window.CRM = CRM;
@@ -11,6 +14,11 @@ window.CRM = CRM;
 CRM.renderDashboard = function () {
   const container = document.getElementById('view-start');
   if (!container) return;
+  // Scrollposition erhalten: renderDashboard läuft nach so gut wie jeder
+  // Aufgaben-/Kalender-Aktion neu (Liste/Kalender-Umschalter, Abhaken,
+  // Verschieben …) und baut die ganze Seite neu auf — ohne das hier würde
+  // jede dieser Aktionen den Nutzer nach oben zurückreißen.
+  const scrollTop = container.scrollTop;
 
   const visits = CRM.computeAgenda();
   const tasks = CRM.computeTaskBuckets();
@@ -31,15 +39,15 @@ CRM.renderDashboard = function () {
       </div>
 
       <div class="dash-kpis">
-        <button class="dash-kpi ${visits.overdue.length ? 'dash-kpi-red' : ''}" onclick="CRM.switchTab('agenda')">
+        <button class="dash-kpi ${visits.overdue.length ? 'dash-kpi-red' : ''}" onclick="CRM.dashboardScrollToHeute()">
           <span class="dash-kpi-num">${visits.overdue.length}</span>
           <span class="dash-kpi-label">Besuche überfällig</span>
         </button>
-        <button class="dash-kpi ${dueToday ? 'dash-kpi-orange' : ''}" onclick="CRM.switchTab('agenda')">
+        <button class="dash-kpi ${dueToday ? 'dash-kpi-orange' : ''}" onclick="CRM.dashboardScrollToHeute()">
           <span class="dash-kpi-num">${dueToday}</span>
           <span class="dash-kpi-label">Heute fällig</span>
         </button>
-        <button class="dash-kpi" onclick="CRM.switchTab('agenda')">
+        <button class="dash-kpi" onclick="CRM.dashboardScrollToHeute()">
           <span class="dash-kpi-num">${openTasks}</span>
           <span class="dash-kpi-label">Offene Aufgaben</span>
         </button>
@@ -56,12 +64,15 @@ CRM.renderDashboard = function () {
         <span class="dash-lager-chev">›</span>
       </button>` : ''}
 
-      <div class="dash-section">
+      <div class="dash-section" id="dash-heute-section">
         <div class="dash-section-head">
-          <span>Als Nächstes dran</span>
-          <button class="btn btn-sm" onclick="CRM.switchTab('agenda')">Alle in „Heute" →</button>
+          <span>Heute</span>
+          <div class="seg-toggle">
+            <button class="seg ${CRM._heuteView === 'liste' ? 'active' : ''}" onclick="CRM.setHeuteView('liste')">Liste</button>
+            <button class="seg ${CRM._heuteView === 'kalender' ? 'active' : ''}" onclick="CRM.setHeuteView('kalender')">Kalender</button>
+          </div>
         </div>
-        ${CRM.dashboardNextUpHtml(visits, tasks)}
+        <div id="heute-body"></div>
       </div>
 
       <div class="dash-section">
@@ -79,63 +90,22 @@ CRM.renderDashboard = function () {
       </div>
     </div>
   `;
+
+  // Heute-Bereich befüllen (aus agenda.js — unverändert, schreibt in
+  // #heute-body, egal ob das Element hier im Dashboard oder früher in
+  // einem eigenen Tab steckt).
+  if (CRM._heuteView === 'liste' && CRM.renderHeuteListe) CRM.renderHeuteListe();
+  else if (CRM.renderKalender) CRM.renderKalender();
+
+  container.scrollTop = scrollTop;
 };
 
-/* Die zwei dringendsten Einträge: erst Überfälliges (Besuche vor Aufgaben,
-   je nach Rückstand), dann heute Fälliges. Buckets sind bereits sortiert
-   (Besuche: A vor B vor C, dann Dringlichkeit). */
-CRM.dashboardNextUpHtml = function (visits, tasks) {
-  const items = [];
-  visits.overdue.forEach(({ c, due }) => items.push({ kind: 'visit', c, diff: due.diffDays }));
-  tasks.overdue.forEach(({ t, st }) => items.push({ kind: 'task', t, diff: st.diffDays }));
-  items.sort((a, b) => a.diff - b.diff);
-  visits.today.forEach(({ c, due }) => items.push({ kind: 'visit', c, diff: due.diffDays }));
-  tasks.today.forEach(({ t, st }) => items.push({ kind: 'task', t, diff: st.diffDays }));
-
-  const top = items.slice(0, 2);
-  if (!top.length) {
-    return '<div class="dash-empty">Nichts Dringendes — alles im grünen Bereich. ✅</div>';
-  }
-
-  return top.map((it) => {
-    if (it.kind === 'visit') {
-      const c = it.c;
-      const label = it.diff < 0 ? `${-it.diff} Tage überfällig` : 'heute fällig';
-      return `
-        <div class="dash-next" onclick="CRM.openContactDetail('${c.id}')">
-          <span class="dash-next-icon">📍</span>
-          <div class="dash-next-main">
-            <div class="dash-next-title">${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
-            <div class="dash-next-sub">Besuch · ${c.abc}-Kunde · ${esc(c.plz)} ${esc(c.ort)} · ${label}</div>
-          </div>
-          <span class="dash-next-chev">›</span>
-        </div>`;
-    }
-    // Aufgaben-Zeile: Typ im Text sichtbar ("Aufgabe ·"), plus direkte
-    // Aktionen (✓ Erledigt, "⋯"-Menü) — behebt, dass sich Aufgaben von
-    // der Startseite aus bisher weder abhaken noch bearbeiten ließen.
-    const t = it.t;
-    const c = t.contactId ? CRM.db.getContact(t.contactId) : null;
-    const p = t.projectId ? CRM.db.getProject(t.projectId) : null;
-    const label = it.diff < 0 ? `${-it.diff} Tage überfällig` : 'heute fällig';
-    const open = c ? `CRM.openContactDetail('${c.id}')` : (p ? `CRM.openProjectDetail('${p.id}')` : `CRM.switchTab('agenda')`);
-    const who = [c && c.firma1, p && (((p.kategorie || 'baustelle') === 'gross' ? '🏢 ' : '🏠 ') + p.name)].filter(Boolean).join(' · ');
-    const returnType = c ? 'contact' : (p ? 'project' : 'dashboard');
-    const returnId = c ? c.id : (p ? p.id : null);
-    const ctxExpr = `CRM.taskActions.uiCtx('${returnType}',${returnId ? `'${returnId}'` : 'null'})`;
-    return `
-      <div class="dash-next" onclick="${open}">
-        <span class="dash-next-icon">✓</span>
-        <div class="dash-next-main">
-          <div class="dash-next-title">${esc(t.title)}</div>
-          <div class="dash-next-sub">Aufgabe · ${who ? esc(who) + ' · ' : ''}${label}</div>
-        </div>
-        <div class="dash-task-actions">
-          <button class="btn btn-sm" title="Erledigt" onclick="event.stopPropagation();CRM.taskActions.toggleDone('${t.id}',${ctxExpr})">✓</button>
-          ${CRM.taskActions.menuHtml(t.id, returnType, returnId)}
-        </div>
-      </div>`;
-  }).join('');
+/* KPI-Kacheln (Überfällig/Heute fällig/Offene Aufgaben) springen zum
+   Heute-Bereich weiter unten auf derselben Seite — kein Tab-Wechsel mehr
+   nötig, seit „Heute" hier eingebettet ist. */
+CRM.dashboardScrollToHeute = function () {
+  const el = document.getElementById('dash-heute-section');
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 /* Tagesübersicht: alles, was HEUTE eingetragen oder geändert wurde —
