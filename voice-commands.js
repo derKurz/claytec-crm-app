@@ -385,10 +385,21 @@ CRM.voice.confirmAndExecute = function (commands, rawText) {
   CRM.voice._renderConfirmModal();
 };
 
+/* Chris-Feedback (2026-08): die Texterkennung ist bei längeren/komplizierten
+   Sätzen überschaubar — der erkannte Text muss sich HIER, in der Vorschau,
+   korrigieren lassen (Tippfehler/Verhörer ausbessern und neu zerlegen),
+   statt nur "so übernehmen oder ganz abbrechen und neu aufnehmen". Der
+   Text steht deshalb in einem editierbaren <textarea>, "🔄 Neu prüfen"
+   parst den (ggf. korrigierten) Text erneut und baut die Vorschau darunter
+   neu auf — ohne die Aufnahme zu wiederholen. */
 CRM.voice._renderConfirmModal = function () {
   const commands = CRM.voice._pending || [];
   const html = '<h2>🎤 Sprachbefehl bestätigen</h2>'
-    + '<p style="color:var(--text-dim);font-size:13px">Erkannter Text: „' + esc(CRM.voice._lastTranscript || '') + '"</p>'
+    + '<label style="margin-top:0">Erkannter Text <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren, dann „Neu prüfen")</span></label>'
+    + '<textarea id="voice-confirm-text" rows="2">' + esc(CRM.voice._lastTranscript || '') + '</textarea>'
+    + '<div class="row" style="margin:6px 0 12px">'
+    + '<button class="btn btn-sm" onclick="CRM.voice.reparseFromConfirm()">🔄 Neu prüfen</button>'
+    + '</div>'
     + CRM.voice.buildPreview(commands)
     + '<div class="modal-footer">'
     + '<button class="btn" onclick="CRM.voice.cancelPreview()">✕ Abbrechen</button>'
@@ -396,6 +407,18 @@ CRM.voice._renderConfirmModal = function () {
     + '</div>';
   CRM.openModal(html, { dismissible: false });
   CRM.voice._wirePreviewCandidates();
+};
+
+/* Liest den (evtl. von Chris korrigierten) Text aus dem Textfeld, parst
+   ihn neu und baut die Vorschau darunter neu auf — das Textfeld selbst
+   bleibt dieselbe Stelle, kein Zurück-zur-Aufnahme nötig. */
+CRM.voice.reparseFromConfirm = function () {
+  const ta = document.getElementById('voice-confirm-text');
+  const text = ta ? ta.value.trim() : '';
+  if (!text) { CRM.toast('Bitte Text eingeben.', 'error'); return; }
+  CRM.voice._lastTranscript = text;
+  CRM.voice._pending = CRM.voice.parseUtterance(text);
+  CRM.voice._renderConfirmModal();
 };
 
 CRM.voice._wirePreviewCandidates = function () {
