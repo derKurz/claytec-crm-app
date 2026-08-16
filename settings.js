@@ -349,7 +349,7 @@ CRM._mergeSideInfo = function (c) {
   if (ortZeile) zeilen.push(esc(ortZeile));
   if (c.erpNr) zeilen.push('ERP-Nr. ' + esc(c.erpNr));
   zeilen.push(esc(CRM.SOURCE_LABELS[c.source] || c.source || ''));
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   if (apName) zeilen.push('AP: ' + esc(apName));
   return zeilen.filter(Boolean).join(' · ');

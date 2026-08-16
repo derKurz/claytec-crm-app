@@ -395,7 +395,7 @@ CRM.map.renderNearbyPanel = function (updateMap) {
     const dueLabel = due.status === 'overdue' ? `${-due.diffDays} Tage überfällig`
       : (due.status === 'today' ? 'heute fällig' : `letzter Besuch: ${CRM.formatLastVisit(c)}`);
     const expanded = CRM.map._nearbyExpandedId === c.id;
-    const tel = c.telFirma || (c.ansprechpartner && c.ansprechpartner.telefon);
+    const tel = c.telFirma || CRM.mainAnsprechpartner(c).telefon;
     const addr = CRM.formatAddress(c);
     const inTour = CRM.map.selectedIds.has(c.id);
     const actions = expanded ? `

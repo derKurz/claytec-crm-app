@@ -12,9 +12,12 @@ window.CRM = CRM;
 CRM.vcard = {};
 
 /* vCard-3.0-Text aus einem CRM-Kontakt bauen (Feld-Mapping wie
-   contact_parser.py: N/FN, ORG, TITLE, EMAIL pref/2., CELL/WORK, ADR, URL) */
-CRM.vcard.build = function (c) {
-  const ap = c.ansprechpartner || {};
+   contact_parser.py: N/FN, ORG, TITLE, EMAIL pref/2., CELL/WORK, ADR, URL).
+   Batch 6f: `apOverride` erlaubt die vCard für EINEN bestimmten
+   Ansprechpartner zu bauen (nicht zwingend den Hauptansprechpartner) —
+   genutzt vom 📇-Knopf je Person im Kontaktprofil. */
+CRM.vcard.build = function (c, apOverride) {
+  const ap = apOverride || CRM.mainAnsprechpartner(c);
   const esc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
   const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
 
@@ -38,19 +41,19 @@ CRM.vcard.build = function (c) {
   return lines.join('\n') + '\n';
 };
 
-CRM.vcard.fileName = function (c) {
-  const ap = c.ansprechpartner || {};
+CRM.vcard.fileName = function (c, apOverride) {
+  const ap = apOverride || CRM.mainAnsprechpartner(c);
   const person = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const base = person ? c.firma1 + ' - ' + person : c.firma1;
   return (CRM.ablage ? CRM.ablage.sanitizeFile(base) : base).replace(/\s+/g, '_') + '.vcf';
 };
 
-CRM.vcard.download = function (c) {
-  const blob = new Blob([CRM.vcard.build(c)], { type: 'text/vcard;charset=utf-8' });
+CRM.vcard.download = function (c, apOverride) {
+  const blob = new Blob([CRM.vcard.build(c, apOverride)], { type: 'text/vcard;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = CRM.vcard.fileName(c);
+  a.download = CRM.vcard.fileName(c, apOverride);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -75,7 +78,7 @@ CRM.vcard.getConnectedRoot = async function () {
 
 /* .vcf in den Kundenordner schreiben (Ordner wird bei Bedarf angelegt —
    dieselbe Logik wie die Excel-Ablage). Rückgabe: relativer Pfad oder null. */
-CRM.vcard.saveToCustomerFolder = async function (c) {
+CRM.vcard.saveToCustomerFolder = async function (c, apOverride) {
   const root = await CRM.vcard.getConnectedRoot();
   if (!root) return null;
   const kunden = await root.getDirectoryHandle('.Kunden');
@@ -86,10 +89,10 @@ CRM.vcard.saveToCustomerFolder = async function (c) {
   if (!custDir) {
     custDir = await typeDir.getDirectoryHandle(CRM.ablage.customerFolderName(c), { create: true });
   }
-  const name = CRM.vcard.fileName(c);
+  const name = CRM.vcard.fileName(c, apOverride);
   const fh = await custDir.getFileHandle(name, { create: true });
   const w = await fh.createWritable();
-  await w.write(CRM.vcard.build(c));
+  await w.write(CRM.vcard.build(c, apOverride));
   await w.close();
   return '.Kunden\\' + typeFolderName + '\\' + custDir.name + '\\' + name;
 };
@@ -119,16 +122,34 @@ CRM.vcard.exportContact = async function (contactId) {
   if (!c) return;
   try {
     const rel = await CRM.vcard.saveToCustomerFolder(c);
-    if (rel) { CRM.vcard.showResult(c, rel); return; }
+    if (rel) { CRM.vcard.showResult(c, rel, null); return; }
   } catch (e) {
     // Ablage nicht verbunden → Download-Weg
   }
   CRM.vcard.download(c);
-  CRM.vcard.showResult(c, null);
+  CRM.vcard.showResult(c, null, null);
 };
 
-CRM.vcard.showResult = function (c, rel) {
-  const dateiname = CRM.vcard.fileName(c);
+/* Batch 6f: vCard für EINEN bestimmten Ansprechpartner (nicht zwingend den
+   Hauptansprechpartner) — der 📇-Knopf je Eintrag in der Ansprechpartner-Liste. */
+CRM.vcard.exportPerson = async function (contactId, apId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return;
+  const ap = (Array.isArray(c.ansprechpartner) ? c.ansprechpartner : []).find((a) => a.id === apId);
+  if (!ap) { CRM.toast('Ansprechpartner nicht gefunden.', 'error'); return; }
+  try {
+    const rel = await CRM.vcard.saveToCustomerFolder(c, ap);
+    if (rel) { CRM.vcard.showResult(c, rel, apId); return; }
+  } catch (e) {
+    // Ablage nicht verbunden → Download-Weg
+  }
+  CRM.vcard.download(c, ap);
+  CRM.vcard.showResult(c, null, apId);
+};
+
+CRM.vcard.showResult = function (c, rel, apId) {
+  const ap = apId ? (Array.isArray(c.ansprechpartner) ? c.ansprechpartner : []).find((a) => a.id === apId) : null;
+  const dateiname = CRM.vcard.fileName(c, ap);
   const voll = rel && CRM.ablage ? CRM.ablage.fullPath(rel) : null;
   const hatBasis = !!((CRM.db.getSettings().onedrivePath || '').trim());
 
@@ -139,7 +160,7 @@ CRM.vcard.showResult = function (c, rel) {
       <div class="row" style="gap:6px;flex-wrap:wrap">
         ${voll ? `<a class="btn btn-sm" href="${esc(CRM.ablage.fileUrl(voll))}" target="_blank" rel="noopener">📂 Ordner öffnen</a>` : ''}
         <button class="btn btn-sm" onclick="CRM.ablage.copyPath('${escAttr(voll || rel)}')">📋 Pfad kopieren</button>
-        <button class="btn btn-sm" onclick="CRM.vcard.downloadFromDialog('${c.id}')">⬇ Zusätzlich herunterladen</button>
+        <button class="btn btn-sm" onclick="CRM.vcard.downloadFromDialog('${c.id}','${apId || ''}')">⬇ Zusätzlich herunterladen</button>
       </div>
       ${hatBasis ? '' : '<p style="font-size:12px;color:var(--text-dim);margin:8px 0 0">Hinterlege deinen Claytec-Ordnerpfad in den Einstellungen, dann führt „Ordner öffnen" direkt in den Explorer.</p>'}`
     : `
@@ -160,7 +181,10 @@ CRM.vcard.showResult = function (c, rel) {
   `);
 };
 
-CRM.vcard.downloadFromDialog = function (contactId) {
+CRM.vcard.downloadFromDialog = function (contactId, apId) {
   const c = CRM.db.getContact(contactId);
-  if (c) { CRM.vcard.download(c); CRM.toast('vCard zusätzlich in den Download-Ordner gelegt.', 'success'); }
+  if (!c) return;
+  const ap = apId ? (Array.isArray(c.ansprechpartner) ? c.ansprechpartner : []).find((a) => a.id === apId) : null;
+  CRM.vcard.download(c, ap);
+  CRM.toast('vCard zusätzlich in den Download-Ordner gelegt.', 'success');
 };

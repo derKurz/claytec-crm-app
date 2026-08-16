@@ -309,7 +309,7 @@ CRM.win._record = function (winObj) {
 };
 
 CRM.win._recordFromContactLike = function (c, isDraft) {
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const apLine = apName ? (apName + (ap.funktion ? ' (' + ap.funktion + ')' : '')) : '';
   const counts = isDraft

@@ -409,23 +409,29 @@ CRM.emailParser.toContact = function (data, type, source) {
   c.firma1 = data.company || data.name || 'Neuer Kontakt';
   c.firma2 = data.company2 || '';
   c.erpNr = data.erpNr || '';
+  // Batch 6f: ansprechpartner ist ein Array — hier lokal als Objekt
+  // aufbauen (unverändertes Erkennungs-Verhalten) und am Ende als
+  // 1-elementige Liste übernehmen (nur wenn tatsächlich Daten erkannt
+  // wurden, sonst bleibt die Liste leer).
+  const ap = { anrede: '', name: '', vorname: '', funktion: '', telefon: '', email: '' };
   const nameParts = splitWs(data.name || '');
-  if (nameParts.length >= 2) { c.ansprechpartner.name = nameParts[nameParts.length - 1]; c.ansprechpartner.vorname = nameParts.slice(0, -1).join(' '); }
-  else if (nameParts.length === 1) c.ansprechpartner.name = nameParts[0];
-  c.ansprechpartner.funktion = [data.academic_title, data.title].filter(Boolean).join(' - ');
+  if (nameParts.length >= 2) { ap.name = nameParts[nameParts.length - 1]; ap.vorname = nameParts.slice(0, -1).join(' '); }
+  else if (nameParts.length === 1) ap.name = nameParts[0];
+  ap.funktion = [data.academic_title, data.title].filter(Boolean).join(' - ');
   c.strasse = data.street || '';
   c.plz = data.postal || '';
   c.ort = data.city || '';
   c.telFirma = data.phone_work || '';
-  c.ansprechpartner.telefon = data.phone_mobile || '';
+  ap.telefon = data.phone_mobile || '';
   // persönliche Mail an Ansprechpartner, generische an Firma
   if (data.email) {
     const local = data.email.split('@')[0].toLowerCase();
     const generic = ['info', 'kontakt', 'office', 'mail', 'post', 'verwaltung', 'buero'].some((g) => local.indexOf(g) !== -1);
-    if (generic) c.emailFirma = data.email; else c.ansprechpartner.email = data.email;
+    if (generic) c.emailFirma = data.email; else ap.email = data.email;
   }
-  if (data.email2) { if (c.emailFirma) c.ansprechpartner.email = c.ansprechpartner.email || data.email2; else c.emailFirma = data.email2; }
+  if (data.email2) { if (c.emailFirma) ap.email = ap.email || data.email2; else c.emailFirma = data.email2; }
   c.website = data.website || data.social || '';
+  if (Object.values(ap).some((v) => String(v || '').trim())) c.ansprechpartner = [Object.assign(ap, { id: CRM.uid('ap'), istHaupt: true })];
   return c;
 };
 
@@ -525,7 +531,8 @@ CRM.mailAblage.analyze = function () {
     const pm = partnerMail.toLowerCase();
     found = CRM.db.getContacts().find((c) =>
       String(c.emailFirma || '').toLowerCase() === pm
-      || String((c.ansprechpartner || {}).email || '').toLowerCase() === pm);
+      // Batch 6f: über ALLE Ansprechpartner prüfen, nicht nur den Hauptansprechpartner
+      || (Array.isArray(c.ansprechpartner) ? c.ansprechpartner : []).some((a) => String(a.email || '').toLowerCase() === pm));
   }
   CRM.mailAblage._contactId = found ? found.id : CRM.mailAblage._contactId;
   CRM.mailAblage.renderMatch(!found);
@@ -662,7 +669,7 @@ CRM.mailAblage.savePrivate = function () {
   const c = CRM.db.addContact({
     firma1: name, type: 'bauherr', abc: 'C', source: 'eigene',
     tags: ['Private Anfrage'],
-    ansprechpartner: mail ? { email: mail } : {},
+    ansprechpartner: mail ? [{ id: CRM.uid('ap'), email: mail, istHaupt: true }] : [],
   });
   CRM.mailAblage._contactId = c.id;
   CRM.mailAblage.save(); // legt die E-Mail als comm ab und zeigt „Kontakt öffnen"
@@ -891,7 +898,7 @@ CRM.mailAntwort.buildBlock = function (contactId, commId) {
   if (!c) return null;
   const m = commId ? CRM.db.getComm(commId) : null;
   const sparsam = CRM.db.getSettings().antwortDatensparsam !== false;
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
 
   // Projekt: bevorzugt das an der Mail hängende, sonst ein verknüpftes

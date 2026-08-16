@@ -154,8 +154,8 @@ CRM.taskRow = function (t, st) {
    "…"-Overflow-Menü. Ohne opts.compact unverändertes Verhalten (Agenda). */
 CRM.quickActionButtons = function (c, opts) {
   const o = opts || {};
-  const tel = c.telFirma || (c.ansprechpartner && c.ansprechpartner.telefon);
-  const mail = c.emailFirma || (c.ansprechpartner && c.ansprechpartner.email);
+  const tel = c.telFirma || CRM.mainAnsprechpartner(c).telefon;
+  const mail = c.emailFirma || CRM.mainAnsprechpartner(c).email;
   const items = []; // {primary, html, menuHtml}
   if (tel) items.push({
     primary: true,

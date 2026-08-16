@@ -39,7 +39,7 @@ CRM.muster.open = function (contactId, taskId) {
   CRM.muster._openKats = null; // wird in renderListe gesetzt: nur erste Kategorie offen
   const c = CRM.db.getContact(contactId);
   if (!c) return;
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const adresse = [c.strasse, [c.plz, c.ort].filter(Boolean).join(' ')].filter(Boolean).join('\n');
 

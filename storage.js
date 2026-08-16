@@ -59,10 +59,17 @@ CRM.PROJECT_STATUS_LABELS = {
 };
 CRM.PRODUCTS = ['YOSIMA', 'LEMIX', 'Lehmbauplatte'];
 /* Projekt-Produkte nach Kategorie (CLAUDE.md: nur dokumentierte Produkte;
-   eigene Aufbauvarianten kommen als Freitext mit "Kategorie: ..."-Präfix dazu) */
+   eigene Aufbauvarianten kommen als Freitext mit "Kategorie: ..."-Präfix dazu).
+   Batch 6e (Chris-Entscheidung): drei Hauptgruppen statt zwei. YOSIMA/LEMIX
+   sind laut CLAUDE.md dieselben Produkte "in allen Varianten Neu- und
+   Altbau" — die Dreiteilung ist eine Einsatzzweck-Gliederung, KEINE neue
+   Produktliste: dieselben zwei Produkte erscheinen bewusst in beiden
+   Lehmputz-Gruppen. Siehe CRM._projProductValue (projects.js) für die
+   Kollisionsvermeidung bei den Checkbox-Werten. */
 CRM.PRODUCT_CATEGORIES = {
-  'Lehm-Putz': ['YOSIMA', 'LEMIX'],
-  'Lehm-Trockenbau': ['Lehmbauplatte'],
+  'Lehmtrockenbau': ['Lehmbauplatte'],
+  'Lehmputz — Neubau': ['YOSIMA', 'LEMIX'],
+  'Lehmputz — Sanierung': ['YOSIMA', 'LEMIX'],
 };
 
 /* Kommunikations-Typen (E-Mail-fähiges Fundament). Eine Kommunikation kann an
@@ -137,6 +144,7 @@ CRM.db = {
     this._repairJournal();
     this._migrateContactTypes();
     this._migrateBauherrTypes();
+    this._migrateAnsprechpartner();
   },
 
   /* Einmalige, idempotente Migration (Batch 5, 2026-08): Kategorie "sonstige"
@@ -163,6 +171,36 @@ CRM.db = {
     let changed = 0;
     this._contacts.forEach((c) => {
       if (c.type === 'privatbauherr') { c.type = 'bauherr'; changed++; }
+    });
+    if (changed) this.saveContacts();
+  },
+
+  /* Einmalige, idempotente Migration (Batch 6f, 2026-08): c.ansprechpartner
+     war ein einzelnes Objekt, ist jetzt ein Array (mehrere Ansprechpartner
+     pro Kontakt möglich). Ein altes einzelnes Objekt mit Daten wird in ein
+     1-elementiges Array umgewandelt (istHaupt:true) — kein Datenverlust,
+     unverändert nutzbar über CRM.mainAnsprechpartner(). Läuft bei jedem
+     Init, ist danach ein No-Op (jeder Kontakt hat ein Array, jeder Eintrag
+     eine id, genau ein istHaupt sofern Einträge vorhanden sind). */
+  _migrateAnsprechpartner() {
+    let changed = 0;
+    this._contacts.forEach((c) => {
+      const raw = c.ansprechpartner;
+      if (!Array.isArray(raw)) {
+        const hatDaten = raw && typeof raw === 'object'
+          && ['anrede', 'name', 'vorname', 'funktion', 'telefon', 'email'].some((f) => String(raw[f] || '').trim());
+        c.ansprechpartner = hatDaten ? [Object.assign({}, raw, { id: raw.id || CRM.uid('ap'), istHaupt: true })] : [];
+        changed++;
+        return;
+      }
+      let needsFix = false;
+      raw.forEach((a) => { if (a && !a.id) { a.id = CRM.uid('ap'); needsFix = true; } });
+      const hauptCount = raw.filter((a) => a && a.istHaupt).length;
+      if (raw.length && hauptCount !== 1) {
+        raw.forEach((a, i) => { if (a) a.istHaupt = (i === 0); });
+        needsFix = true;
+      }
+      if (needsFix) changed++;
     });
     if (changed) this.saveContacts();
   },
@@ -482,14 +520,7 @@ CRM.makeEmptyContact = function () {
     emailFirma: '',
     website: '',
     notionUrl: '', // Link zur zugehörigen Notion-Seite (Wissens-/Doku-Ablage)
-    ansprechpartner: {
-      anrede: '',
-      name: '',
-      vorname: '',
-      funktion: '',
-      telefon: '',
-      email: '',
-    },
+    ansprechpartner: [], // Batch 6f: mehrere Ansprechpartner möglich, siehe CRM.mainAnsprechpartner()
     lat: null,
     lng: null,
     geocodeStatus: 'pending', // pending | ok | failed | manual
@@ -508,6 +539,27 @@ CRM.makeEmptyContact = function () {
     createdAt: null,
     updatedAt: null,
   };
+};
+
+/* Batch 6f: leeren Ansprechpartner-Eintrag erzeugen (für "+ Ansprechpartner
+   hinzufügen" im Kontaktprofil sowie für Konstruktions-Codepfade, die bisher
+   ein einzelnes ansprechpartner-Objekt direkt befüllt haben). */
+CRM.makeEmptyAnsprechpartner = function () {
+  return { id: CRM.uid('ap'), anrede: '', name: '', vorname: '', funktion: '', telefon: '', email: '', istHaupt: false };
+};
+
+/* Batch 6f: c.ansprechpartner ist ein Array (mehrere Ansprechpartner pro
+   Kontakt möglich). Für die vielen Lesestellen im Code, die sich bisher auf
+   GENAU EINEN Ansprechpartner verlassen haben, liefert diese Funktion den
+   Hauptansprechpartner (istHaupt:true) bzw. ersatzweise den ersten Eintrag —
+   verhält sich für den Aufrufer wie das frühere einzelne Objekt (nie null/
+   undefined, immer mindestens {}). Toleriert defensiv auch noch nicht
+   migrierte Alt-Daten (einzelnes Objekt statt Array). */
+CRM.mainAnsprechpartner = function (c) {
+  if (!c) return {};
+  const raw = c.ansprechpartner;
+  const list = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+  return list.find((a) => a && a.istHaupt) || list[0] || {};
 };
 
 /* ============================================================
@@ -772,9 +824,11 @@ CRM.contactQueryMatch = function (query, c) {
 };
 
 CRM.contactSearchFields = function (c) {
-  const ap = c.ansprechpartner || {};
+  // Batch 6f: über ALLE Ansprechpartner suchen, nicht nur den Hauptansprechpartner
+  const aps = Array.isArray(c.ansprechpartner) ? c.ansprechpartner : (c.ansprechpartner ? [c.ansprechpartner] : []);
+  const apFields = aps.reduce((acc, ap) => acc.concat([ap.name, ap.vorname, ap.telefon, ap.email]), []);
   return [c.firma1, c.firma2, c.firma3, c.strasse, c.ort, c.plz, c.erpNr,
-    ap.name, ap.vorname, ap.telefon, ap.email, c.telFirma, c.emailFirma,
+    ...apFields, c.telFirma, c.emailFirma,
     (c.tags || []).join(' ')];
 };
 
@@ -871,14 +925,32 @@ CRM.mergeContacts = function (keepId, dropId) {
   simpleFields.forEach((f) => {
     if (!String(keep[f] || '').trim() && String(drop[f] || '').trim()) keep[f] = drop[f];
   });
-  // Defensiv: sehr alte/minimale Datensätze haben evtl. kein ansprechpartner-
-  // Objekt — ohne diesen Guard würde der Merge hier abbrechen (Feld-Zugriff auf
-  // undefined). Für wohlgeformte Kontakte ändert das nichts.
-  keep.ansprechpartner = keep.ansprechpartner || {};
-  drop.ansprechpartner = drop.ansprechpartner || {};
-  ['anrede', 'name', 'vorname', 'funktion', 'telefon', 'email'].forEach((f) => {
-    if (!String(keep.ansprechpartner[f] || '').trim() && String(drop.ansprechpartner[f] || '').trim()) keep.ansprechpartner[f] = drop.ansprechpartner[f];
+  // Batch 6f: ansprechpartner ist ein Array (mehrere Ansprechpartner pro
+  // Kontakt) — beide Listen vereinigen (keine AP-Daten verloren), Dubletten
+  // per id/Feld-Kombination verwerfen. Danach darf nur EIN istHaupt übrig
+  // bleiben: keeps Hauptansprechpartner gewinnt (steht zuerst in der
+  // vereinigten Liste), sonst drops, sonst der erste Eintrag. Defensiv auch
+  // für sehr alte/minimale Datensätze ohne ansprechpartner-Feld.
+  const keepAps = Array.isArray(keep.ansprechpartner) ? keep.ansprechpartner : (keep.ansprechpartner ? [keep.ansprechpartner] : []);
+  const dropAps = Array.isArray(drop.ansprechpartner) ? drop.ansprechpartner : (drop.ansprechpartner ? [drop.ansprechpartner] : []);
+  const seenAp = new Set();
+  const mergedAps = [];
+  keepAps.concat(dropAps).forEach((a) => {
+    if (!a) return;
+    const key = a.id || ['anrede', 'name', 'vorname', 'funktion', 'telefon', 'email'].map((f) => String(a[f] || '').toLowerCase()).join('|');
+    if (seenAp.has(key)) return;
+    seenAp.add(key);
+    mergedAps.push(Object.assign({}, a, { id: a.id || CRM.uid('ap') }));
   });
+  let hauptGefunden = false;
+  mergedAps.forEach((a) => {
+    if (a.istHaupt) {
+      if (hauptGefunden) a.istHaupt = false;
+      else hauptGefunden = true;
+    }
+  });
+  if (!hauptGefunden && mergedAps.length) mergedAps[0].istHaupt = true;
+  keep.ansprechpartner = mergedAps;
   if (keep.lat == null && drop.lat != null) {
     keep.lat = drop.lat;
     keep.lng = drop.lng;
@@ -1298,6 +1370,7 @@ CRM.backup = {
         .concat((c.links.architektIds || []).map((id) => 'Architekt: ' + nameOf(id)))
         .concat((c.links.projektIds || []).map((id) => { const p = CRM.db.getProject(id); return 'Projekt: ' + (p ? p.name : id); }))
         .join(' | ');
+      const hauptAp = CRM.mainAnsprechpartner(c);
       return {
         Firma: c.firma1,
         'Firma 2': c.firma2 || '',
@@ -1310,9 +1383,9 @@ CRM.backup = {
         Ort: c.ort,
         Telefon: c.telFirma,
         'E-Mail': c.emailFirma,
-        Ansprechpartner: [c.ansprechpartner.vorname, c.ansprechpartner.name].filter(Boolean).join(' '),
-        'Tel. Anspr.': c.ansprechpartner.telefon || '',
-        'E-Mail Anspr.': c.ansprechpartner.email || '',
+        Ansprechpartner: [hauptAp.vorname, hauptAp.name].filter(Boolean).join(' '),
+        'Tel. Anspr.': hauptAp.telefon || '',
+        'E-Mail Anspr.': hauptAp.email || '',
         Tags: (c.tags || []).join(', '),
         'Nächster Schritt': c.nextStep || '',
         'Letzter Besuch': last ? last.date : '',

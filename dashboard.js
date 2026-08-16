@@ -237,7 +237,7 @@ CRM.dashboardVoiceNote = function () {
     const q = norm(input.value).trim();
     if (!q) { results.innerHTML = '<div class="dash-empty">Tippe, um einen Kontakt zu suchen.</div>'; return; }
     const matches = CRM.db.getContacts().filter((c) => {
-      const ap = c.ansprechpartner || {};
+      const ap = CRM.mainAnsprechpartner(c);
       return norm(c.firma1).includes(q) || norm(c.ort).includes(q) || norm(c.plz).includes(q)
         || norm(ap.name).includes(q) || norm(ap.vorname).includes(q) || norm(c.erpNr).includes(q);
     }).slice(0, 8);

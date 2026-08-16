@@ -19,7 +19,7 @@ CRM.copyForOneNote = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
   const addr = CRM.formatAddress(c);
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const visits = (c.visits || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -61,7 +61,7 @@ CRM.forwardContactByMail = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
   const addr = CRM.formatAddress(c);
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const lines = [c.firma1];
   if (addr) lines.push(addr);
@@ -99,7 +99,7 @@ CRM.copyForNotion = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
   const addr = CRM.formatAddress(c);
-  const ap = c.ansprechpartner || {};
+  const ap = CRM.mainAnsprechpartner(c);
   const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   const visits = (c.visits || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -285,7 +285,8 @@ CRM.renderContactDetailModal = function (id) {
         ${(() => {
           // Ansprechpartner gehört in den Kopf — im Außendienst die zweitwichtigste
           // Information nach dem Firmennamen, bisher nur tief in den Stammdaten.
-          const ap = c.ansprechpartner || {};
+          // Batch 6f: zeigt den Hauptansprechpartner (⭐), auch wenn mehrere hinterlegt sind.
+          const ap = CRM.mainAnsprechpartner(c);
           const n = [ap.vorname, ap.name].filter(Boolean).join(' ');
           if (!n) return '';
           const tel = ap.telefon || c.telFirma;
@@ -375,15 +376,8 @@ CRM.renderContactDetailModal = function (id) {
         <div class="col"><label>E-Mail</label><input data-field="emailFirma" value="${escAttr(c.emailFirma)}"></div>
         <div class="col"><label>Website</label><input data-field="website" value="${escAttr(c.website || '')}"></div>
       </div>
-      <div class="row">
-        <div class="col"><label>Ansprechpartner Vorname</label><input data-ap="vorname" value="${escAttr(c.ansprechpartner.vorname)}"></div>
-        <div class="col"><label>Ansprechpartner Nachname</label><input data-ap="name" value="${escAttr(c.ansprechpartner.name)}"></div>
-        <div class="col"><label>Funktion</label><input data-ap="funktion" value="${escAttr(c.ansprechpartner.funktion || '')}"></div>
-      </div>
-      <div class="row">
-        <div class="col"><label>Telefon Ansprechpartner</label><input data-ap="telefon" value="${escAttr(c.ansprechpartner.telefon)}"></div>
-        <div class="col"><label>E-Mail Ansprechpartner</label><input data-ap="email" value="${escAttr(c.ansprechpartner.email)}"></div>
-      </div>
+      <label style="margin-top:6px">Ansprechpartner</label>
+      <div id="cd-ap-list">${CRM.renderAnsprechpartnerList(c)}</div>
       <div class="row">
         <div class="col"><label>Typ</label><select data-field="type">${typeOptions}</select></div>
         <div class="col"><label>Einstufung</label><select data-field="abc">${abcOptions}</select></div>
@@ -447,10 +441,12 @@ CRM.wireContactDetailEvents = function (id) {
       CRM.renderContactList();
     });
   });
-  modal.querySelectorAll('input[data-ap]').forEach((el) => {
+  modal.querySelectorAll('input[data-ap-id]').forEach((el) => {
     el.addEventListener('change', () => {
       const c = CRM.db.getContact(id);
-      c.ansprechpartner[el.dataset.ap] = el.value;
+      const ap = (c.ansprechpartner || []).find((a) => a.id === el.dataset.apId);
+      if (!ap) return;
+      ap[el.dataset.apField] = el.value;
       c.updatedAt = new Date().toISOString();
       CRM.db.saveContacts();
     });
@@ -477,6 +473,91 @@ CRM.wireContactDetailEvents = function (id) {
       e.target.value = '';
     }
   });
+};
+
+/* ============================================================
+   Batch 6f: mehrere Ansprechpartner pro Kontakt (Liste im
+   Stammdaten-Bereich, Chris-Entscheidung). Jeder Eintrag ist inline
+   editierbar (wie die übrigen Stammdaten-Felder), dazu ⭐ (als
+   Hauptansprechpartner markieren — genau einer kann Haupt sein), 🗑
+   (entfernen, mit takeSnapshot+toastUndo) und 📇 (vCard für GENAU
+   DIESE Person, nicht den Haupt-AP).
+   ============================================================ */
+CRM.renderAnsprechpartnerList = function (c) {
+  const list = Array.isArray(c.ansprechpartner) ? c.ansprechpartner : [];
+  const rows = list.map((ap) => {
+    const label = [ap.vorname, ap.name].filter(Boolean).join(' ') || '(ohne Namen)';
+    return `
+      <div class="card" style="margin-bottom:8px;padding:10px 12px" data-ap-row="${ap.id}">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:nowrap">
+          <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc2(label)}${ap.istHaupt ? ' <span style="color:var(--text-dim);font-weight:400;font-size:12px">· Hauptansprechpartner</span>' : ''}</strong>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            <button class="btn btn-icon" title="${ap.istHaupt ? 'Hauptansprechpartner' : 'Als Hauptansprechpartner markieren'}" onclick="CRM.setMainAnsprechpartner('${c.id}','${ap.id}')" style="${ap.istHaupt ? 'border-color:var(--accent-2);background:rgba(255,193,7,.12)' : ''}">${ap.istHaupt ? '⭐' : '☆'}</button>
+            <button class="btn btn-icon" title="vCard für diese Person" onclick="CRM.vcard.exportPerson('${c.id}','${ap.id}')">📇</button>
+            <button class="btn btn-icon" title="Ansprechpartner entfernen" onclick="CRM.removeAnsprechpartner('${c.id}','${ap.id}')">🗑</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col"><label>Vorname</label><input data-ap-id="${ap.id}" data-ap-field="vorname" value="${escAttr(ap.vorname || '')}"></div>
+          <div class="col"><label>Nachname</label><input data-ap-id="${ap.id}" data-ap-field="name" value="${escAttr(ap.name || '')}"></div>
+          <div class="col"><label>Funktion</label><input data-ap-id="${ap.id}" data-ap-field="funktion" value="${escAttr(ap.funktion || '')}"></div>
+        </div>
+        <div class="row">
+          <div class="col"><label>Telefon</label><input data-ap-id="${ap.id}" data-ap-field="telefon" value="${escAttr(ap.telefon || '')}"></div>
+          <div class="col"><label>E-Mail</label><input data-ap-id="${ap.id}" data-ap-field="email" value="${escAttr(ap.email || '')}"></div>
+        </div>
+      </div>`;
+  }).join('') || '<p style="color:var(--text-dim);font-size:13px">Noch kein Ansprechpartner hinterlegt.</p>';
+  return rows + `<button class="btn btn-sm" style="min-height:44px" onclick="CRM.addAnsprechpartner('${c.id}')">+ Ansprechpartner hinzufügen</button>`;
+};
+
+CRM._refreshAnsprechpartnerList = function (contactId) {
+  const c = CRM.db.getContact(contactId);
+  const wrap = document.getElementById('cd-ap-list');
+  if (!c || !wrap) return;
+  wrap.innerHTML = CRM.renderAnsprechpartnerList(c);
+  CRM.wireContactDetailEvents(contactId);
+};
+
+CRM.addAnsprechpartner = function (contactId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return;
+  c.ansprechpartner = Array.isArray(c.ansprechpartner) ? c.ansprechpartner : [];
+  const ap = CRM.makeEmptyAnsprechpartner();
+  if (!c.ansprechpartner.length) ap.istHaupt = true; // erster Eintrag wird automatisch Haupt
+  c.ansprechpartner.push(ap);
+  c.updatedAt = new Date().toISOString();
+  CRM.db.saveContacts();
+  CRM._refreshAnsprechpartnerList(contactId);
+  CRM.renderContactList();
+};
+
+CRM.setMainAnsprechpartner = function (contactId, apId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c || !Array.isArray(c.ansprechpartner)) return;
+  c.ansprechpartner.forEach((a) => { a.istHaupt = (a.id === apId); });
+  c.updatedAt = new Date().toISOString();
+  CRM.db.saveContacts();
+  // Header/vCard-Standard hängen am Haupt-AP -> ganzes Profil neu zeichnen
+  CRM.renderContactDetailModal(contactId);
+  CRM.renderContactList();
+};
+
+/* Entfernen nie ohne Undo (Lehre aus CRM.takeSnapshot) — kein natives
+   confirm(), das Undo-Toast deckt die Rückfrage ab (wie bei Aufgaben). */
+CRM.removeAnsprechpartner = function (contactId, apId) {
+  const c = CRM.db.getContact(contactId);
+  if (!c || !Array.isArray(c.ansprechpartner)) return;
+  const removed = c.ansprechpartner.find((a) => a.id === apId);
+  if (!removed) return;
+  CRM.takeSnapshot('Vor Entfernen eines Ansprechpartners');
+  c.ansprechpartner = c.ansprechpartner.filter((a) => a.id !== apId);
+  if (removed.istHaupt && c.ansprechpartner.length) c.ansprechpartner[0].istHaupt = true;
+  c.updatedAt = new Date().toISOString();
+  CRM.db.saveContacts();
+  CRM.renderContactDetailModal(contactId);
+  CRM.renderContactList();
+  CRM.toastUndo('Ansprechpartner entfernt.');
 };
 
 /* Datenherkunft transparent (Perplexity-Lehre: "Woher stammt diese Info?") */

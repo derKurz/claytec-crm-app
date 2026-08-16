@@ -1507,14 +1507,14 @@ CRM.showDuplicateReviewDialog = function () {
         <div><strong>${esc(cand.firma1)}</strong></div>
         <div>${esc(cand.strasse)}</div>
         <div>${esc(cand.plz)} ${esc(cand.ort)}</div>
-        <div>${esc(cand.ansprechpartner.vorname)} ${esc(cand.ansprechpartner.name)}</div>
+        <div>${esc(CRM.mainAnsprechpartner(cand).vorname)} ${esc(CRM.mainAnsprechpartner(cand).name)}</div>
       </div>
       <div class="col card">
         <h3 style="margin-top:0;font-size:13px;color:var(--text-dim)">BESTEHEND${best.isNewBatch ? ' (aus diesem Import)' : ''}</h3>
         <div><strong>${esc(ex.firma1)}</strong></div>
         <div>${esc(ex.strasse)}</div>
         <div>${esc(ex.plz)} ${esc(ex.ort)}</div>
-        <div>${esc(ex.ansprechpartner.vorname)} ${esc(ex.ansprechpartner.name)}</div>
+        <div>${esc(CRM.mainAnsprechpartner(ex).vorname)} ${esc(CRM.mainAnsprechpartner(ex).name)}</div>
       </div>
     </div>
     <div class="modal-footer">

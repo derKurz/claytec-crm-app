@@ -174,8 +174,12 @@ CRM.openProjectDetail = function (id) {
   if (!p) return;
   const statusOptions = CRM.PROJECT_STATUS.map((s) => `<option value="${s}" ${p.status === s ? 'selected' : ''}>${CRM.PROJECT_STATUS_LABELS[s]}</option>`).join('');
 
-  // Eigene (Freitext-)Aufbauvarianten = alles, was kein bekanntes Produkt ist
-  const knownProducts = Object.values(CRM.PRODUCT_CATEGORIES).flat();
+  // Eigene (Freitext-)Aufbauvarianten = alles, was kein bekanntes
+  // Checkbox-Produkt ist (inkl. Gruppen-Suffix, siehe CRM._projProductValue)
+  const knownProducts = [];
+  Object.entries(CRM.PRODUCT_CATEGORIES).forEach(([cat, prods]) => {
+    prods.forEach((pr) => knownProducts.push(CRM._projProductValue(cat, pr)));
+  });
   CRM._projCustomProducts = (p.products || []).filter((x) => !knownProducts.includes(x));
 
   const html = `
@@ -245,15 +249,38 @@ CRM.openProjectDetail = function (id) {
   CRM.wirePlzOrtAutofill(document.getElementById('proj-plz'), document.getElementById('proj-ort'));
 };
 
+/* Batch 6e: seit es drei Hauptgruppen gibt, kommt YOSIMA/LEMIX in ZWEI
+   Gruppen vor (Lehmputz — Neubau/Sanierung, bewusst dieselben Produkte,
+   siehe CRM.PRODUCT_CATEGORIES). Ein Checkbox-value, das nur der
+   Produktname wäre, würde dann kollidieren — "YOSIMA" in Neubau ankreuzen
+   würde auch die gleichnamige Checkbox in Sanierung markieren (dieselbe
+   DOM-value, aber unterschiedliche Elemente — der Bug wäre eher beim
+   Speichern/Wiederherstellen sichtbar: p.products enthielte "YOSIMA" nur
+   einmal, unabhängig davon welche/wie viele Gruppen angekreuzt wurden).
+   Deshalb: Produkte, die in mehr als einer Gruppe vorkommen, bekommen einen
+   Gruppen-Suffix im gespeicherten Wert ("YOSIMA (Neubau)"), eindeutige
+   Produkte (Lehmbauplatte) bleiben unverändert. */
+CRM._projProductGroupSuffix = function (cat) {
+  const parts = cat.split('—');
+  return (parts.length > 1 ? parts[1] : cat).trim();
+};
+CRM._projProductValue = function (cat, pr) {
+  const dupCount = Object.values(CRM.PRODUCT_CATEGORIES).filter((prods) => prods.includes(pr)).length;
+  return dupCount > 1 ? `${pr} (${CRM._projProductGroupSuffix(cat)})` : pr;
+};
+
 /* Produktauswahl nach Kategorie: bekannte Produkte als Checkboxen,
    eigene Aufbauvarianten als Freitext-Chips („Kategorie: Variante") */
 CRM.renderProjProducts = function (p) {
   const selected = new Set(p.products || []);
   return Object.entries(CRM.PRODUCT_CATEGORIES).map(([cat, prods]) => {
-    const checks = prods.map((pr) => `
+    const checks = prods.map((pr) => {
+      const val = CRM._projProductValue(cat, pr);
+      return `
       <label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;color:var(--text)">
-        <input type="checkbox" class="proj-product" value="${pr}" ${selected.has(pr) ? 'checked' : ''} style="width:auto"> ${pr}
-      </label>`).join('');
+        <input type="checkbox" class="proj-product" value="${val}" ${selected.has(val) ? 'checked' : ''} style="width:auto"> ${pr}
+      </label>`;
+    }).join('');
     const customChips = CRM._projCustomProducts
       .map((v, idx) => ({ v, idx }))
       .filter(({ v }) => v.startsWith(cat + ':'))

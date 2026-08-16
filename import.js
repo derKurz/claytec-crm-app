@@ -120,10 +120,9 @@ CRM.importer.rowToContact = function (row, mapping, defaults) {
   c.telFirma = get('telFirma');
   c.faxFirma = get('faxFirma');
   c.emailFirma = get('emailFirma');
-  c.ansprechpartner.name = get('name');
-  c.ansprechpartner.vorname = get('vorname');
-  c.ansprechpartner.telefon = get('telAnsp');
-  c.ansprechpartner.email = get('emailAnsp');
+  // Batch 6f: ansprechpartner ist ein Array — lokal als Objekt aufbauen,
+  // am Ende (falls Daten vorhanden) als 1-elementige Liste übernehmen.
+  const ap = { name: get('name'), vorname: get('vorname'), telefon: get('telAnsp'), email: get('emailAnsp') };
 
   const kategorie = get('kategorie').toUpperCase();
   if (kategorie && CRM.importer.KATEGORIE_TYPE_MAP[kategorie]) {
@@ -132,8 +131,9 @@ CRM.importer.rowToContact = function (row, mapping, defaults) {
 
   // "kein Eintrag" Platzhalter aus Quelldaten bereinigen
   ['name', 'vorname', 'telefon', 'email'].forEach((k) => {
-    if (clean(c.ansprechpartner[k]).toLowerCase() === 'kein eintrag') c.ansprechpartner[k] = '';
+    if (clean(ap[k]).toLowerCase() === 'kein eintrag') ap[k] = '';
   });
+  if (Object.values(ap).some((v) => clean(v))) c.ansprechpartner = [Object.assign(ap, { id: CRM.uid('ap'), istHaupt: true })];
 
   return c;
 };
@@ -229,11 +229,20 @@ CRM.importer.mergeIntoExisting = function (existing, candidate) {
   fieldsToFill.forEach((f) => {
     if (!clean(existing[f]) && clean(candidate[f])) existing[f] = candidate[f];
   });
-  ['name', 'vorname', 'telefon', 'email'].forEach((f) => {
-    if (!clean(existing.ansprechpartner[f]) && clean(candidate.ansprechpartner[f])) {
-      existing.ansprechpartner[f] = candidate.ansprechpartner[f];
-    }
-  });
+  // Batch 6f: ansprechpartner ist ein Array — fehlt existing noch komplett
+  // ein Ansprechpartner, übernimmt er den des Kandidaten (1:1, mit Haupt-
+  // Markierung); existiert schon einer, werden nur leere Felder ergänzt.
+  const existingAps = Array.isArray(existing.ansprechpartner) ? existing.ansprechpartner : (existing.ansprechpartner ? [existing.ansprechpartner] : []);
+  const candidateAp = (Array.isArray(candidate.ansprechpartner) ? candidate.ansprechpartner : (candidate.ansprechpartner ? [candidate.ansprechpartner] : []))[0];
+  if (!existingAps.length && candidateAp) {
+    existing.ansprechpartner = [Object.assign({}, candidateAp, { id: candidateAp.id || CRM.uid('ap'), istHaupt: true })];
+  } else if (existingAps.length && candidateAp) {
+    const mainAp = existingAps.find((a) => a.istHaupt) || existingAps[0];
+    ['name', 'vorname', 'telefon', 'email'].forEach((f) => {
+      if (!clean(mainAp[f]) && clean(candidateAp[f])) mainAp[f] = candidateAp[f];
+    });
+    existing.ansprechpartner = existingAps;
+  }
   if (candidate.isPartner) existing.isPartner = true;
   if (!existing._sources) existing._sources = [existing.source];
   if (!existing._sources.includes(candidate.source)) existing._sources.push(candidate.source);
