@@ -982,6 +982,37 @@ CRM.warnWrongOrigin = function () {
 /* ============================================================
    Mobile-Navigation: Bottom Nav + "Mehr"-Sheet + FAB
    ============================================================ */
+/* Chris (2026-08): "Wo ist die Aktion Hotels versteckt? Ich finde sie
+   nicht." — 14 Einträge in 4 Gruppen sind am Handy schwer zu überblicken.
+   Blendet alles aus, dessen Beschriftung die Sucheingabe nicht enthält,
+   UND die Gruppenüberschrift, wenn kein Eintrag der Gruppe mehr übrig
+   bleibt — "Schließen" bleibt bewusst immer sichtbar. */
+CRM.filterMoreSheet = function (query) {
+  const sheet = document.getElementById('more-sheet');
+  if (!sheet) return;
+  const qn = CRM.searchNorm(String(query || '').trim());
+  const children = Array.from(sheet.children);
+  children.forEach((el) => {
+    if (el.classList.contains('more-sheet-item') && el.id !== 'more-sheet-close') {
+      const match = !qn || CRM.searchNorm(el.textContent).includes(qn);
+      el.classList.toggle('hidden', !match);
+    }
+  });
+  let label = null;
+  let hasVisible = false;
+  const closeGroup = () => { if (label) label.classList.toggle('hidden', !hasVisible); };
+  children.forEach((el) => {
+    if (el.classList.contains('more-sheet-group-label')) {
+      closeGroup();
+      label = el;
+      hasVisible = false;
+    } else if (el.classList.contains('more-sheet-item') && el.id !== 'more-sheet-close' && !el.classList.contains('hidden')) {
+      hasVisible = true;
+    }
+  });
+  closeGroup();
+};
+
 CRM.initMobileNav = function () {
   document.querySelectorAll('.bn-btn[data-tab]').forEach((btn) => {
     btn.addEventListener('click', () => CRM.switchTab(btn.dataset.tab));
@@ -989,9 +1020,14 @@ CRM.initMobileNav = function () {
 
   const overlay = document.getElementById('more-sheet-overlay');
   const eingangBtn = document.getElementById('more-sheet-eingang');
+  const searchInput = document.getElementById('more-sheet-search');
   const openSheet = () => {
     const n = CRM.sync ? CRM.sync.pendingCount() : 0;
     eingangBtn.textContent = n ? `📤 Eingang exportieren (${n})` : '📤 Eingang exportieren';
+    // Suchfeld bei jedem Öffnen zurücksetzen, sonst bleibt ein alter
+    // Filter stehen und Chris fragt sich, wo die restlichen Einträge hin sind.
+    searchInput.value = '';
+    CRM.filterMoreSheet('');
     overlay.classList.remove('hidden');
   };
   const closeSheet = () => overlay.classList.add('hidden');
@@ -1000,6 +1036,7 @@ CRM.initMobileNav = function () {
   document.getElementById('btn-more-header')?.addEventListener('click', openSheet); // Desktop-Kopfzeile
   document.getElementById('more-sheet-close').addEventListener('click', closeSheet);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSheet(); });
+  searchInput.addEventListener('input', () => CRM.filterMoreSheet(searchInput.value));
 
   document.querySelectorAll('.more-sheet-item[data-tab]').forEach((btn) => {
     btn.addEventListener('click', () => { CRM.switchTab(btn.dataset.tab); closeSheet(); });
@@ -1015,6 +1052,10 @@ CRM.initMobileNav = function () {
   document.getElementById('more-sheet-hotels')?.addEventListener('click', () => {
     closeSheet();
     CRM.hotels.openDialog();
+  });
+  document.getElementById('more-sheet-voice-history')?.addEventListener('click', () => {
+    closeSheet();
+    CRM.voice.openHistory();
   });
   document.getElementById('more-sheet-eingang-verarbeiten')?.addEventListener('click', () => {
     closeSheet();

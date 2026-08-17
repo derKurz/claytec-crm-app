@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260816t">
+<link rel="stylesheet" href="style.css?v=20260816v">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -175,6 +175,11 @@
 
 <div id="more-sheet-overlay" class="hidden">
   <div id="more-sheet">
+    <!-- Chris (2026-08): "Wo ist die Aktion Hotels versteckt? Ich finde
+         sie nicht." — 14 Eintraege in 4 Gruppen sind am Handy schwer zu
+         durchsuchen. Ein Suchfeld blendet alles Nicht-Passende aus statt
+         Chris durch die Liste scrollen zu lassen. -->
+    <input type="text" id="more-sheet-search" placeholder="🔍 Suchen (z.B. Hotels, Verlauf, Backup...)" autocomplete="off">
     <div class="more-sheet-group-label">Navigation</div>
     <!-- Kontakte hat seit 2026-08 einen festen Platz in der unteren Leiste
          und ist deshalb hier raus (war doppelt). -->
@@ -186,6 +191,11 @@
     <div class="more-sheet-group-label">Werkzeuge</div>
     <button class="more-sheet-item" id="more-sheet-lager">📦 Muster-Lager</button>
     <button class="more-sheet-item" id="more-sheet-hotels">🏨 Hotels</button>
+    <!-- Chris (2026-08): "wo ist der Verlauf Export, finde ich nicht" —
+         der Export saß bisher NUR im Sprachbefehl-Aufnahme-Dialog, nicht
+         auffindbar ohne erst eine neue Aufnahme zu starten. Jetzt auch
+         hier direkt erreichbar. -->
+    <button class="more-sheet-item" id="more-sheet-voice-history">🕘 Sprachbefehl-Verlauf</button>
     <div class="more-sheet-group-label">Handy ↔ Excel</div>
     <button class="more-sheet-item" id="more-sheet-eingang-verarbeiten">📥 Eingang verarbeiten (Handy → Excel)</button>
     <button class="more-sheet-item" id="more-sheet-tagesabschluss">🗂️ Tagesabschluss (Besuche → Excel)</button>
@@ -202,33 +212,33 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260816t"></script>
-<script src="db-indexeddb.js?v=20260816t"></script>
-<script src="supabase-client.js?v=20260816t"></script>
-<script src="sync.js?v=20260816t"></script>
-<script src="import.js?v=20260816t"></script>
-<script src="activities.js?v=20260816t"></script>
-<script src="task-actions.js?v=20260816t"></script>
-<script src="contact-detail.js?v=20260816t"></script>
-<script src="agenda.js?v=20260816t"></script>
-<script src="dashboard.js?v=20260816t"></script>
-<script src="geocoding.js?v=20260816t"></script>
-<script src="map.js?v=20260816t"></script>
-<script src="speech.js?v=20260816t"></script>
-<script src="settings.js?v=20260816t"></script>
-<script src="projects.js?v=20260816t"></script>
-<script src="network.js?v=20260816t"></script>
-<script src="regions.js?v=20260816t"></script>
-<script src="excel-ablage.js?v=20260816t"></script>
-<script src="vcard.js?v=20260816t"></script>
-<script src="email-parser.js?v=20260816t"></script>
-<script src="windows.js?v=20260816t"></script>
-<script src="werbemittel.js?v=20260816t"></script>
-<script src="yosima-farbtoene.js?v=20260816t"></script>
-<script src="muster.js?v=20260816t"></script>
-<script src="lager.js?v=20260816t"></script>
-<script src="hotels.js?v=20260816t"></script>
-<script src="voice-commands.js?v=20260816t"></script>
-<script src="app.js?v=20260816t"></script>
+<script src="storage.js?v=20260816v"></script>
+<script src="db-indexeddb.js?v=20260816v"></script>
+<script src="supabase-client.js?v=20260816v"></script>
+<script src="sync.js?v=20260816v"></script>
+<script src="import.js?v=20260816v"></script>
+<script src="activities.js?v=20260816v"></script>
+<script src="task-actions.js?v=20260816v"></script>
+<script src="contact-detail.js?v=20260816v"></script>
+<script src="agenda.js?v=20260816v"></script>
+<script src="dashboard.js?v=20260816v"></script>
+<script src="geocoding.js?v=20260816v"></script>
+<script src="map.js?v=20260816v"></script>
+<script src="speech.js?v=20260816v"></script>
+<script src="settings.js?v=20260816v"></script>
+<script src="projects.js?v=20260816v"></script>
+<script src="network.js?v=20260816v"></script>
+<script src="regions.js?v=20260816v"></script>
+<script src="excel-ablage.js?v=20260816v"></script>
+<script src="vcard.js?v=20260816v"></script>
+<script src="email-parser.js?v=20260816v"></script>
+<script src="windows.js?v=20260816v"></script>
+<script src="werbemittel.js?v=20260816v"></script>
+<script src="yosima-farbtoene.js?v=20260816v"></script>
+<script src="muster.js?v=20260816v"></script>
+<script src="lager.js?v=20260816v"></script>
+<script src="hotels.js?v=20260816v"></script>
+<script src="voice-commands.js?v=20260816v"></script>
+<script src="app.js?v=20260816v"></script>
 </body>
 </html>

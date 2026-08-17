@@ -480,6 +480,7 @@ body.resizing-col{cursor:col-resize;user-select:none}
   padding:10px 12px;border-radius:8px;cursor:pointer;
 }
 .more-sheet-item:hover{background:var(--bg-elev2)}
+#more-sheet-search{margin-bottom:2px}
 /* Abschnittsüberschriften im "Mehr"-Sheet (Batch 5b) — gruppiert die 13
    Einträge für schnellere Orientierung, ohne einen einzigen zu entfernen. */
 .more-sheet-group-label{
