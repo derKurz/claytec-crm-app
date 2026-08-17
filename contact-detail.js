@@ -618,9 +618,9 @@ CRM.renderContactTasks = function (contactId) {
     const st = CRM.getTaskDueStatus(t);
     const cls = st.status === 'overdue' ? 'badge-overdue' : '';
     const musterBtn = t.done ? '' : `<button class="btn btn-sm" title="Muster/Musterbuch für diese Aufgabe bestellen und Aufgabe erledigen" onclick="CRM.muster.open('${contactId}','${t.id}')">📦 Muster</button>`;
-    return `<div class="list-item" style="cursor:default">
+    return `<div class="list-item">
       <input type="checkbox" style="width:auto;margin-right:10px" ${t.done ? 'checked' : ''} onchange="CRM.taskActions.toggleDone('${t.id}',CRM.taskActions.uiCtx('contact','${contactId}'))">
-      <div class="li-main"><div class="li-title" style="${t.done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc2(t.title)}</div>
+      <div class="li-main" onclick="CRM.taskActions.openEditor('${t.id}',CRM.taskActions.uiCtx('contact','${contactId}'))" style="cursor:pointer"><div class="li-title" style="${t.done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc2(t.title)}</div>
         <div class="li-sub"><span class="badge ${cls}">fällig ${esc2(t.due)}</span></div></div>
       ${musterBtn}
       ${CRM.taskActions.menuHtml(t.id, 'contact', contactId)}

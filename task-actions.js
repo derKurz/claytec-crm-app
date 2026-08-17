@@ -179,7 +179,12 @@ CRM.taskActions._contactChipHtml = function (contactId) {
   if (!contactId) return '<p style="color:var(--text-dim);font-size:13px;margin:2px 0">Kein Kontakt zugeordnet.</p>';
   const c = CRM.db.getContact(contactId);
   if (!c) return '<p style="color:var(--text-dim);font-size:13px;margin:2px 0">Kein Kontakt zugeordnet.</p>';
-  return `<div class="badge" style="display:inline-flex;align-items:center;gap:6px;margin:2px 0">${esc(CRM.displayNameDisambig ? CRM.displayNameDisambig(c) : c.firma1)}
+  // Name selbst öffnet das Kontaktprofil (Sprung, den der frühere reine
+  // Zeilen-Klick erlaubte, bevor der Klick auf den Editor umgestellt
+  // wurde) — das "✕" bleibt eigenständig klickbar, um nur die Zuordnung
+  // zu entfernen, ohne wegzunavigieren.
+  return `<div class="badge" style="display:inline-flex;align-items:center;gap:6px;margin:2px 0">
+    <span style="cursor:pointer;text-decoration:underline" title="Kontaktprofil öffnen" onclick="CRM.taskActions._cancelEditor();CRM.openContactDetail('${contactId}')">${esc(CRM.displayNameDisambig ? CRM.displayNameDisambig(c) : c.firma1)}</span>
     <span style="cursor:pointer" title="Kontakt entfernen" onclick="CRM.taskActions._editorSetContact(null)">✕</span></div>`;
 };
 

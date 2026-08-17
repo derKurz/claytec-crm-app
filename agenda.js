@@ -128,10 +128,18 @@ CRM.taskRow = function (t, st) {
   // Dieselben Aktionen wie Startseite/Kontaktprofil (Batch 6a), über
   // CRM.taskActions.* — kein eigener Verschieben-/Bearbeiten-Code hier.
   const ctxExpr = `CRM.taskActions.uiCtx('agenda')`;
+  // Chris-Feedback (2026-08): "wenn ich auf die Aufgabe drücke, passiert
+  // nichts... muss ein Feld aufgehen, um es direkt bearbeiten zu können."
+  // Vorher öffnete ein Klick (nur falls ein Kontakt/Projekt verknüpft war)
+  // dessen Profil — bei Aufgaben OHNE Verknüpfung (z.B. per Sprachbefehl
+  // ohne erkannten Kontakt) passierte buchstäblich nichts. Jetzt öffnet
+  // der Klick IMMER den vorhandenen Bearbeiten-Dialog (CRM.taskActions.
+  // openEditor) — der zeigt Titel/Fälligkeit/erledigt UND erlaubt, den
+  // Kontakt direkt hier nachträglich zuzuordnen oder zu wechseln.
   return `
     <div class="list-item">
       <input type="checkbox" style="width:auto;margin-right:10px" onchange="CRM.taskActions.toggleDone('${t.id}',${ctxExpr})">
-      <div class="li-main" ${c ? `onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer"` : (p ? `onclick="CRM.openProjectDetail('${p.id}')" style="cursor:pointer"` : '')}>
+      <div class="li-main" onclick="CRM.taskActions.openEditor('${t.id}',${ctxExpr})" style="cursor:pointer">
         <div class="li-title">✓ ${esc(t.title)}</div>
         <div class="li-sub">${sub} · ${dueLabel}</div>
       </div>
