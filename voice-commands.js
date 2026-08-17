@@ -55,7 +55,10 @@ CRM.voice._TRIGGERS = [
   { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s*(?:anlegen\s+|erstellen\s+)?bei\b/gi },
   { type: 'note', re: /\bneue\s+notiz\b\s*:?/gi },
   { type: 'muster', re: /\bmuster\s+(?:versenden|schicken|senden)\b/gi },
-  { type: 'task', re: /\baufgabe\s*:\s*/gi },
+  // "Aufgabe für Firma Meier: ..." — der optionale Teil in der Klammer
+  // fängt den Kontaktnamen ein (Gruppe 1), damit die Aufgabe direkt beim
+  // richtigen Kontakt landet statt als "Allgemeine Aufgabe".
+  { type: 'task', re: /\baufgabe\s*(?:f(?:ü|ue)r\s+(?:die\s+|den\s+)?(?:firma\s+)?([^:]{2,60}?)\s*)?:\s*/gi },
 ];
 
 /* "Verknüpfen"-Muster ist ein Sonderfall: das linke Ziel steht VOR dem
@@ -127,7 +130,7 @@ CRM.voice.parseUtterance = function (transcript) {
     const re = new RegExp(trig.re.source, trig.re.flags); // frischer lastIndex pro Aufruf
     let m;
     while ((m = re.exec(masked))) {
-      found.push({ type: trig.type, start: m.index, triggerEnd: m.index + m[0].length });
+      found.push({ type: trig.type, start: m.index, triggerEnd: m.index + m[0].length, targetRaw: m[1] || null });
     }
   });
   found.sort((a, b) => a.start - b.start);
@@ -140,7 +143,7 @@ CRM.voice.parseUtterance = function (transcript) {
     const periodIdx = text.indexOf('.', f.triggerEnd);
     if (periodIdx !== -1 && periodIdx < end) end = periodIdx;
     const contentRaw = CRM.voice._cleanClause(text.slice(f.triggerEnd, end));
-    return { intent: f.type, start: f.start, end: end, contentRaw: contentRaw, rawText: text.slice(f.start, end).trim() };
+    return { intent: f.type, start: f.start, end: end, contentRaw: contentRaw, targetRaw: f.targetRaw || null, rawText: text.slice(f.start, end).trim() };
   });
 
   /* ---- 4) Unverbrauchte Reststücke einsammeln (nichts stillschweigend
@@ -182,6 +185,22 @@ CRM.voice.parseUtterance = function (transcript) {
         || { status: 'notfound', query: '(kein vorheriger Kontakt im Satz erkannt)', contact: null };
     } else if (cmd.intent === 'task') {
       cmd.title = cmd.contentRaw;
+      if (cmd.targetRaw) {
+        // Ausdrücklich genannt ("Aufgabe für Meier: ...") — muss auch
+        // aufgelöst werden, sonst darf der Befehl nicht durchlaufen.
+        cmd.targetExplicit = true;
+        cmd.resolution = CRM.voice.resolveContact(cmd.targetRaw, '');
+      } else {
+        // Nicht genannt: den zuletzt im Satz aufgelösten Kontakt als
+        // VORSCHLAG übernehmen ("Besuch bei X. Aufgabe: ..." gehört fast
+        // immer zu X). Bewusst eine KOPIE, keine geteilte Referenz wie bei
+        // Notiz/Muster: dort hat Chris den Bezug ausgesprochen, hier raten
+        // wir ihn. Eine Korrektur an der Aufgabe darf deshalb nicht den
+        // Besuch mitverändern (gleiche Falle wie bei _promoteUnrecognized).
+        cmd.targetExplicit = false;
+        const ctx = CRM.voice._contextContact(all, idx);
+        cmd.resolution = ctx ? Object.assign({}, ctx) : null;
+      }
     } else if (cmd.intent === 'link') {
       cmd.leftResolution = cmd.leftUsesContext
         ? (CRM.voice._contextContact(all, idx) || { status: 'notfound', query: '(kein vorheriger Kontakt im Satz erkannt)', contact: null })
@@ -350,9 +369,18 @@ CRM.voice._candRowHtml = function (x, kind) {
    "nicht zugeordnet" nachträglich erzeugten Notiz) kann falsch sein und
    muss ohne Umweg korrigierbar bleiben. */
 CRM.voice._entityPickerHtml = function (res, idx, side, kind) {
-  if (!res) return '';
   const searchBox = '<input type="text" class="voice-search-input" placeholder="' + (kind === 'project' ? 'Projekt/Baustelle suchen…' : 'Name suchen…') + '" oninput="CRM.voice._onSearchInput(this,' + idx + ',\'' + side + '\',\'' + kind + '\')">'
     + '<div class="voice-search-results"></div>';
+
+  // Gar keine Auflösung (z.B. allgemeine Aufgabe ohne Kontakt): trotzdem
+  // ein eingeklapptes Suchfeld anbieten, damit sich nachträglich einer
+  // zuordnen lässt — sonst wäre die Zuordnung nur beim Diktieren möglich.
+  if (!res) {
+    return '<div class="voice-cand-list voice-cand-collapsed" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
+      + '<button type="button" class="btn btn-sm voice-cand-toggle" onclick="this.closest(\'.voice-cand-list\').classList.toggle(\'voice-cand-collapsed\')">＋ Kontakt zuordnen</button>'
+      + '<div class="voice-cand-toggle-body">' + searchBox + '</div>'
+      + '</div>';
+  }
 
   if (res.status === 'resolved') {
     return '<div class="voice-cand-list voice-cand-collapsed" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
@@ -411,9 +439,26 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
   } else if (cmd.intent === 'task') {
     const title = cmd.title || '';
     if (!title) ready = false;
-    desc = 'Aufgabe anlegen — fällig heute';
+    const res = cmd.resolution;
+    let bezug;
+    if (res && res.status === 'resolved') bezug = ' für <strong>' + esc(CRM.voice._contactLabel(res.contact)) + '</strong>';
+    else if (res) bezug = ' für „' + esc(res.query) + '" <span style="color:var(--text-dim)">(noch nicht zugeordnet)</span>';
+    else bezug = ' <span style="color:var(--text-dim)">(ohne Kontakt)</span>';
+    desc = 'Aufgabe anlegen' + bezug + ' — fällig heute';
+    // Ein ausdrücklich genannter, aber nicht gefundener Kontakt blockiert;
+    // ein bloß geratener Kontext-Bezug nicht (die Aufgabe ist auch ohne
+    // Zuordnung sinnvoll).
+    if (cmd.targetExplicit) check(res);
     candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Aufgabentext <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren)</span></label>'
       + '<input type="text" class="voice-edit-input" value="' + esc(title) + '" placeholder="Aufgabentext eingeben…" oninput="CRM.voice._updateCmdField(' + idx + ',\'title\',this.value)">';
+    candidatesHtml += CRM.voice._entityPickerHtml(res, idx, 'target', 'contact');
+    // Ausweg für JEDEN Zustand mit einer (noch) unerledigten Zuordnung —
+    // nicht nur "resolved": ein genannter, aber nicht gefundener Name
+    // (Verhörer/Tippfehler) darf die Aufgabe nicht blockieren, wenn Chris
+    // sie lieber ohne Kontakt speichert, statt erst die Suche zu bemühen.
+    if (res) {
+      candidatesHtml += '<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.voice._clearTaskContact(' + idx + ')">✕ ohne Kontakt anlegen</button>';
+    }
   } else if (cmd.intent === 'link') {
     desc = '<strong>' + CRM.voice._resDesc(cmd.leftResolution, 'contact') + '</strong> verknüpfen mit '
       + (cmd.rightKind === 'project' ? 'Projekt ' : '')
@@ -516,6 +561,9 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   if (side === 'left') res = cmd.leftResolution;
   else if (side === 'right') res = cmd.rightResolution;
   else res = cmd.resolution;
+  // Noch gar keine Auflösung vorhanden (allgemeine Aufgabe, der Chris
+  // jetzt erst einen Kontakt zuweist) — hier anlegen statt abbrechen.
+  if (!res && side === 'target') { res = { status: 'notfound', query: '', contact: null }; cmd.resolution = res; }
   if (!res) return;
   res.status = 'resolved';
   res.candidates = null;
@@ -547,6 +595,17 @@ CRM.voice._updateCmdField = function (idx, field, value) {
     const badge = row.querySelector('.voice-cmd-badge');
     if (badge) badge.textContent = ready ? '✓' : '?';
   }
+};
+
+/* Aufgabe bewusst ohne Kontakt anlegen — der aus dem Satzzusammenhang
+   geratene Bezug kann falsch sein (z.B. eine allgemeine Büroaufgabe, die
+   nur zufällig nach einem Besuch diktiert wurde). */
+CRM.voice._clearTaskContact = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.resolution = null;
+  cmd.targetExplicit = false;
+  CRM.voice._renderConfirmModal();
 };
 
 /* Wandelt einen bisher nicht zugeordneten Satzteil (intent:'unrecognized')
@@ -617,8 +676,14 @@ CRM.voice.executeConfirmed = function () {
         done++;
       } else skipped++;
     } else if (cmd.intent === 'task') {
-      if (cmd.title) {
-        CRM.db.addTask({ title: cmd.title, due: CRM.ymd(new Date()), contactId: null });
+      const res = cmd.resolution;
+      const zielOffen = cmd.targetExplicit && !(res && res.status === 'resolved');
+      if (cmd.title && !zielOffen) {
+        CRM.db.addTask({
+          title: cmd.title,
+          due: CRM.ymd(new Date()),
+          contactId: (res && res.status === 'resolved') ? res.contact.id : null,
+        });
         done++;
       } else skipped++;
     } else if (cmd.intent === 'link') {
