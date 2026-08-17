@@ -52,7 +52,11 @@ CRM.voice._TRIGGERS = [
   // "anlegen"/"erstellen" zwischen "Besuch" und "bei" toleriert (Chris-
   // Beispiel 2026-08: "Besuch ANLEGEN bei ..." schlug bisher komplett fehl
   // und riss den kompletten Satzrest mit in den unrecognized-Topf).
-  { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s*(?:anlegen\s+|erstellen\s+)?bei\b/gi },
+  // Zweite Auslöser-Variante "war (heute/gerade/...) bei" (Chris: "das ist
+  // normaler Sprachgebrauch, wichtig") — beim 30-Satz-Testlauf gefunden:
+  // "War heute bei Erdraum..." fiel bisher KOMPLETT in unrecognized, weil
+  // nur "Besuch bei" als Auslöser galt. "ich" davor optional.
+  { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s*(?:anlegen\s+|erstellen\s+)?bei\b|\b(?:ich\s+)?war\s+(?:heute\s+|gerade\s+|eben\s+|vorhin\s+|kurz\s+)?bei\b/gi },
   { type: 'note', re: /\bneue\s+notiz\b\s*:?/gi },
   { type: 'muster', re: /\bmuster\s+(?:versenden|schicken|senden)\b/gi },
   // "Aufgabe für Firma Meier: ..." — der optionale Teil in der Klammer
@@ -492,15 +496,22 @@ CRM.voice.confirmAndExecute = function (commands, rawText) {
 /* Chris-Frage (2026-08): "wo finde ich den gesprochenen Text? ist der
    irgendwo gespeichert?" — Antwort war bisher: nirgends, _lastTranscript
    lebt nur im Arbeitsspeicher der Seite und ist nach dem Schließen weg.
-   Genau der Rohtext ist aber das, was zum Nachstellen eines gemeldeten
-   Fehlers gebraucht wird. Jetzt: die letzten 20 Sätze (samt grober
-   Erkennung, aber OHNE die aufgelösten Kontaktdaten) landen in den
-   App-Settings — rein lokal, wie alles hier, nichts Cloud. */
+
+   Chris-Folgefrage (2026-08): "kannst du dir nicht einen Speicher ablegen,
+   wo gesprochene Aufgaben abgelegt werden, um sie spaeter als Testlauf an
+   reellen Praxisbeispielen zu nutzen?" — mit 20 rollierenden Eintraegen
+   (Vortag) war das nur ein Debug-Puffer, kein wachsender Testkorpus.
+   Deckel jetzt bei 300 (praktisch "alles" bei Chris' Nutzungsmenge) UND
+   ein Export-Knopf, der ALLE gespeicherten Saetze als Text kopiert — die
+   kann Chris jederzeit einfach hier reinpasten, dann laufen sie durch
+   genau die Testschleife, die eben mit erfundenen Saetzen lief, diesmal
+   aber mit echten. Weiterhin rein lokal, nichts Cloud. */
+CRM.voice._HISTORY_LIMIT = 300;
 CRM.voice._logHistory = function (rawText, commands) {
   const text = String(rawText || '').trim();
   if (!text) return;
   const settings = CRM.db.getSettings();
-  const history = (settings.voiceHistory || []).slice(0, 19);
+  const history = (settings.voiceHistory || []).slice(0, CRM.voice._HISTORY_LIMIT - 1);
   const kurz = (commands || []).map((c) => {
     if (c.intent === 'unrecognized') return 'nicht zugeordnet: „' + c.rawText + '"';
     if (c.intent === 'unsupported') return 'nicht unterstützt: „' + c.rawText + '"';
@@ -510,10 +521,14 @@ CRM.voice._logHistory = function (rawText, commands) {
   CRM.db.saveSettings({ voiceHistory: history });
 };
 
+// Nur die letzten 50 werden gerendert (lesbar bleiben) — der Export-Knopf
+// nimmt trotzdem ALLE, unabhängig von der Anzeige.
+CRM.voice._HISTORY_SHOW = 50;
 CRM.voice.openHistory = function () {
   const history = (CRM.db.getSettings().voiceHistory || []);
-  const rows = history.length
-    ? history.map((h) => {
+  const shown = history.slice(0, CRM.voice._HISTORY_SHOW);
+  const rows = shown.length
+    ? shown.map((h) => {
         const datum = new Date(h.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
         return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'
           + '<div style="font-size:11px;color:var(--text-dim)">' + esc(datum) + '</div>'
@@ -524,10 +539,28 @@ CRM.voice.openHistory = function () {
           + '</div></div>';
       }).join('')
     : '<p style="color:var(--text-dim)">Noch nichts aufgezeichnet — nach dem nächsten Sprachbefehl steht er hier.</p>';
+  const mehrHinweis = history.length > shown.length
+    ? '<p style="color:var(--text-dim);font-size:12px">... und ' + (history.length - shown.length) + ' weitere (im Export enthalten).</p>' : '';
   CRM.openModal('<h2>🕘 Verlauf erkannter Sätze</h2>'
-    + '<p style="color:var(--text-dim);font-size:13px">Nur auf diesem Gerät gespeichert (letzte 20). Zum Weitergeben Text markieren und kopieren.</p>'
-    + rows
+    + '<p style="color:var(--text-dim);font-size:13px">Nur auf diesem Gerät gespeichert (bis zu ' + CRM.voice._HISTORY_LIMIT + '). "Alle exportieren" kopiert jeden gespeicherten Satz als Text — zum Einfügen in den Chat für einen erneuten Testlauf an echten Beispielen.</p>'
+    + (history.length ? '<div class="row" style="margin-bottom:10px"><button class="btn btn-sm" onclick="CRM.voice.exportHistory()">📋 Alle ' + history.length + ' exportieren</button></div>' : '')
+    + rows + mehrHinweis
     + '<div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>');
+};
+
+CRM.voice.exportHistory = function () {
+  const history = (CRM.db.getSettings().voiceHistory || []);
+  if (!history.length) return;
+  const text = history.slice().reverse().map((h) => {
+    const datum = new Date(h.ts).toLocaleString('de-DE');
+    return datum + ' — ' + h.text + '  [' + h.erkannt + ']';
+  }).join('\n');
+  const done = () => CRM.toast('✓ ' + history.length + ' Sätze in die Zwischenablage kopiert.', 'success');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+  } else {
+    CRM.toast('Kopieren in diesem Browser nicht verfügbar.', 'error');
+  }
 };
 
 CRM.voice.reuseFromHistory = function (i) {
