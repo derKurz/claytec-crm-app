@@ -139,6 +139,15 @@ CRM.voice.parseUtterance = function (transcript) {
   });
   found.sort((a, b) => a.start - b.start);
 
+  // "war bei X UND BEI Y wegen ..." — Chris nennt bei einem gemeinsamen
+  // Bauvorhaben öfter zwei Firmen in einem Atemzug ("Ich war heute bei
+  // Erdraum und bei Heinrich Schmid wegen Bauvorhaben Tanzhaus
+  // Donauwörth."). Ohne Aufteilung würde die komplette Spanne als EIN
+  // Name gesucht — Y verschwindet dann spurlos (verschluckt vom
+  // Wortstamm-Fallback in resolveContact, der Y als bloßen Reststring
+  // ignoriert). Nur bei intent 'visit' relevant: die anderen Trigger
+  // (Notiz/Muster/Aufgabe) beziehen sich ohnehin nur auf EINEN Kontakt.
+  const VISIT_CHAIN_RE = /\s+und\s+bei\s+/gi;
   const triggerCmds = found.map((f, i) => {
     let end = found[i + 1] ? found[i + 1].start : text.length;
     // an einer bereits vergebenen Verknüpfen-Spanne stoppen, falls die
@@ -147,8 +156,16 @@ CRM.voice.parseUtterance = function (transcript) {
     const periodIdx = text.indexOf('.', f.triggerEnd);
     if (periodIdx !== -1 && periodIdx < end) end = periodIdx;
     const contentRaw = CRM.voice._cleanClause(text.slice(f.triggerEnd, end));
-    return { intent: f.type, start: f.start, end: end, contentRaw: contentRaw, targetRaw: f.targetRaw || null, rawText: text.slice(f.start, end).trim() };
-  });
+    const rawText = text.slice(f.start, end).trim();
+
+    if (f.type === 'visit') {
+      const teile = contentRaw.split(VISIT_CHAIN_RE).map((p) => CRM.voice._cleanClause(p)).filter(Boolean);
+      if (teile.length > 1) {
+        return teile.map((p) => ({ intent: 'visit', start: f.start, end: end, contentRaw: p, rawText: rawText }));
+      }
+    }
+    return [{ intent: f.type, start: f.start, end: end, contentRaw: contentRaw, targetRaw: f.targetRaw || null, rawText: rawText }];
+  }).flat();
 
   /* ---- 4) Unverbrauchte Reststücke einsammeln (nichts stillschweigend
      verschlucken) — je nachdem ob sie wie ein "senden/schicken"-Wunsch
