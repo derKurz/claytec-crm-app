@@ -485,6 +485,56 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
 CRM.voice.confirmAndExecute = function (commands, rawText) {
   CRM.voice._pending = commands || [];
   if (rawText !== undefined) CRM.voice._lastTranscript = rawText;
+  CRM.voice._logHistory(rawText, commands);
+  CRM.voice._renderConfirmModal();
+};
+
+/* Chris-Frage (2026-08): "wo finde ich den gesprochenen Text? ist der
+   irgendwo gespeichert?" — Antwort war bisher: nirgends, _lastTranscript
+   lebt nur im Arbeitsspeicher der Seite und ist nach dem Schließen weg.
+   Genau der Rohtext ist aber das, was zum Nachstellen eines gemeldeten
+   Fehlers gebraucht wird. Jetzt: die letzten 20 Sätze (samt grober
+   Erkennung, aber OHNE die aufgelösten Kontaktdaten) landen in den
+   App-Settings — rein lokal, wie alles hier, nichts Cloud. */
+CRM.voice._logHistory = function (rawText, commands) {
+  const text = String(rawText || '').trim();
+  if (!text) return;
+  const settings = CRM.db.getSettings();
+  const history = (settings.voiceHistory || []).slice(0, 19);
+  const kurz = (commands || []).map((c) => {
+    if (c.intent === 'unrecognized') return 'nicht zugeordnet: „' + c.rawText + '"';
+    if (c.intent === 'unsupported') return 'nicht unterstützt: „' + c.rawText + '"';
+    return c.intent;
+  }).join(', ') || '(nichts erkannt)';
+  history.unshift({ ts: new Date().toISOString(), text: text, erkannt: kurz });
+  CRM.db.saveSettings({ voiceHistory: history });
+};
+
+CRM.voice.openHistory = function () {
+  const history = (CRM.db.getSettings().voiceHistory || []);
+  const rows = history.length
+    ? history.map((h) => {
+        const datum = new Date(h.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'
+          + '<div style="font-size:11px;color:var(--text-dim)">' + esc(datum) + '</div>'
+          + '<div style="margin:4px 0;user-select:text">„' + esc(h.text) + '"</div>'
+          + '<div style="font-size:12px;color:var(--text-dim)">' + esc(h.erkannt) + '</div>'
+          + '<div class="row" style="margin-top:6px">'
+          + '<button class="btn btn-sm" onclick="CRM.voice.reuseFromHistory(' + history.indexOf(h) + ')">↺ In Vorschau erneut prüfen</button>'
+          + '</div></div>';
+      }).join('')
+    : '<p style="color:var(--text-dim)">Noch nichts aufgezeichnet — nach dem nächsten Sprachbefehl steht er hier.</p>';
+  CRM.openModal('<h2>🕘 Verlauf erkannter Sätze</h2>'
+    + '<p style="color:var(--text-dim);font-size:13px">Nur auf diesem Gerät gespeichert (letzte 20). Zum Weitergeben Text markieren und kopieren.</p>'
+    + rows
+    + '<div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>');
+};
+
+CRM.voice.reuseFromHistory = function (i) {
+  const h = (CRM.db.getSettings().voiceHistory || [])[i];
+  if (!h) return;
+  CRM.voice._lastTranscript = h.text;
+  CRM.voice._pending = CRM.voice.parseUtterance(h.text);
   CRM.voice._renderConfirmModal();
 };
 
@@ -721,7 +771,10 @@ CRM.voice.openCapture = function () {
   CRM.voice._pending = null;
   CRM.voice._lastTranscript = '';
   CRM.openModal(`
-    <h2>🎤 Sprachbefehl</h2>
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <h2 style="margin:0">🎤 Sprachbefehl</h2>
+      <button class="btn btn-sm" onclick="CRM.voice.openHistory()" title="Bisher erkannte Sätze ansehen (lokal gespeichert)">🕘 Verlauf</button>
+    </div>
     <p style="color:var(--text-dim);font-size:13px">Push-to-Talk: Aufnahme starten, sprechen, stoppen. Text bei Bedarf korrigieren, dann prüfen — jeder erkannte Befehl wird danach einzeln bestätigt, bevor etwas gespeichert wird.</p>
     <div id="voice-status" class="speech-status">Bereit.</div>
     <div style="margin:12px 0">
