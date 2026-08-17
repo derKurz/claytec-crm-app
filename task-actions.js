@@ -164,6 +164,7 @@ CRM.taskActions.openEditor = function (taskId, opts) {
     <label style="margin-top:8px">Bauvorhaben / Projekt</label>
     <select id="te-project"><option value="">Kein Projekt</option>${projectOpts}</select>
     <div class="modal-footer">
+      <button class="btn" style="border-color:var(--red);color:var(--red);margin-right:auto" onclick="CRM.taskActions.removeFromEditor('${taskId}')">🗑 Löschen</button>
       <button class="btn" onclick="CRM.taskActions._cancelEditor()">Abbrechen</button>
       <button class="btn btn-primary" onclick="CRM.taskActions._saveEditor()">💾 Speichern</button>
     </div>
@@ -221,6 +222,16 @@ CRM.taskActions._cancelEditor = function () {
     const t = CRM.db.getTask(st.taskId);
     CRM.taskActions._refresh(Object.assign({ contactId: t ? t.contactId : null, projectId: t ? t.projectId : null }, st.opts));
   }
+};
+
+// Löschen direkt aus dem Bearbeiten-Dialog (Chris: "ich kann den Eintrag
+// nicht ... löschen") — bisher gab es das nur über das separate
+// "…"-Menü, im Dialog selbst fehlte die Möglichkeit ganz.
+CRM.taskActions.removeFromEditor = function (taskId) {
+  const st = CRM.taskActions._state;
+  CRM.taskActions._state = null;
+  CRM.closeModal();
+  CRM.taskActions.remove(taskId, st ? st.opts : {});
 };
 
 CRM.taskActions._saveEditor = function () {

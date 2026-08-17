@@ -415,9 +415,28 @@ CRM.startOfWeek = function (d) {
   return x;
 };
 
+/* Ein Eintrag pro Tag: direkt öffnen (Aufgabe -> Bearbeiten-Dialog,
+   Besuch -> Kontakt). Mehrere Einträge: die Monats-/Wochenzelle ist am
+   Handy zu klein, um einzelne Zeilen zuverlässig zu treffen (Chris:
+   "wird nur der erste Eintrag geöffnet") — springt stattdessen in die
+   Tagesansicht, die alle als Liste zeigt. */
 CRM.calDayCellEvents = function (dateStr, events) {
   const list = events[dateStr] || [];
-  return list.map((e) => `<div class="cal-ev" style="border-left:3px solid ${e.color}" onclick="CRM.openContactDetail('${e.contactId}')" title="${esc(e.label)}">${esc(e.label)}</div>`).join('');
+  if (list.length > 1) {
+    return list.map((e) => `<div class="cal-ev" style="border-left:3px solid ${e.color}" onclick="CRM.openCalDay('${dateStr}')" title="${esc(e.label)}">${esc(e.label)}</div>`).join('');
+  }
+  return list.map((e) => `<div class="cal-ev" style="border-left:3px solid ${e.color}" onclick="${CRM.calEventOpenExpr(e)}" title="${esc(e.label)}">${esc(e.label)}</div>`).join('');
+};
+
+CRM.calEventOpenExpr = function (e) {
+  return e.type === 'task'
+    ? `CRM.taskActions.openEditor('${e.id}',CRM.taskActions.uiCtx('agenda'))`
+    : `CRM.openContactDetail('${e.contactId}')`;
+};
+
+CRM.openCalDay = function (dateStr) {
+  CRM._calAnchor = dateStr;
+  CRM.setCalMode('tag');
 };
 
 CRM.calMonthGrid = function (anchor, events) {
@@ -458,10 +477,16 @@ CRM.calWeekGrid = function (start, events) {
 CRM.calDayList = function (dateStr, events) {
   const list = events[dateStr] || [];
   if (!list.length) return '<p style="color:var(--text-dim);font-size:13px;margin-top:12px">Keine fälligen Besuche oder Aufgaben an diesem Tag.</p>';
+  // Chris-Feedback (2026-08): Aufgaben OHNE Kontaktzuordnung (z.B. per
+  // Sprachbefehl allgemein angelegt) ließen sich hier nicht öffnen — der
+  // Klick ging fest auf CRM.openContactDetail(null), das bei fehlender
+  // Kontakt-ID nichts tut. Aufgaben öffnen jetzt CRM.taskActions.
+  // openEditor (ändern/zuordnen/löschen dort), Besuche weiter den Kontakt.
   return list.map((e) => `
-    <div class="list-item" onclick="CRM.openContactDetail('${e.contactId}')" style="cursor:pointer">
-      <div class="li-main"><div class="li-title">${esc(e.label)}</div>
+    <div class="list-item">
+      <div class="li-main" onclick="${CRM.calEventOpenExpr(e)}" style="cursor:pointer"><div class="li-title">${esc(e.label)}</div>
       <div class="li-sub">${e.type === 'task' ? 'Aufgabe' : 'Besuch fällig'}</div></div>
+      ${e.type === 'task' ? CRM.taskActions.menuHtml(e.id, 'agenda') : ''}
     </div>`).join('');
 };
 
