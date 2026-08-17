@@ -148,6 +148,14 @@ CRM.voice.parseUtterance = function (transcript) {
   // ignoriert). Nur bei intent 'visit' relevant: die anderen Trigger
   // (Notiz/Muster/Aufgabe) beziehen sich ohnehin nur auf EINEN Kontakt.
   const VISIT_CHAIN_RE = /\s+und\s+bei\s+/gi;
+  // "...wegen Bauvorhaben/BV/Objekt/Projekt X" am Ende eines Besuch-Satzes:
+  // Chris (2026-08) — "bei Projekten ist es wichtig, alle Eintragungen
+  // aller beteiligten Unternehmen an einer Stelle zu sehen". Die Projekt-
+  // Zeitleiste (CRM.renderProjectTimeline) liest bereits p.contactIds und
+  // zeigt automatisch alle Besuche verknüpfter Kontakte — es fehlte nur
+  // die Verknüpfung selbst. Gilt für JEDEN Besuch der ganzen Kette (ein
+  // gemeinsam genanntes Bauvorhaben betrifft alle genannten Firmen).
+  const PROJECT_CLAUSE_RE = /\s*wegen\s+(?:des\s+|dem\s+|der\s+)?(?:bauvorhabens?|bv|objekts?|projekts?)\s+(.+)$/i;
   const triggerCmds = found.map((f, i) => {
     let end = found[i + 1] ? found[i + 1].start : text.length;
     // an einer bereits vergebenen Verknüpfen-Spanne stoppen, falls die
@@ -159,10 +167,16 @@ CRM.voice.parseUtterance = function (transcript) {
     const rawText = text.slice(f.start, end).trim();
 
     if (f.type === 'visit') {
-      const teile = contentRaw.split(VISIT_CHAIN_RE).map((p) => CRM.voice._cleanClause(p)).filter(Boolean);
-      if (teile.length > 1) {
-        return teile.map((p) => ({ intent: 'visit', start: f.start, end: end, contentRaw: p, rawText: rawText }));
-      }
+      const projMatch = contentRaw.match(PROJECT_CLAUSE_RE);
+      const contentOhneProjekt = projMatch ? CRM.voice._cleanClause(contentRaw.slice(0, projMatch.index)) : contentRaw;
+      // GETEILTE Referenz (bewusst, anders als bei Kontakt-Zuordnungen):
+      // ein gemeinsam genanntes Bauvorhaben ist dieselbe Sache für alle
+      // Besuche der Kette — wählt Chris später ein anderes Projekt, soll
+      // sich das bei allen betroffenen Zeilen mit aktualisieren.
+      const projectResolution = projMatch ? CRM.voice.resolveProject(projMatch[1], '') : null;
+      const teile = contentOhneProjekt.split(VISIT_CHAIN_RE).map((p) => CRM.voice._cleanClause(p)).filter(Boolean);
+      const namen = teile.length ? teile : [contentOhneProjekt];
+      return namen.map((p) => ({ intent: 'visit', start: f.start, end: end, contentRaw: p, rawText: rawText, projectResolution: projectResolution }));
     }
     return [{ intent: f.type, start: f.start, end: end, contentRaw: contentRaw, targetRaw: f.targetRaw || null, rawText: rawText }];
   }).flat();
@@ -447,6 +461,13 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     desc = 'Besuch anlegen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong> — heute';
     check(cmd.resolution);
     candidatesHtml += CRM.voice._entityPickerHtml(cmd.resolution, idx, 'target', 'contact');
+    if (cmd.projectResolution) {
+      // Projekt-Verknüpfung ist ein Zusatznutzen, kein Muss: bleibt das
+      // Projekt unklar, wird der Besuch trotzdem angelegt (nur eben ohne
+      // Verknüpfung) — daher bewusst NICHT über check() blockierend.
+      desc += ' · Bauvorhaben <strong>' + CRM.voice._resDesc(cmd.projectResolution, 'project') + '</strong>';
+      candidatesHtml += CRM.voice._entityPickerHtml(cmd.projectResolution, idx, 'project', 'project');
+    }
   } else if (cmd.intent === 'note') {
     desc = 'Notiz hinzufügen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong>';
     check(cmd.resolution);
@@ -660,10 +681,14 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   let res;
   if (side === 'left') res = cmd.leftResolution;
   else if (side === 'right') res = cmd.rightResolution;
+  else if (side === 'project') res = cmd.projectResolution;
   else res = cmd.resolution;
   // Noch gar keine Auflösung vorhanden (allgemeine Aufgabe, der Chris
-  // jetzt erst einen Kontakt zuweist) — hier anlegen statt abbrechen.
+  // jetzt erst einen Kontakt zuweist, ODER ein Besuch ohne genanntes
+  // Bauvorhaben, dem jetzt eins zugeordnet wird) — hier anlegen statt
+  // abbrechen.
   if (!res && side === 'target') { res = { status: 'notfound', query: '', contact: null }; cmd.resolution = res; }
+  if (!res && side === 'project') { res = { status: 'notfound', query: '', project: null }; cmd.projectResolution = res; }
   if (!res) return;
   res.status = 'resolved';
   res.candidates = null;
@@ -758,6 +783,12 @@ CRM.voice.executeConfirmed = function () {
     if (cmd.intent === 'visit') {
       if (cmd.resolution && cmd.resolution.status === 'resolved') {
         CRM.addVisit(cmd.resolution.contact.id, null, '');
+        // Bauvorhaben-Verknüpfung ist Zusatznutzen: nur verknüpfen, wenn
+        // aufgelöst — bleibt es offen/unklar, wird der Besuch trotzdem
+        // ganz normal angelegt (kein skipped, kein Blockieren).
+        if (cmd.projectResolution && cmd.projectResolution.status === 'resolved') {
+          CRM.linkContactToProject(cmd.resolution.contact.id, cmd.projectResolution.project.id);
+        }
         done++;
       } else skipped++;
     } else if (cmd.intent === 'note') {
