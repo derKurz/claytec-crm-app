@@ -67,10 +67,11 @@ CRM.renderDashboard = function () {
       <div class="dash-section" id="dash-heute-section">
         <div class="dash-section-head">
           <span>Heute</span>
-          <div class="seg-toggle">
-            <button class="seg ${CRM._heuteView === 'liste' ? 'active' : ''}" onclick="CRM.setHeuteView('liste')">Liste</button>
-            <button class="seg ${CRM._heuteView === 'kalender' ? 'active' : ''}" onclick="CRM.setHeuteView('kalender')">Kalender</button>
-          </div>
+          <!-- Chris (2026-08): "Kalender muss eine eigene Seite sein" —
+               war vorher ein Liste/Kalender-Umschalter, der hier an Ort
+               und Stelle umbaute. Jetzt ein einfacher Sprung zur
+               eigenständigen Kalender-Seite. -->
+          <button class="btn btn-sm" onclick="CRM.switchTab('kalender')">📅 Kalender</button>
         </div>
         <div id="heute-body"></div>
       </div>
@@ -92,11 +93,9 @@ CRM.renderDashboard = function () {
     </div>
   `;
 
-  // Heute-Bereich befüllen (aus agenda.js — unverändert, schreibt in
-  // #heute-body, egal ob das Element hier im Dashboard oder früher in
-  // einem eigenen Tab steckt).
-  if (CRM._heuteView === 'liste' && CRM.renderHeuteListe) CRM.renderHeuteListe();
-  else if (CRM.renderKalender) CRM.renderKalender();
+  // Heute-Bereich befüllen (aus agenda.js). Seit der Kalender eine eigene
+  // Seite ist (siehe oben), zeigt #heute-body nur noch die Liste.
+  if (CRM.renderHeuteListe) CRM.renderHeuteListe();
 
   container.scrollTop = scrollTop;
 };

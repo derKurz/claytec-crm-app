@@ -9,7 +9,6 @@ var CRM = window.CRM || {};
 window.CRM = CRM;
 
 CRM._agendaSelection = CRM._agendaSelection || new Set();
-CRM._heuteView = CRM._heuteView || 'liste'; // 'liste' | 'kalender'
 CRM._calMode = CRM._calMode || 'monat'; // 'tag' | 'woche' | 'monat'
 CRM._calAnchor = CRM._calAnchor || (function () { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
 
@@ -26,20 +25,22 @@ CRM.ymd = function (d) {
 
 /* Batch 8a: „Heute" wurde vollständig in die Startseite integriert (siehe
    dashboard.js CRM.renderDashboard — baut Kopf/KPIs/Heute-Bereich/Audit-Log/
-   Schnellaktionen als EINE Seite, inkl. des Liste/Kalender-Umschalters und
-   #heute-body, das die Funktionen weiter unten in dieser Datei befüllen).
-   renderAgenda bleibt als dünner Alias bestehen, statt jede Aufrufstelle
-   (task-actions.js, speech.js, muster.js, hier selbst: setHeuteView,
-   quickAddTask, quickVisitFromAgenda, setCalMode, calShift, calToday)
-   einzeln umzuschreiben — die rufen weiterhin CRM.renderAgenda() und
-   bekommen dadurch die volle, aktualisierte Startseite. */
+   Schnellaktionen als EINE Seite, inkl. #heute-body, das die Funktionen
+   weiter unten in dieser Datei befüllen). renderAgenda bleibt als dünner
+   Alias bestehen, statt jede Aufrufstelle (task-actions.js, speech.js,
+   muster.js, hier selbst: quickAddTask, quickVisitFromAgenda) einzeln
+   umzuschreiben — die rufen weiterhin CRM.renderAgenda() und bekommen
+   dadurch die volle, aktualisierte Startseite.
+
+   Der Kalender ist seit 2026-08 (Chris: "Kalender muss eine eigene Seite
+   sein") KEIN Umschalter mehr innerhalb von "Heute" — er lebt in seinem
+   eigenen Tab #view-kalender (CRM.renderKalender unten), erreichbar über
+   die Tab-Leiste, das Mehr-Menü und den "📅 Kalender"-Knopf im
+   Heute-Bereich. setCalMode/calShift/calToday/openCalDay rufen weiterhin
+   direkt CRM.renderKalender() — unverändert, nur das Ziel-Element hat
+   sich geändert. */
 CRM.renderAgenda = function () {
   if (CRM.renderDashboard) CRM.renderDashboard();
-};
-
-CRM.setHeuteView = function (v) {
-  CRM._heuteView = v;
-  CRM.renderAgenda();
 };
 
 /* ============================================================
@@ -359,7 +360,8 @@ CRM.collectCalendarEvents = function () {
 };
 
 CRM.renderKalender = function () {
-  const body = document.getElementById('heute-body');
+  const body = document.getElementById('view-kalender');
+  if (!body) return; // Seite gerade nicht aktiv/gemountet — nichts zu tun
   const events = CRM.collectCalendarEvents();
   const anchor = new Date(CRM._calAnchor);
   const monthNames = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];

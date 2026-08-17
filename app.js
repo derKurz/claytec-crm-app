@@ -153,6 +153,7 @@ CRM.switchTab = function (tabId) {
   const fab = document.getElementById('fab-new');
   if (fab) fab.classList.toggle('fab-hidden', tabId === 'start');
   if (tabId === 'kontakte') CRM.renderContactList();
+  if (tabId === 'kalender' && CRM.renderKalender) CRM.renderKalender();
   if (tabId === 'projekte' && CRM.renderProjects) CRM.renderProjects();
   if (tabId === 'netzwerk' && CRM.renderNetzwerk) CRM.renderNetzwerk();
   if (tabId === 'regionen' && CRM.renderRegionen) {
@@ -1625,6 +1626,7 @@ CRM._refreshAllVisibleViews = function (opts) {
   opts = opts || {};
   if (document.querySelector('#view-start.active') && CRM.renderDashboard) CRM.renderDashboard();
   if (document.querySelector('#view-kontakte.active') && CRM.renderContactList) CRM.renderContactList();
+  if (document.querySelector('#view-kalender.active') && CRM.renderKalender) CRM.renderKalender();
   if (CRM.map && CRM.map.refresh) CRM.map.refresh();
 
   const overlay = document.getElementById('active-modal-overlay');

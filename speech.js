@@ -213,8 +213,11 @@ CRM.speech.saveAsVisit = function () {
   CRM.toast('Sprachnotiz als Besuch gespeichert.', 'success');
   if (CRM.renderContactDetailModal && document.getElementById('view-kontakte')) CRM.renderContactList();
   // Batch 8a: "Heute" ist jetzt Teil der Startseite (view-start), kein
-  // eigener view-agenda mehr aktiv-schaltbar.
-  if (CRM._heuteView !== undefined && document.querySelector('#view-start.active')) CRM.renderAgenda();
+  // eigener view-agenda mehr aktiv-schaltbar. (Die vorherige zusätzliche
+  // CRM._heuteView-Prüfung war nur ein Umweg um zu testen, ob agenda.js
+  // geladen ist — seit der Kalender-Seiten-Umstellung 2026-08 existiert
+  // die Variable nicht mehr; die eigentlich gemeinte Bedingung bleibt.)
+  if (document.querySelector('#view-start.active')) CRM.renderAgenda();
   CRM.speech.showPostSaveActions(id, { date, note: text });
 };
 
@@ -282,8 +285,11 @@ CRM.speech.uebernehmeTask = function (i) {
   if (karte) { karte.style.opacity = '.5'; karte.innerHTML = '<span style="color:var(--green);font-size:13px">✓ Aufgabe gespeichert: ' + esc(title) + ' (fällig ' + esc(due) + ')</span>'; }
   CRM.toast('✓ Aufgabe gespeichert — fällig ' + due, 'success');
   // Batch 8a: "Heute" ist jetzt Teil der Startseite (view-start), kein
-  // eigener view-agenda mehr aktiv-schaltbar.
-  if (CRM._heuteView !== undefined && document.querySelector('#view-start.active')) CRM.renderAgenda();
+  // eigener view-agenda mehr aktiv-schaltbar. (Die vorherige zusätzliche
+  // CRM._heuteView-Prüfung war nur ein Umweg um zu testen, ob agenda.js
+  // geladen ist — seit der Kalender-Seiten-Umstellung 2026-08 existiert
+  // die Variable nicht mehr; die eigentlich gemeinte Bedingung bleibt.)
+  if (document.querySelector('#view-start.active')) CRM.renderAgenda();
 };
 
 CRM.speech.verwerfeTask = function (i) {
