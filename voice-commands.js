@@ -63,6 +63,13 @@ CRM.voice._TRIGGERS = [
   // fängt den Kontaktnamen ein (Gruppe 1), damit die Aufgabe direkt beim
   // richtigen Kontakt landet statt als "Allgemeine Aufgabe".
   { type: 'task', re: /\baufgabe\s*(?:f(?:ü|ue)r\s+(?:die\s+|den\s+)?(?:firma\s+)?([^:]{2,60}?)\s*)?:\s*/gi },
+  // Chris (2026-08): "ich will Projekte genauso per Sprache anlegen,
+  // bearbeiten und mit Kontakten verknüpfen können." Verknüpfen gab es
+  // bereits (Sonderfall unten, "verknüpfen mit Objekt"). Neu: anlegen
+  // ("Projekt anlegen: Name, Ort" — optional "...für Firma X" verknüpft
+  // gleich mit) und eine Notiz AM Projekt (nicht am Kontakt).
+  { type: 'projectcreate', re: /\b(?:neues\s+)?(?:projekt|bauvorhaben)\s+anlegen\s*:\s*/gi },
+  { type: 'projectnote', re: /\bnotiz\s+(?:f(?:ü|ue)r|zu)\s+(?:projekt|bauvorhaben|objekt)\s+([^:]{2,60}?)\s*:\s*/gi },
 ];
 
 /* "Verknüpfen"-Muster ist ein Sonderfall: das linke Ziel steht VOR dem
@@ -243,6 +250,27 @@ CRM.voice.parseUtterance = function (transcript) {
       cmd.rightResolution = cmd.rightKind === 'project'
         ? CRM.voice.resolveProject(cmd.rightRaw, '')
         : CRM.voice.resolveContact(cmd.rightRaw, '');
+    } else if (cmd.intent === 'projectcreate') {
+      // "Tanzhaus, Donauwörth für Kraftbaustoffe" -> Name, Ort, optional
+      // direkt verknüpfter Kontakt (Chris: "Projekt anlegen UND mit
+      // Kontakt verknüpfen in einem Satz").
+      const fMatch = cmd.contentRaw.match(/\s+für\s+(?:firma\s+|kontakt\s+)?(.+)$/i);
+      const ohneFuer = fMatch ? CRM.voice._cleanClause(cmd.contentRaw.slice(0, fMatch.index)) : cmd.contentRaw;
+      const kommaIdx = ohneFuer.indexOf(',');
+      cmd.name = CRM.voice._cleanClause(kommaIdx === -1 ? ohneFuer : ohneFuer.slice(0, kommaIdx));
+      cmd.ort = kommaIdx === -1 ? '' : CRM.voice._cleanClause(ohneFuer.slice(kommaIdx + 1));
+      cmd.linkTargetRaw = fMatch ? fMatch[1] : null;
+      cmd.linkResolution = cmd.linkTargetRaw ? CRM.voice.resolveContact(cmd.linkTargetRaw, '') : null;
+      // Warnt (blockiert aber nicht) vor einem Namensdoppel — genau das
+      // würde die von Chris gewünschte "alle Aktivitäten an einer Stelle"-
+      // Übersicht aufspalten, wenn aus Versehen ein zweites Projekt mit
+      // demselben Namen entsteht.
+      cmd.duplicateOf = cmd.name
+        ? CRM.db.getProjects().find((p) => CRM.searchNorm(p.name) === CRM.searchNorm(cmd.name))
+        : null;
+    } else if (cmd.intent === 'projectnote') {
+      cmd.content = cmd.contentRaw;
+      cmd.projectResolution = CRM.voice.resolveProject(cmd.targetRaw, '');
     }
   });
 
@@ -509,6 +537,32 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     check(cmd.rightResolution);
     candidatesHtml += CRM.voice._entityPickerHtml(cmd.leftResolution, idx, 'left', 'contact');
     candidatesHtml += CRM.voice._entityPickerHtml(cmd.rightResolution, idx, 'right', cmd.rightKind);
+  } else if (cmd.intent === 'projectcreate') {
+    if (!(cmd.name && cmd.name.trim())) ready = false;
+    desc = '🏗️ Neues Projekt anlegen: <strong>' + esc(cmd.name || '(kein Name erkannt)') + '</strong>' + (cmd.ort ? ' · ' + esc(cmd.ort) : '');
+    if (cmd.linkTargetRaw) desc += ' · verknüpft mit <strong>' + CRM.voice._resDesc(cmd.linkResolution, 'contact') + '</strong>';
+    if (cmd.duplicateOf) {
+      desc += '<br><span style="color:var(--gold)">⚠️ Es gibt schon ein Projekt „' + esc(cmd.duplicateOf.name) + '"' + (cmd.duplicateOf.ort ? ' (' + esc(cmd.duplicateOf.ort) + ')' : '') + ' — trotzdem als neues anlegen?</span>';
+    }
+    candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Projektname</label>'
+      + '<input type="text" class="voice-edit-input" value="' + esc(cmd.name || '') + '" placeholder="Projektname eingeben…" oninput="CRM.voice._updateCmdField(' + idx + ',\'name\',this.value)">'
+      + '<label style="margin:6px 0 2px;font-size:12px;display:block">Ort</label>'
+      + '<input type="text" class="voice-edit-input" value="' + esc(cmd.ort || '') + '" placeholder="(optional)" oninput="CRM.voice._updateCmdField(' + idx + ',\'ort\',this.value)">';
+    if (cmd.linkTargetRaw) {
+      // Ein ausdrücklich genannter Verknüpfungs-Kontakt muss aufgelöst
+      // werden, blockiert sonst — Ausweg-Knopf wie bei Aufgaben, das
+      // Projekt selbst ist auch ohne die Verknüpfung sinnvoll.
+      check(cmd.linkResolution);
+      candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Direkt verknüpfen mit</label>';
+      candidatesHtml += CRM.voice._entityPickerHtml(cmd.linkResolution, idx, 'projectlink', 'contact');
+      candidatesHtml += '<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.voice._clearProjectLink(' + idx + ')">✕ ohne Verknüpfung anlegen</button>';
+    }
+  } else if (cmd.intent === 'projectnote') {
+    desc = '📝 Notiz für Bauvorhaben <strong>' + CRM.voice._resDesc(cmd.projectResolution, 'project') + '</strong>';
+    check(cmd.projectResolution);
+    candidatesHtml += CRM.voice._entityPickerHtml(cmd.projectResolution, idx, 'project', 'project');
+    candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Notiztext <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren)</span></label>'
+      + '<input type="text" class="voice-edit-input" value="' + esc(cmd.content || '') + '" placeholder="(kein Text erkannt)" oninput="CRM.voice._updateCmdField(' + idx + ',\'content\',this.value)">';
   }
 
   const cls = ready ? 'voice-cmd-ready' : 'voice-cmd-ambiguous';
@@ -682,13 +736,16 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   if (side === 'left') res = cmd.leftResolution;
   else if (side === 'right') res = cmd.rightResolution;
   else if (side === 'project') res = cmd.projectResolution;
+  else if (side === 'projectlink') res = cmd.linkResolution;
   else res = cmd.resolution;
   // Noch gar keine Auflösung vorhanden (allgemeine Aufgabe, der Chris
-  // jetzt erst einen Kontakt zuweist, ODER ein Besuch ohne genanntes
-  // Bauvorhaben, dem jetzt eins zugeordnet wird) — hier anlegen statt
+  // jetzt erst einen Kontakt zuweist, ein Besuch ohne genanntes
+  // Bauvorhaben, dem jetzt eins zugeordnet wird, ODER ein neues Projekt
+  // ohne bisher genannten Verknüpfungs-Kontakt) — hier anlegen statt
   // abbrechen.
   if (!res && side === 'target') { res = { status: 'notfound', query: '', contact: null }; cmd.resolution = res; }
   if (!res && side === 'project') { res = { status: 'notfound', query: '', project: null }; cmd.projectResolution = res; }
+  if (!res && side === 'projectlink') { res = { status: 'notfound', query: '', contact: null }; cmd.linkResolution = res; }
   if (!res) return;
   res.status = 'resolved';
   res.candidates = null;
@@ -707,19 +764,34 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
    jedem Tastendruck den Fokus aus dem Eingabefeld reißen) — nur die
    Bereit/Unklar-Markierung der betroffenen Zeile wird direkt im DOM
    nachgezogen. */
+// Pro Intent das EINE Feld, dessen leer/nicht-leer über Bereit/Unklar
+// entscheidet (Aufgabentext bzw. Projektname) — Notiztext/Ort sind immer
+// optional und ändern die Markierung nicht.
+CRM.voice._READINESS_FIELD = { task: 'title', projectcreate: 'name' };
 CRM.voice._updateCmdField = function (idx, field, value) {
   const cmd = (CRM.voice._pending || [])[idx];
   if (!cmd) return;
   cmd[field] = value;
-  if (cmd.intent === 'task' && field === 'title') {
+  if (CRM.voice._READINESS_FIELD[cmd.intent] === field) {
     const row = document.querySelector('.voice-cmd[data-idx="' + idx + '"]');
     if (!row) return;
-    const ready = !!(cmd.title || '').trim();
+    const ready = !!(cmd[field] || '').trim();
     row.classList.toggle('voice-cmd-ready', ready);
     row.classList.toggle('voice-cmd-ambiguous', !ready);
     const badge = row.querySelector('.voice-cmd-badge');
     if (badge) badge.textContent = ready ? '✓' : '?';
   }
+};
+
+// Projekt trotzdem OHNE die genannte Verknüpfung anlegen — der genannte
+// Kontakt wurde nicht gefunden (Verhörer/Tippfehler), das Projekt selbst
+// ist auch ohne die Verknüpfung sinnvoll.
+CRM.voice._clearProjectLink = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.linkResolution = null;
+  cmd.linkTargetRaw = null;
+  CRM.voice._renderConfirmModal();
 };
 
 /* Aufgabe bewusst ohne Kontakt anlegen — der aus dem Satzzusammenhang
@@ -823,6 +895,26 @@ CRM.voice.executeConfirmed = function () {
       if (lr && lr.status === 'resolved' && rr && rr.status === 'resolved') {
         if (cmd.rightKind === 'project') CRM.linkContactToProject(lr.contact.id, rr.project.id);
         else CRM.linkContacts(lr.contact.id, rr.contact.id);
+        done++;
+      } else skipped++;
+    } else if (cmd.intent === 'projectcreate') {
+      const linkOffen = cmd.linkTargetRaw && !(cmd.linkResolution && cmd.linkResolution.status === 'resolved');
+      if (cmd.name && !linkOffen) {
+        const proj = CRM.db.addProject(Object.assign(CRM.makeEmptyProject(), { name: cmd.name, ort: cmd.ort || '' }));
+        if (cmd.linkResolution && cmd.linkResolution.status === 'resolved') {
+          CRM.linkContactToProject(cmd.linkResolution.contact.id, proj.id);
+        }
+        done++;
+      } else skipped++;
+    } else if (cmd.intent === 'projectnote') {
+      if (cmd.projectResolution && cmd.projectResolution.status === 'resolved') {
+        CRM.db.addComm(Object.assign(CRM.makeEmptyComm(), {
+          type: 'note',
+          subject: '',
+          body: cmd.content || '(per Sprachbefehl angelegt, ohne weiteren Text)',
+          projectIds: [cmd.projectResolution.project.id],
+          contactIds: [],
+        }));
         done++;
       } else skipped++;
     }
