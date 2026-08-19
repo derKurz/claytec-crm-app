@@ -50,7 +50,14 @@ button{font-family:inherit}
 #app-header h1 span{color:var(--accent-2)}
 .header-actions{display:flex;gap:8px;flex-shrink:0}
 
-#header-search-wrap{position:relative;flex:1;max-width:340px;margin:0 16px}
+/* Sprachbefehl-Knopf dominanter + neben der Suche statt im Aktions-
+   Cluster versteckt (Chris 2026-08). #header-center ist der Container,
+   der beides zusammen in die Mitte der Kopfzeile setzt; auf beiden
+   Plattformen sichtbar, da er NICHT Teil von .header-actions ist (das
+   wird am Handy komplett ausgeblendet, siehe Media Query unten). */
+#header-center{display:flex;align-items:center;gap:8px;flex:1;max-width:460px;margin:0 16px}
+#header-search-wrap{position:relative;flex:1;min-width:0;margin:0}
+#btn-voice-command{flex-shrink:0;font-size:14px;padding:9px 16px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
 #header-search{width:100%;background:var(--bg-elev2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px}
 #header-search:focus{outline:none;border-color:var(--accent)}
 #header-search-results,.header-search-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-elev2);border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;z-index:900;box-shadow:0 8px 24px rgba(0,0,0,.4)}
@@ -503,7 +510,8 @@ body.resizing-col{cursor:col-resize;user-select:none}
 @media (max-width:768px){
   #tabs{display:none}
   .header-actions{display:none}
-  #header-search-wrap{margin:0 0 0 10px;max-width:none}
+  #header-center{margin:0 0 0 10px;max-width:none}
+  #btn-voice-command{padding:9px 12px}
   body{padding-bottom:0}
   #main{padding-bottom:64px}
 

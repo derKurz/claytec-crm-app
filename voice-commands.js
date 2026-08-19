@@ -394,9 +394,10 @@ CRM.voice.buildPreview = function (commands) {
       return '<div class="voice-cmd voice-cmd-muted" data-idx="' + idx + '">'
         + '<span class="voice-cmd-badge">–</span>'
         + '<div class="voice-cmd-body"><div class="voice-cmd-desc">„' + esc(cmd.rawText) + '" — nicht zugeordnet.</div>'
-        + '<div class="row" style="margin-top:6px;gap:6px">'
+        + '<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">'
         + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnrecognized(' + idx + ',\'note\')">→ als Notiz verwenden</button>'
         + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnrecognized(' + idx + ',\'task\')">→ als Aufgabe verwenden</button>'
+        + '<button class="btn btn-sm" onclick="CRM.voice._promoteToContact(' + idx + ')" title="Adresse/Signatur erkennen und Kontakt suchen oder anlegen">📇 als Kontakt anlegen</button>'
         + '</div></div>'
         + '</div>';
     }
@@ -837,6 +838,26 @@ CRM.voice._promoteUnrecognized = function (idx, newIntent) {
 CRM.voice.cancelPreview = function () {
   CRM.voice._pending = null;
   CRM.closeModal();
+};
+
+/* Chris (2026-08): "wenn ich hier eine Kontaktadresse reinkopiere, muss
+   erkannt werden, dass das ein Kontakt ist, er wird entweder gesucht
+   oder neu erstellt." Sprachbefehle erkennen nur Trigger-Wörter
+   ("Besuch bei", "Aufgabe:", ...) — eine eingefügte Adresse/Signatur
+   ohne solches Wort landet komplett in "nicht zugeordnet". Statt hier
+   eine zweite Adress-Erkennung zu bauen, wird der bereits vorhandene
+   "+ Neuer Kontakt"-Dialog (email-parser.js — erkennt Firma/Adresse/
+   Telefon aus Freitext UND warnt bei einem möglichen Doppelkontakt)
+   direkt mit dem unzugeordneten Text befüllt und sofort analysiert. */
+CRM.voice._promoteToContact = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  const text = cmd.rawText;
+  CRM.voice.cancelPreview();
+  CRM.emailParser.openDialog();
+  const input = document.getElementById('ep-input');
+  if (input) input.value = text;
+  CRM.emailParser.analyze();
 };
 
 /* ---------- Ausführen: nur Befehle, deren Auflösung vollständig ist.

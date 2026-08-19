@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="stylesheet" href="style.css?v=20260816y">
+<link rel="stylesheet" href="style.css?v=20260817a">
 <!-- Leaflet (Karte) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -30,15 +30,24 @@
 
 <header id="app-header">
   <h1>Claytec <span>CRM</span></h1>
-  <div id="header-search-wrap">
-    <input type="text" id="header-search" placeholder="🔍 Kontakt suchen...">
-    <div id="header-search-results" class="hidden"></div>
+  <!-- Chris (2026-08): "Wenn ich am PC oder auch am Handy auf Befehl gehe,
+       muss der Button auch noch dominanter gemacht werden. Mach den
+       Befehl neben dem Suchfeld in der Mitte der Seiten." — vorher
+       zwischen Excel-Import/Backup/Wiederherstellen versteckt (und auf
+       dem Handy komplett unsichtbar, da .header-actions dort ausgeblendet
+       ist). Jetzt ein eigener, zentrierter Block neben der Suche, auf
+       beiden Plattformen sichtbar (kein Teil von .header-actions mehr). -->
+  <div id="header-center">
+    <div id="header-search-wrap">
+      <input type="text" id="header-search" placeholder="🔍 Kontakt suchen...">
+      <div id="header-search-results" class="hidden"></div>
+    </div>
+    <button class="btn btn-primary" id="btn-voice-command" title="Sprachbefehl (Beta) — Besuch/Notiz/Muster/Verknüpfen/Aufgabe per Sprache">🎙️ Befehl</button>
   </div>
   <div class="header-actions">
     <button class="btn" id="btn-import-excel">📥 Excel-Import</button>
     <button class="btn" id="btn-backup-export">💾 Backup</button>
     <button class="btn" id="btn-backup-import">📂 Wiederherstellen</button>
-    <button class="btn" id="btn-voice-command" title="Sprachbefehl (Beta) — Besuch/Notiz/Muster/Verknüpfen/Aufgabe per Sprache">🎙️ Befehl</button>
     <button class="btn" id="btn-more-header" title="Muster-Lager, Hotels, Eingang …">☰ Mehr</button>
   </div>
   <input type="file" id="file-input-excel" accept=".xlsx,.xls" multiple class="hidden">
@@ -220,33 +229,33 @@
 
 <div id="toast-container"></div>
 
-<script src="storage.js?v=20260816y"></script>
-<script src="db-indexeddb.js?v=20260816y"></script>
-<script src="supabase-client.js?v=20260816y"></script>
-<script src="sync.js?v=20260816y"></script>
-<script src="import.js?v=20260816y"></script>
-<script src="activities.js?v=20260816y"></script>
-<script src="task-actions.js?v=20260816y"></script>
-<script src="contact-detail.js?v=20260816y"></script>
-<script src="agenda.js?v=20260816y"></script>
-<script src="dashboard.js?v=20260816y"></script>
-<script src="geocoding.js?v=20260816y"></script>
-<script src="map.js?v=20260816y"></script>
-<script src="speech.js?v=20260816y"></script>
-<script src="settings.js?v=20260816y"></script>
-<script src="projects.js?v=20260816y"></script>
-<script src="network.js?v=20260816y"></script>
-<script src="regions.js?v=20260816y"></script>
-<script src="excel-ablage.js?v=20260816y"></script>
-<script src="vcard.js?v=20260816y"></script>
-<script src="email-parser.js?v=20260816y"></script>
-<script src="windows.js?v=20260816y"></script>
-<script src="werbemittel.js?v=20260816y"></script>
-<script src="yosima-farbtoene.js?v=20260816y"></script>
-<script src="muster.js?v=20260816y"></script>
-<script src="lager.js?v=20260816y"></script>
-<script src="hotels.js?v=20260816y"></script>
-<script src="voice-commands.js?v=20260816y"></script>
-<script src="app.js?v=20260816y"></script>
+<script src="storage.js?v=20260817a"></script>
+<script src="db-indexeddb.js?v=20260817a"></script>
+<script src="supabase-client.js?v=20260817a"></script>
+<script src="sync.js?v=20260817a"></script>
+<script src="import.js?v=20260817a"></script>
+<script src="activities.js?v=20260817a"></script>
+<script src="task-actions.js?v=20260817a"></script>
+<script src="contact-detail.js?v=20260817a"></script>
+<script src="agenda.js?v=20260817a"></script>
+<script src="dashboard.js?v=20260817a"></script>
+<script src="geocoding.js?v=20260817a"></script>
+<script src="map.js?v=20260817a"></script>
+<script src="speech.js?v=20260817a"></script>
+<script src="settings.js?v=20260817a"></script>
+<script src="projects.js?v=20260817a"></script>
+<script src="network.js?v=20260817a"></script>
+<script src="regions.js?v=20260817a"></script>
+<script src="excel-ablage.js?v=20260817a"></script>
+<script src="vcard.js?v=20260817a"></script>
+<script src="email-parser.js?v=20260817a"></script>
+<script src="windows.js?v=20260817a"></script>
+<script src="werbemittel.js?v=20260817a"></script>
+<script src="yosima-farbtoene.js?v=20260817a"></script>
+<script src="muster.js?v=20260817a"></script>
+<script src="lager.js?v=20260817a"></script>
+<script src="hotels.js?v=20260817a"></script>
+<script src="voice-commands.js?v=20260817a"></script>
+<script src="app.js?v=20260817a"></script>
 </body>
 </html>
