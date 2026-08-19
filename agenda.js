@@ -172,7 +172,12 @@ CRM.taskRow = function (t, st) {
         <div class="li-title">✓ ${esc(t.title)}</div>
         <div class="li-sub">${sub} · ${dueLabel}</div>
       </div>
-      ${c ? `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.muster.open('${c.id}','${t.id}')" title="Muster/Musterbuch bestellen und Aufgabe erledigen">📦 Muster</button>` : ''}
+      <!-- Chris (2026-08): "die Verlinkung ... bei den überfälligen [Aufgaben]
+           Muster schicken, den kannst du löschen, den brauche ich da nicht.
+           Es reicht mir, das im Kontakt zu haben." — 📦 Muster-Schnellknopf
+           aus der Startseiten-Aufgabenliste entfernt; im Kontaktprofil
+           bleibt er (Aktivitäten-Bereich + dortige eigene Aufgabenliste,
+           siehe contact-detail.js). -->
       <button class="btn btn-sm li-cal" onclick="event.stopPropagation();CRM.exportTaskICS('${t.id}')" title="In Kalender">📅</button>
       ${CRM.taskActions.menuHtml(t.id, 'agenda')}
     </div>`;
