@@ -95,26 +95,54 @@ CRM.renderHeuteListe = function () {
   CRM.updateAgendaSelectionCount();
 };
 
+/* Chris-Feedback (2026-08, Screenshot "Diese Woche"): ".list-item" ist
+   eine NICHT umbrechende Flex-Zeile — Checkbox + Titel/Zeilen + bis zu
+   7 Schnellaktions-Icons + "Besuch heute"-Knopf mussten alle in EINE
+   Zeile passen. Die Startseite ist bewusst auf 720px Spaltenbreite
+   begrenzt (#dash-root), das gilt auch auf einem breiten Desktop-
+   Fenster — die frühere Korrektur griff nur bei schmalem FENSTER
+   (@media max-width:768px), nicht bei schmaler SPALTE, deshalb war der
+   Bug auf einem breiten Monitor trotzdem sichtbar. Firmenname war dabei
+   komplett überdeckt/weggequetscht, nur PLZ/Ort blieb lesbar.
+
+   Neuer Aufbau: eigene Klasse (Spalten-Layout statt Zeile), Name +
+   Ansprechpartner (falls vorhanden) immer zuerst, "📍 Besuch heute" als
+   wichtigste Aktion direkt daneben oben. Die restlichen Aktionen
+   (Anrufen/Mail/Route + Kopieren/Weiterleiten/Website/Zur Route) stecken
+   jetzt in CRM.contactMainActions/-SecondaryMenuItems — dieselben
+   Bausteine, die schon den Kontakt-Kopf entrümpelt haben, statt hier ein
+   zweites Mal 7 rohe Icons aneinanderzureihen. */
 CRM.visitRow = function (c, due) {
   const label = due.diffDays < 0 ? `${-due.diffDays} Tage überfällig` : (due.diffDays === 0 ? 'heute fällig' : `in ${due.diffDays} Tagen`);
   const ort = [c.plz, c.ort].filter(Boolean).join(' ');
   // Dritte Zeile: der Betreff — was beim fälligen Besuch ansteht (offene
   // Aufgaben + nächster Schritt). Nur wenn vorhanden.
   const betreff = CRM.getOpenTodoText(c);
+  const ap = CRM.mainAnsprechpartner(c);
+  const apName = [ap.vorname, ap.name].filter(Boolean).join(' ');
   return `
-    <div class="list-item">
-      <input type="checkbox" class="agenda-check" data-id="${c.id}" style="width:auto;margin-right:10px" ${CRM._agendaSelection.has(c.id) ? 'checked' : ''}>
-      <div class="li-main" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer">
-        <div class="li-title">📍 ${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
-        <div class="li-sub">${esc(ort)} · Besuch ${label}</div>
-        ${betreff ? `<div class="li-sub li-betreff">🎯 ${esc(betreff)}</div>` : ''}
-        <div class="li-badges">
-          <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
-          <span class="badge badge-${c.abc}">${c.abc}</span>
+    <div class="list-item list-item-visit">
+      <div class="li-visit-head">
+        <input type="checkbox" class="agenda-check" data-id="${c.id}" style="width:auto" ${CRM._agendaSelection.has(c.id) ? 'checked' : ''}>
+        <div class="li-main" onclick="CRM.openContactDetail('${c.id}')" style="cursor:pointer;flex:1;min-width:0">
+          <div class="li-title" style="white-space:normal">📍 ${esc(c.firma1)} ${c.isPartner ? '⭐' : ''}</div>
+          ${apName ? `<div class="li-sub">👤 ${esc(apName)}${ap.funktion ? ' · ' + esc(ap.funktion) : ''}</div>` : ''}
+          <div class="li-sub">${esc(ort)} · Besuch ${label}</div>
+          ${betreff ? `<div class="li-sub li-betreff">🎯 ${esc(betreff)}</div>` : ''}
+        </div>
+        <button class="btn btn-sm btn-primary" style="flex:none" onclick="event.stopPropagation();CRM.quickVisitFromAgenda('${c.id}')">📍 Besuch heute</button>
+      </div>
+      <div class="li-badges">
+        <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
+        <span class="badge badge-${c.abc}">${c.abc}</span>
+      </div>
+      <div class="li-visit-actions" onclick="event.stopPropagation()">
+        ${CRM.contactMainActions(c)}
+        <div class="ov-menu">
+          <button class="btn btn-icon" title="Weitere Aktionen" onclick="CRM.toggleOvMenu(this,event)">⋯</button>
+          <div class="ov-menu-list hidden">${CRM.contactSecondaryMenuItems(c).join('')}</div>
         </div>
       </div>
-      <div class="li-quick">${CRM.quickActionButtons(c)}</div>
-      <button class="btn btn-sm" onclick="event.stopPropagation();CRM.quickVisitFromAgenda('${c.id}')">📍 Besuch heute</button>
     </div>`;
 };
 
@@ -212,63 +240,10 @@ CRM.contactSecondaryMenuItems = function (c) {
   return items;
 };
 
-/* Schnellaktionen für die LISTEN-Zeilen (Startseite). Am Handy ohnehin
-   ausgeblendet, siehe #view-start .li-quick in style.css. Der frühere
-   opts.compact-Zweig für den Kontaktkopf ist entfallen — der Kopf nutzt
-   jetzt contactMainActions + contactSecondaryMenuItems. */
-CRM.quickActionButtons = function (c) {
-  const r = CRM.contactReach(c);
-  const tel = r.tel;
-  const mail = r.mail;
-  const items = []; // {primary, html, menuHtml}
-  if (tel) items.push({
-    primary: true,
-    html: `<a class="btn btn-sm" href="tel:${esc(tel)}" onclick="event.stopPropagation()" title="Anrufen">📞</a>`,
-    menuHtml: `<a href="tel:${esc(tel)}" onclick="event.stopPropagation()">📞 Anrufen</a>`,
-  });
-  if (mail) items.push({
-    primary: true,
-    html: `<a class="btn btn-sm" href="mailto:${esc(mail)}" onclick="event.stopPropagation()" title="E-Mail schreiben">✉</a>`,
-    menuHtml: `<a href="mailto:${esc(mail)}" onclick="event.stopPropagation()">✉ E-Mail schreiben</a>`,
-  });
-  if (c.website) {
-    const url = /^https?:\/\//i.test(c.website) ? c.website : 'https://' + c.website;
-    items.push({
-      primary: false,
-      html: `<a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Website öffnen">🌐<span class="btn-lbl"> Web</span></a>`,
-      menuHtml: `<a href="${esc(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🌐 Website öffnen</a>`,
-    });
-  }
-  items.push({
-    primary: true,
-    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')" title="Auf Karte zeigen">📍<span class="btn-lbl"> Karte</span></button>`,
-    menuHtml: `<button onclick="event.stopPropagation();CRM.showContactOnMap('${c.id}')">📍 Auf Karte zeigen</button>`,
-  });
-  const addr = CRM.formatAddress(c);
-  if (addr) items.push({
-    primary: true,
-    html: `<a class="btn btn-sm" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="In Google Maps öffnen">🗺️<span class="btn-lbl"> Maps</span></a>`,
-    menuHtml: `<a href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}&travelmode=driving" target="_blank" rel="noopener" onclick="event.stopPropagation()">🗺️ In Google Maps öffnen</a>`,
-  });
-  items.push({
-    primary: false,
-    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')" title="Kontaktdaten kopieren (für E-Mail, OneNote, WhatsApp …)">📋<span class="btn-lbl"> Kopieren</span></button>`,
-    menuHtml: `<button onclick="event.stopPropagation();CRM.copyForOneNote('${c.id}')">📋 Kontaktdaten kopieren</button>`,
-  });
-  items.push({
-    primary: false,
-    html: `<button class="btn btn-sm" onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')" title="Kontaktdaten per E-Mail weiterleiten">📧<span class="btn-lbl"> Weiterleiten</span></button>`,
-    menuHtml: `<button onclick="event.stopPropagation();CRM.forwardContactByMail('${c.id}')">📧 Per E-Mail weiterleiten</button>`,
-  });
-  const inRoute = CRM._contactSelection && CRM._contactSelection.has(c.id);
-  items.push({
-    primary: false,
-    html: `<button class="btn btn-sm ${inRoute ? 'btn-primary' : ''}" onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')" title="Zur Routenauswahl hinzufügen/entfernen">${inRoute ? '✓' : '➕'}<span class="btn-lbl"> ${inRoute ? 'In Route' : 'Zur Route'}</span></button>`,
-    menuHtml: `<button onclick="event.stopPropagation();CRM.toggleRouteSelection('${c.id}')">${inRoute ? '✓ Aus Route entfernen' : '➕ Zur Route hinzufügen'}</button>`,
-  });
-
-  return items.map((i) => i.html).join('');
-};
+/* CRM.quickActionButtons (die rohe Icon-Reihe für Listen-Zeilen) ist seit
+   2026-08 entfernt — visitRow nutzt jetzt CRM.contactMainActions +
+   CRM.contactSecondaryMenuItems (dieselben Bausteine wie der Kontakt-
+   Kopf), keine zweite Implementierung mehr nötig. */
 
 /* Kontakt unabhängig von der Listen-Checkbox zur bestehenden Routenauswahl
    hinzufügen/entfernen — nutzt dieselbe CRM._contactSelection wie die

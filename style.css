@@ -178,6 +178,17 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .li-sub{font-size:12px;color:var(--text-dim);margin-top:2px}
 .li-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
 
+/* "Diese Woche"/faellige-Besuche-Karten: eigenes Spalten-Layout statt der
+   generischen nicht-umbrechenden .list-item-Zeile — die quetschte Name
+   + bis zu 7 Icons + Zusatzknopf in eine einzige Zeile zusammen, sobald
+   die Spalte schmal war (Chris-Screenshot 2026-08, sichtbar auch am
+   breiten Desktop-Fenster wegen der auf 720px begrenzten Startseiten-
+   Spalte, #dash-root). */
+.list-item-visit{display:flex;flex-direction:column;align-items:stretch}
+.li-visit-head{display:flex;align-items:flex-start;gap:8px}
+.li-visit-actions{display:flex;align-items:center;gap:6px;margin-top:8px}
+.li-visit-actions .cd-actions-main{flex:1;margin-top:0}
+
 #progress-overlay{
   position:fixed;inset:0;background:rgba(10,12,16,.92);z-index:2000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
@@ -575,7 +586,6 @@ body.resizing-col{cursor:col-resize;user-select:none}
    quetschten sonst den Firmennamen weg. Alles davon steckt im Kontakt,
    den ein Tipp auf die Zeile oeffnet. */
 @media (max-width:768px){
-  #view-start .li-quick{display:none}
   #view-start .list-item .li-badges{display:none}
   #view-start .list-item .li-cal{display:none}
   #view-start .list-item{padding:8px 10px}
