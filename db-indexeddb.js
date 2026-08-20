@@ -80,24 +80,74 @@ CRM._mirrorKvToDexie = function (key, value) {
   CRM.dexie.kv.put({ key, value }).catch((e) => console.error('Dexie-Spiegelung fehlgeschlagen (kv:' + key + ')', e));
 };
 
-/* Einmalige Migration: liest die bereits aus localStorage geladenen
-   In-Memory-Arrays (CRM.db._contacts etc., von CRM.db.init() befüllt) und
-   schreibt sie nach Dexie. localStorage bleibt dabei vollständig unverändert
-   — keine Löschung, kein Risiko für die bestehenden Produktivdaten. */
-CRM.migrateToIndexedDB = async function () {
+/* ============================================================
+   Phase 1 ABSCHLUSS (2026-08): Dexie wird echte Quelle statt stiller
+   Spiegel. Ersetzt das alte CRM.migrateToIndexedDB (das lief nur
+   fire-and-forget NACH dem Rendern und kopierte das Kontaktjournal gar
+   nicht mit — beim Nachbau hier bewusst korrigiert). Orchestriert wird
+   das von CRM.db.switchToDexieIfNeeded() in storage.js; hier stehen nur
+   die reinen Dexie-Grundfunktionen, keine UI, kein Settings-Merge
+   (der bleibt bei storage.js/DEFAULT_SETTINGS, wo er hingehört). */
+
+/* Eigenes Flag, bewusst getrennt vom alten "_migrated_v1"-Spiegel-Flag:
+   ein Gerät kann längst gespiegelt haben, ohne dass Dexie je als Quelle
+   geprüft wurde — beide Zustände dürfen sich nicht vermischen. */
+CRM._dexiePrimaryFlagSet = async function () {
+  if (!CRM.dexie) return false;
+  const flag = await CRM.dexie.kv.get('_dexie_primary_v1');
+  return !!flag;
+};
+
+/* true nur, wenn wirklich etwas zu sichern ist UND der Umstieg noch
+   nicht passiert ist — ein leerer Erststart (neues Gerät/Profil) soll
+   nicht mit einem Backup-Hinweis belästigt werden, es gibt nichts zu
+   verlieren. */
+CRM._dexieNeedsGate = async function (contacts, projects, tasks, comms, journal) {
+  if (!CRM.dexie) return false;
+  if (await CRM._dexiePrimaryFlagSet()) return false;
+  return !!((contacts && contacts.length) || (projects && projects.length)
+    || (tasks && tasks.length) || (comms && comms.length) || (journal && journal.length));
+};
+
+/* Kopiert den AKTUELLEN localStorage-Stand frisch nach Dexie (nicht den
+   evtl. veralteten Mirror-Stand) und setzt danach das Flag — alles in
+   EINER Transaktion, damit ein Abbruch mittendrin (Tab geschlossen,
+   Absturz) nie einen halb kopierten Zustand hinterlässt: entweder
+   läuft der ganze Block durch, oder gar nichts davon. */
+CRM._dexieCopyFreshAndFlag = async function (contacts, projects, tasks, comms, journal, settings, meta) {
   if (!CRM.dexie) return;
-  try {
-    const flag = await CRM.dexie.kv.get('_migrated_v1');
-    if (flag) return;
-    await CRM.dexie.contacts.bulkPut(CRM.db._contacts || []);
-    await CRM.dexie.projects.bulkPut(CRM.db._projects || []);
-    await CRM.dexie.tasks.bulkPut(CRM.db._tasks || []);
-    await CRM.dexie.comms.bulkPut(CRM.db._comms || []);
-    await CRM.dexie.kv.put({ key: 'settings', value: CRM.db._settings });
-    await CRM.dexie.kv.put({ key: 'meta', value: CRM.db._meta });
-    await CRM.dexie.kv.put({ key: '_migrated_v1', value: true });
-    console.log('IndexedDB-Migration (Phase 1, OFFLINE_SYNC.md) abgeschlossen — localStorage bleibt unverändert die aktive Quelle.');
-  } catch (e) {
-    console.error('IndexedDB-Migration fehlgeschlagen — App arbeitet unverändert mit localStorage weiter, kein Datenverlust.', e);
-  }
+  await CRM.dexie.transaction('rw',
+    [CRM.dexie.contacts, CRM.dexie.projects, CRM.dexie.tasks, CRM.dexie.comms, CRM.dexie.journal_entries, CRM.dexie.kv],
+    async () => {
+      await CRM.dexie.contacts.clear(); await CRM.dexie.contacts.bulkPut(contacts || []);
+      await CRM.dexie.projects.clear(); await CRM.dexie.projects.bulkPut(projects || []);
+      await CRM.dexie.tasks.clear(); await CRM.dexie.tasks.bulkPut(tasks || []);
+      await CRM.dexie.comms.clear(); await CRM.dexie.comms.bulkPut(comms || []);
+      await CRM.dexie.journal_entries.clear(); await CRM.dexie.journal_entries.bulkPut(journal || []);
+      await CRM.dexie.kv.put({ key: 'settings', value: settings || {} });
+      await CRM.dexie.kv.put({ key: 'meta', value: meta || { importedFiles: [] } });
+      await CRM.dexie.kv.put({ key: '_dexie_primary_v1', value: true });
+    });
+};
+
+/* Liest alles roh aus Dexie — KEIN Settings-Default-Merge hier (der
+   passiert bewusst in storage.js, an derselben Stelle wie beim
+   localStorage-Lesepfad, damit beide Pfade garantiert dieselben
+   Defaults anwenden). */
+CRM._dexieReadAll = async function () {
+  if (!CRM.dexie) return null;
+  const [contacts, projects, tasks, comms, journal, settingsRow, metaRow] = await Promise.all([
+    CRM.dexie.contacts.toArray(),
+    CRM.dexie.projects.toArray(),
+    CRM.dexie.tasks.toArray(),
+    CRM.dexie.comms.toArray(),
+    CRM.dexie.journal_entries.toArray(),
+    CRM.dexie.kv.get('settings'),
+    CRM.dexie.kv.get('meta'),
+  ]);
+  return {
+    contacts, projects, tasks, comms, journal,
+    settings: settingsRow ? settingsRow.value : {},
+    meta: metaRow ? metaRow.value : { importedFiles: [] },
+  };
 };

@@ -876,12 +876,41 @@ CRM.applyTheme = function () {
   if (meta) meta.content = t === 'hell' ? '#f3f5f8' : '#11151c';
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+/* Phase 1 Abschluss (OFFLINE_SYNC.md, 2026-08): einmaliger Hinweis, BEVOR
+   Dexie zur echten Quelle wird — "Pflicht-Backup-Export vor jeder
+   Migration" ist eine von Chris bereits freigegebene Anforderung
+   (Risiko-Tabelle des Dokuments). Bewusst ein echtes Modal mit Button,
+   kein automatischer Hintergrund-Export: CRM.backup.exportJSON() nutzt
+   showDirectoryPicker()/navigator.share(), die beide eine ECHTE
+   Nutzer-Aktion brauchen — ein automatischer Aufruf ohne Klick würde in
+   Chrome/Edge scheitern (fehlende "User Activation"). Läuft nur einmal
+   pro Gerät (siehe CRM._dexieNeedsGate) und nur, wenn es überhaupt
+   Daten gibt, die verloren gehen könnten. */
+CRM.showDexieBackupGate = function () {
+  return new Promise((resolve) => {
+    CRM.openModal(`
+      <h2>💾 Kurz absichern, bevor es weitergeht</h2>
+      <p style="color:var(--text-dim);font-size:13px">Die App wechselt jetzt einmalig auf eine robustere Datenschicht (IndexedDB). Deine bestehenden Daten bleiben unangetastet in localStorage erhalten — trotzdem empfohlen: vorher ein Backup ziehen.</p>
+      <div class="modal-footer">
+        <button class="btn" id="dexie-gate-skip">Ohne Backup fortfahren</button>
+        <button class="btn btn-primary" id="dexie-gate-backup">💾 Backup jetzt erstellen</button>
+      </div>
+    `, { dismissible: false });
+    const finish = () => { CRM.closeModal(); resolve(); };
+    document.getElementById('dexie-gate-skip').addEventListener('click', finish);
+    document.getElementById('dexie-gate-backup').addEventListener('click', async () => {
+      await CRM.backup.exportJSON();
+      finish();
+    });
+  });
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
   CRM.db.init();
+  await CRM.db.switchToDexieIfNeeded(CRM.showDexieBackupGate);
   CRM.applyTheme();
   CRM.nav.init();
   CRM.swipe.init();
-  if (CRM.migrateToIndexedDB) CRM.migrateToIndexedDB();
   if (CRM.initSupabase) CRM.initSupabase();
   CRM.renderContactList();
   if (CRM.renderDashboard) CRM.renderDashboard();

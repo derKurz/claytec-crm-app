@@ -141,10 +141,53 @@ CRM.db = {
     this._journal = CRM.storage.read(CRM.KEYS.JOURNAL, []);
     this._settings = Object.assign({}, CRM.DEFAULT_SETTINGS, CRM.storage.read(CRM.KEYS.SETTINGS, {}));
     this._meta = CRM.storage.read(CRM.KEYS.META, { importedFiles: [] });
+    this._runMigrationHelpers();
+  },
+
+  /* Extrahiert aus init() (Phase-1-Abschluss, 2026-08): dieselben vier
+     Migrations-Helfer laufen jetzt AUCH nach einem Dexie-Umstieg erneut
+     (switchToDexieIfNeeded unten) — sonst würde z.B. eine alte
+     ansprechpartner-Struktur aus einem alten Dexie-Stand nicht repariert,
+     nur beim (dann evtl. gar nicht mehr genutzten) localStorage-Pfad. */
+  _runMigrationHelpers() {
     this._repairJournal();
     this._migrateContactTypes();
     this._migrateBauherrTypes();
     this._migrateAnsprechpartner();
+  },
+
+  /* Phase 1 Abschluss (OFFLINE_SYNC.md): Dexie wird die tatsächliche
+     Quelle statt eines stillen Spiegels. init() oben bleibt bewusst
+     UNVERÄNDERT (liest wie bisher aus localStorage) — diese Funktion
+     läuft danach separat und überschreibt bei Bedarf dieselben
+     In-Memory-Arrays mit dem Dexie-Stand. Jede neue Risikofläche liegt
+     damit in diesem neuen Code, nicht im bewährten init()-Pfad.
+     showGate: von app.js übergebene async Funktion, die (nur falls
+     nötig) den Backup-Hinweis-Dialog zeigt; das Ergebnis ändert nur, ob
+     vorher ein Backup lief — kopiert wird in jedem Fall. */
+  async switchToDexieIfNeeded(showGate) {
+    if (!CRM.dexie) return; // kein Dexie verfügbar -> exakt heutiges Verhalten, kein Eingriff
+    const needsGate = await CRM._dexieNeedsGate(this._contacts, this._projects, this._tasks, this._comms, this._journal);
+    if (needsGate) {
+      if (showGate) await showGate();
+      await CRM._dexieCopyFreshAndFlag(this._contacts, this._projects, this._tasks, this._comms, this._journal, this._settings, this._meta);
+    } else if (!(await CRM._dexiePrimaryFlagSet())) {
+      // Flag fehlt noch, aber nichts zu sichern (leerer Erststart) -> ohne Gate direkt umstellen
+      await CRM._dexieCopyFreshAndFlag(this._contacts, this._projects, this._tasks, this._comms, this._journal, this._settings, this._meta);
+    }
+    const fromDexie = await CRM._dexieReadAll();
+    if (!fromDexie) return;
+    this._contacts = fromDexie.contacts;
+    this._projects = fromDexie.projects;
+    this._tasks = fromDexie.tasks;
+    this._comms = fromDexie.comms;
+    this._journal = fromDexie.journal;
+    // Derselbe Defaults-Merge wie in init() oben — sonst fehlen nach dem
+    // Umstieg neuere Settings-Felder, die im gespeicherten Dexie-Stand
+    // noch nicht existierten (z.B. erst kürzlich ergänzte Optionen).
+    this._settings = Object.assign({}, CRM.DEFAULT_SETTINGS, fromDexie.settings || {});
+    this._meta = fromDexie.meta || { importedFiles: [] };
+    this._runMigrationHelpers();
   },
 
   /* Einmalige, idempotente Migration (Batch 5, 2026-08): Kategorie "sonstige"
