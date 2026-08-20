@@ -10,12 +10,22 @@ window.CRM = CRM;
 CRM.emailParser = {};
 
 CRM.emailParser.COMPANY_INDICATORS = [
-  'GmbH', 'AG', 'KG', 'OHG', 'UG', 'e.V.', 'eG', 'e.G.', 'IB', 'GbR', 'mbH', 'Inc', 'Ltd', 'LLC',
+  'GmbH', 'AG', 'KG', 'OHG', 'UG', 'e.V.', 'eG', 'e.G.', 'IB', 'GbR', 'mbH', 'Inc', 'Ltd', 'LLC', 'e.K.', 'eK',
   'Büro', 'Architektur', 'Ingenieurbüro', 'Planungsbüro', 'Bauzentrum', 'Bauunternehmen',
   'Bau', 'Baugesellschaft', 'Baustoffe', 'Naturbaustoffe', 'Baustoffhandel',
   'Immobilien', 'Consulting', 'Partner', 'Group', 'Gruppe',
   'Zentrum', 'Institut', 'Praxis', 'Kanzlei', 'Studio', 'Atelier', 'Werkstatt',
   'Service', 'Solutions', 'Systems', 'Technologies', 'Tech', 'Digital', 'Handels',
+  // Handwerksbetriebe (Chris-Feedback 2026-08: "Zimmerei Hauser GmbH & Co. KG"
+  // wurde als Personenname "Zimmerei Hauser" fehlinterpretiert, weil
+  // "Zimmerei" hier fehlte — bei ClayTecs Zielgruppe Verarbeiter/Handwerker
+  // sind Firmennamen der Form "<Gewerk> <Nachname>" der Normalfall, nicht
+  // die Ausnahme). Abgeleitet aus CRAFT_JOBS unten, als eigene Betriebs-
+  // bezeichnung statt Personen-/Berufstitel.
+  'Zimmerei', 'Schreinerei', 'Tischlerei', 'Malerei', 'Dachdeckerei',
+  'Elektro', 'Elektrotechnik', 'Sanitär', 'Heizungsbau', 'Metallbau',
+  'Schlosserei', 'Spenglerei', 'Glaserei', 'Fliesenlegerei',
+  'Stuckateur', 'Trockenbau', 'Innenausbau', 'Sanierung', 'Maurerbetrieb',
 ];
 
 CRM.emailParser.CRAFT_JOBS = [
@@ -371,7 +381,12 @@ CRM.emailParser.parse = function (rawText) {
       }
       if (!nameFound && i + 1 < textLines.length) {
         const next = textLines[i + 1];
-        if (next && splitWs(next).length <= 2 && !isPersonName(next) && !isJobTitle(next) && !isAcademicTitle(next)
+        // Zeilenlänge ODER eindeutige Rechtsform: "GmbH & Co. KG" hat 4
+        // Wörter (an "&"/"." vorbei) und wäre am reinen Wortzahl-Limit
+        // (≤2) gescheitert, obwohl es unzweifelhaft die Fortsetzung des
+        // Firmennamens ist (Chris-Beispiel "Zimmerei Hauser" + "GmbH & Co.
+        // KG" auf zwei Zeilen — wurden bisher NIE zusammengeführt).
+        if (next && (splitWs(next).length <= 2 || isCompanyName(next)) && !isPersonName(next) && !isJobTitle(next) && !isAcademicTitle(next)
           && next.toLowerCase().indexOf('standort') !== 0 && !/\d{5}/.test(next) && !/\d+$/.test(next)) {
           companyFound = companyFound + ' ' + next;
           textLines[i + 1] = '';
