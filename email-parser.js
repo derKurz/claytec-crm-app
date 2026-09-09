@@ -26,6 +26,10 @@ CRM.emailParser.COMPANY_INDICATORS = [
   'Elektro', 'Elektrotechnik', 'Sanitär', 'Heizungsbau', 'Metallbau',
   'Schlosserei', 'Spenglerei', 'Glaserei', 'Fliesenlegerei',
   'Stuckateur', 'Trockenbau', 'Innenausbau', 'Sanierung', 'Maurerbetrieb',
+  // Pluralformen für Sozietäts-/Büronamen (Chris-Feedback 2026-09:
+  // "architekten gruber | hettiger | haus" — Büroname beginnt mit der
+  // Berufsgruppe im Plural, nicht mit "Architektur"/"Ingenieurbüro").
+  'Architekten', 'Ingenieure',
 ];
 
 CRM.emailParser.CRAFT_JOBS = [
@@ -76,6 +80,11 @@ function isUpperStr(s) { return s === s.toUpperCase() && s !== s.toLowerCase(); 
 function isLowerStr(s) { return s === s.toLowerCase() && s !== s.toUpperCase(); }
 function capitalizeWord(w) { return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w; }
 function splitWs(s) { return s.trim().split(/\s+/).filter(Boolean); }
+// Jedes Buchstaben-Wortstück groß anfangen, Zahlen/Satzzeichen unangetastet
+// lassen (z.B. "fahrgasse 5" -> "Fahrgasse 5") — für komplett klein oder
+// komplett groß geschriebene Signaturen (in der Praxis beides üblich).
+function capitalizeWords(s) { return s.replace(/[a-zA-ZÄÖÜäöüß]+/g, (w) => capitalizeWord(w)); }
+function normalizeCasing(s) { return (isUpperStr(s) || isLowerStr(s)) ? capitalizeWords(s) : s; }
 
 CRM.emailParser.parse = function (rawText) {
   const EP = CRM.emailParser;
@@ -113,26 +122,31 @@ CRM.emailParser.parse = function (rawText) {
 
     // PLZ / Stadt / Straße
     if (!data.postal) {
-      const addrMatch = line.match(/^([A-ZÄÖÜ][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)\s+(\d+[a-z]?)\s*[-–]\s*(\d{5})\s+([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)/);
+      // Straße/Ort-Anfangsbuchstabe: Groß ODER klein zulassen — Signaturen
+      // sind oft durchgehend kleingeschrieben (Chris-Beispiel "fahrgasse 5,
+      // 97828 marktheidenfeld"); die erkannten Teile werden weiter unten
+      // per normalizeCasing() wieder in Groß-/Kleinschreibung gebracht.
+      const addrMatch = line.match(/^([A-ZÄÖÜa-zäöü][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)\s+(\d+[a-z]?)\s*[-–]\s*(\d{5})\s+([A-ZÄÖÜa-zäöü][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)/);
       if (addrMatch) {
-        data.street = addrMatch[1] + ' ' + addrMatch[2];
+        data.street = normalizeCasing(addrMatch[1] + ' ' + addrMatch[2]);
         data.postal = addrMatch[3];
         let cityRaw = addrMatch[4];
         let cityClean = cityRaw.split(/[/,]/)[0].trim();
-        data.city = isUpperStr(cityClean) ? capitalizeWord(cityClean) : cityClean;
+        data.city = normalizeCasing(cityClean);
         continue;
       }
-      const plzMatch = line.match(/(?:[dD][\s\-]+)?(\d{5})\s+([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:[/,\s]+[A-ZÄÖÜ][a-zäöüß\s]+)?)/);
+      const plzMatch = line.match(/(?:[dD][\s\-]+)?(\d{5})\s+([A-ZÄÖÜa-zäöü][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:[/,\s]+[A-ZÄÖÜ][a-zäöüß\s]+)?)/);
       if (plzMatch) {
         data.postal = plzMatch[1];
         let cityRaw = plzMatch[2];
         let cityClean = cityRaw.split(/[/,]/)[0].trim();
-        data.city = isUpperStr(cityClean) ? capitalizeWord(cityClean) : cityClean;
+        data.city = normalizeCasing(cityClean);
         let streetInLine = line.slice(0, line.indexOf(plzMatch[1])).trim();
         streetInLine = streetInLine.replace(/^[dD][\s\-]+/, '').trim();
         streetInLine = streetInLine.replace(/^Standort\s+\w+\s*/i, '').trim();
         streetInLine = streetInLine.replace(/\s*[-–]\s*$/, '').trim();
-        if (streetInLine && /\d+/.test(streetInLine)) data.street = streetInLine;
+        streetInLine = streetInLine.replace(/\s*,\s*$/, '').trim();
+        if (streetInLine && /\d+/.test(streetInLine)) data.street = normalizeCasing(streetInLine);
       }
     }
     if (!data.street) {
@@ -250,20 +264,24 @@ CRM.emailParser.parse = function (rawText) {
     });
   };
   const isCompanyName = (line) => {
-    // Rechtsformen/Branchen-Wörter: exakt als Wort (Groß-/Kleinschreibung zählt,
-    // damit „AG" nicht in „Baugefühl" o.ä. anschlägt); ab 6 Zeichen auch als
-    // Wortanfang („Baugesellschaft" in „Baugesellschaften").
+    // Rechtsformen/Branchen-Wörter: exakt als Wort, Groß-/Kleinschreibung
+    // EGAL (Chris-Feedback 2026-09: komplett kleingeschriebene Signaturen
+    // wie "architekten gruber | hettiger | haus" wurden vorher an keinem
+    // Firmen-Indikator erkannt, weil der Vergleich Groß-/Kleinschreibung
+    // exakt verlangte); ab 6 Zeichen auch als Wortanfang
+    // („Baugesellschaft" in „Baugesellschaften").
     const rawToks = line.split(/[^A-Za-zÄÖÜäöüß0-9.]+/).filter(Boolean).map((t) => t.replace(/\.+$/, ''));
     const hit = EP.COMPANY_INDICATORS.some((ind) => {
-      const indClean = ind.replace(/\./g, '');
+      const indClean = ind.replace(/\./g, '').toLowerCase();
       return rawToks.some((t) => {
-        const tClean = t.replace(/\./g, '');
+        const tClean = t.replace(/\./g, '').toLowerCase();
         if (tClean === indClean) return true;
         return indClean.length >= 6 && tClean.indexOf(indClean) === 0;
       });
     });
     if (hit) return true;
-    if (['Architekten', 'Ingenieure', 'Planer', 'Berater'].some((s) => line.endsWith(s))) return true;
+    const ll = line.toLowerCase();
+    if (['architekten', 'ingenieure', 'planer', 'berater'].some((s) => ll.endsWith(s))) return true;
     const words = splitWs(line);
     if (words.length === 3) {
       const last = words[words.length - 1].toLowerCase();
@@ -319,6 +337,9 @@ CRM.emailParser.parse = function (rawText) {
   };
   const correctCompany = (company) => {
     const allCaps = ['GMBH', 'AG', 'KG', 'OHG', 'UG', 'IB', 'GBR', 'MBH', 'INC', 'LTD', 'LLC', 'BDA', 'EG'];
+    // Bindewörter, die in Firmennamen klein bleiben, auch wenn der Rest
+    // groß angefangen wird (z.B. "Müller und Partner").
+    const small = ['und', 'an', 'am', 'im', 'zu', 'zur', 'zum', '&'];
     return splitWs(company).map((w) => {
       const wu = w.toUpperCase().replace(/\./g, '');
       if (allCaps.indexOf(wu) !== -1) {
@@ -328,6 +349,9 @@ CRM.emailParser.parse = function (rawText) {
         return wu;
       }
       if (isUpperStr(w)) return capitalizeWord(w);
+      // Komplett kleingeschriebene Signaturen (Chris-Feedback 2026-09,
+      // "architekten gruber | hettiger | haus") sonst unverändert lassen.
+      if (isLowerStr(w) && small.indexOf(w.toLowerCase()) === -1) return capitalizeWord(w);
       return w;
     }).join(' ');
   };
