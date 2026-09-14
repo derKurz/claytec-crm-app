@@ -223,11 +223,6 @@ CRM.emailParser.parse = function (rawText) {
   // Ohne diese Korrektur landet so eine Nummer fest im Festnetz-Feld und
   // blockiert dort den Platz für eine echte, unbeschriftete Festnetznummer
   // weiter unten im Text — die geht dann komplett verloren.
-  // Die Vorwahl gewinnt immer gegen das Label: manche schreiben ihre Handy-
-  // nummer unter "Tel."/"T" statt "Mobil"/"M" (Chris-Beispiel "Tel.:0179-...").
-  // Ohne diese Korrektur landet so eine Nummer fest im Festnetz-Feld und
-  // blockiert dort den Platz für eine echte, unbeschriftete Festnetznummer
-  // weiter unten im Text — die geht dann komplett verloren.
   let mobilePhone = null, workPhone = null;
   phonesFound.forEach(([t, n]) => {
     if (t !== 'mobile' && isMobileNum(n)) t = 'mobile';
@@ -283,16 +278,28 @@ CRM.emailParser.parse = function (rawText) {
   // exakt als Wort vorkommen; längere dürfen in Komposita stecken
   // (z.B. „berater" in „Verkaufsberater").
   const tokensLower = (line) => line.toLowerCase().split(/[^a-zäöüß0-9]+/).filter(Boolean);
-  const isJobTitle = (line) => {
+  // ============================================================
+  // Scoring statt starrer Ja/Nein-Kette (Chris-Feedback 2026-09-14:
+  // "wie kann man verhindern, dass jede Korrektur einen neuen Fehler
+  // erzeugt"). Jede Kategorie bekommt pro Zeile eine Punktzahl statt
+  // eines Ja/Nein-Urteils, das sofort und unumkehrbar feststeht. Die
+  // bestehenden Wortlisten/Heuristiken bleiben erhalten — sie liefern
+  // jetzt Punkte statt ein sofortiges Verdikt. Siehe Freigabe-Plan
+  // "Kontaktanalyse grundlegend robuster machen".
+  const JOBTITLE_FLOOR = 3, COMPANY_FLOOR = 3, PERSON_FLOOR = 3;
+  const scoreJobTitle = (line) => {
     const ll = line.toLowerCase();
     const toks = tokensLower(line);
-    return EP.TITLE_KEYWORDS.some((k) => {
+    const hit = EP.TITLE_KEYWORDS.some((k) => {
       if (k.indexOf(' ') !== -1) return ll.indexOf(k) !== -1; // Mehrwort („key account")
       if (k.length <= 4) return toks.indexOf(k) !== -1;
       return toks.some((t) => t.indexOf(k) !== -1);
     });
+    return hit ? 3 : 0;
   };
-  const isCompanyName = (line) => {
+  const isJobTitle = (line) => scoreJobTitle(line) >= JOBTITLE_FLOOR;
+
+  const hasCompanyIndicatorWord = (line) => {
     // Rechtsformen/Branchen-Wörter: exakt als Wort, Groß-/Kleinschreibung
     // EGAL (Chris-Feedback 2026-09: komplett kleingeschriebene Signaturen
     // wie "architekten gruber | hettiger | haus" wurden vorher an keinem
@@ -310,15 +317,38 @@ CRM.emailParser.parse = function (rawText) {
     });
     if (hit) return true;
     const ll = line.toLowerCase();
-    if (['architekten', 'ingenieure', 'planer', 'berater'].some((s) => ll.endsWith(s))) return true;
-    const words = splitWs(line);
-    if (words.length === 3) {
-      const last = words[words.length - 1].toLowerCase();
-      if (EP.CRAFT_JOBS.some((c) => last.indexOf(c) === 0)) return true;
-    }
-    if (words.length === 1 && isUpperStr(line) && line.length > 2) return true;
-    return false;
+    return ['architekten', 'ingenieure', 'planer', 'berater'].some((s) => ll.endsWith(s));
   };
+  const isThreeWordCraftCompany = (line) => {
+    const words = splitWs(line);
+    if (words.length !== 3) return false;
+    const last = words[words.length - 1].toLowerCase();
+    return EP.CRAFT_JOBS.some((c) => last.indexOf(c) === 0);
+  };
+  const isSingleAllCapsWord = (line) => {
+    const words = splitWs(line);
+    return words.length === 1 && isUpperStr(line) && line.length > 2;
+  };
+  // Reine Rechtsform-Fortsetzungszeilen ("GmbH & Co. KG") dürfen die
+  // eigentliche Firmenzeile nicht schlagen, nur weil sie mehrere
+  // Rechtsform-Wörter enthalten (vom Plan-Review gefunden: bei einer
+  // reinen Punktsumme hätte "GmbH & Co. KG" — 2 Treffer — fälschlich vor
+  // "Zimmerei Hauser" — 1 Treffer — gewonnen). Solche Zeilen werden über
+  // die Fortsetzungs-Zusammenführung weiter unten trotzdem angehängt.
+  const LEGAL_FORM_TOKENS = ['gmbh', 'ag', 'kg', 'ohg', 'ug', 'ev', 'eg', 'ib', 'gbr', 'mbh', 'inc', 'ltd', 'llc', 'ek', 'co', '&'];
+  const isAllLegalFormTokens = (line) => {
+    const toks = line.split(/[^A-Za-zÄÖÜäöüß&]+/).filter(Boolean).map((t) => t.toLowerCase());
+    return toks.length > 0 && toks.every((t) => LEGAL_FORM_TOKENS.indexOf(t) !== -1);
+  };
+  const scoreCompany = (line) => {
+    if (/[\d@]/.test(line)) return -100;
+    let score = 0;
+    if (hasCompanyIndicatorWord(line) || isThreeWordCraftCompany(line)) score += 3;
+    if (isSingleAllCapsWord(line)) score += 2;
+    if (isAllLegalFormTokens(line)) score -= 3;
+    return score;
+  };
+  const isCompanyName = (line) => scoreCompany(line) >= COMPANY_FLOOR;
   // Werbeslogans wie „Immer ein gutes Baugefühl": mehrere kleingeschriebene
   // Füllwörter mitten in der Zeile — nie Firma, nie Name, nie Funktion.
   const isSlogan = (line) => {
@@ -335,28 +365,42 @@ CRM.emailParser.parse = function (rawText) {
     if (capWords >= 2) return false;
     return true;
   };
-  const isPersonName = (line) => {
+  const NAME_PREFIXES = ['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.', 'M.A.', 'B.A.'];
+  const scorePerson = (line) => {
     const words = splitWs(line);
-    if (/[\d@]/.test(line)) return false;
-    if (words.length > 5 || words.length < 2) return false;
-    if (isCompanyName(line)) return false;
-    if (isJobTitle(line)) return false;
-    if (isSlogan(line)) return false;
-    if (['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.'].some((t) => line.indexOf(t) !== -1)) {
+    if (/[\d@]/.test(line)) return -100;
+    if (words.length > 5 || words.length < 2) return -100;
+
+    let score = 0;
+    if (NAME_PREFIXES.some((t) => line.indexOf(t) !== -1)) {
+      // Bekannter akad. Titel direkt vor dem Namen ("Dipl.-Ing. Julia
+      // Berger") — Rest muss wie ein kurzer Name aussehen.
       let woTitle = line;
-      ['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.', 'M.A.', 'B.A.'].forEach((t) => { woTitle = woTitle.replace(t, '').trim(); });
+      NAME_PREFIXES.forEach((t) => { woTitle = woTitle.replace(t, '').trim(); });
       const rem = splitWs(woTitle);
-      if (rem.length >= 1 && rem.length <= 3) return true;
+      if (rem.length >= 1 && rem.length <= 3) score += 5;
+    } else {
+      // Alle Wörter müssen wie Namensbestandteile aussehen (großgeschrieben,
+      // nur Buchstaben/Bindestrich; „von/zu/de..." klein erlaubt) — sonst
+      // rutschen Slogan-Reste oder Firmenzeilen mit einem Kleinwort
+      // ("Bauen mit Lehm") als Name durch.
+      const small = ['von', 'zu', 'van', 'de', 'del', 'la', 'le', 'der'];
+      const nameWords = words.filter((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
+      const smallWords = words.filter((w) => small.indexOf(w.toLowerCase()) !== -1 && isLowerStr(w));
+      if (nameWords.length + smallWords.length === words.length && nameWords.length >= 2) score += 3;
     }
-    // Alle Wörter müssen wie Namensbestandteile aussehen (großgeschrieben,
-    // nur Buchstaben/Bindestrich; „von/zu/de..." klein erlaubt) — sonst
-    // rutschen Slogan-Reste als Name durch.
-    const small = ['von', 'zu', 'van', 'de', 'del', 'la', 'le', 'der'];
-    const nameWords = words.filter((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
-    const smallWords = words.filter((w) => small.indexOf(w.toLowerCase()) !== -1 && isLowerStr(w));
-    if (nameWords.length + smallWords.length !== words.length) return false;
-    return nameWords.length >= 2;
+    if (score <= 0) return -100; // sieht strukturell überhaupt nicht wie ein Name aus
+
+    // Überschneidungen mit anderen Kategorien drücken die Punktzahl, statt
+    // sofort zu disqualifizieren — eine Zeile, die zufällig auch ein
+    // Funktions-Schlüsselwort enthält, bleibt trotzdem ein möglicher Name,
+    // konkurriert dann aber mit einer schwächeren Punktzahl.
+    if (isCompanyName(line)) score -= 3;
+    if (isJobTitle(line)) score -= 3;
+    if (isSlogan(line)) score -= 3;
+    return score;
   };
+  const isPersonName = (line) => scorePerson(line) >= PERSON_FLOOR;
   const correctName = (name) => {
     const small = ['von', 'zu', 'van', 'de', 'del', 'la', 'le'];
     return splitWs(name).map((w) => {
@@ -385,87 +429,145 @@ CRM.emailParser.parse = function (rawText) {
     }).join(' ');
   };
 
+  // ============================================================
+  // Klassifizierung in drei Phasen statt einer einzigen Vorwärts-Schleife
+  // mit dauerhaften Merkern. Jede Zeile bekommt Punkte für jede Kategorie;
+  // wer eine Kategorie gewinnt, wird über den GANZEN Text entschieden statt
+  // "wer zuerst passt" — so kann eine einzelne, durch einen Formatierungs-
+  // Zufall verunglückte Zeile nicht mehr die Einordnung einer ganz anderen
+  // Zeile umkippen (Chris-Feedback 2026-09-14, nach "Rupp Stuck"/"Sebastian
+  // Rupp -").
+  const isSkippable = (idx) => {
+    const line = textLines[idx];
+    return !line || line.toLowerCase().indexOf('standort ') === 0 || isSlogan(line);
+  };
+  const claimed = new Array(textLines.length).fill(false);
+  const remaining = () => {
+    const out = [];
+    for (let idx = 0; idx < textLines.length; idx++) if (!claimed[idx] && !isSkippable(idx)) out.push(idx);
+    return out;
+  };
+  // höchste Punktzahl unter den übergebenen Zeilen-Indizes + Abstand zur
+  // zweitbesten — der Abstand ist die Grundlage für die Unsicherheits-
+  // Markierung im Dialog.
+  const pickBest = (indices, scoreFn, floor) => {
+    let bestIdx = -1, bestScore = -Infinity, secondScore = -Infinity;
+    indices.forEach((idx) => {
+      const s = scoreFn(idx);
+      if (s > bestScore) { secondScore = bestScore; bestScore = s; bestIdx = idx; }
+      else if (s > secondScore) { secondScore = s; }
+    });
+    if (bestIdx === -1 || bestScore < floor) return { idx: -1 };
+    return { idx: bestIdx, score: bestScore, margin: secondScore === -Infinity ? Infinity : bestScore - secondScore };
+  };
+  const confidenceFromMargin = (margin) => (margin >= 2 ? 'high' : 'low');
+
   let nameFound = null, companyFound = null, titleFound = null;
-  for (let i = 0; i < textLines.length; i++) {
-    let line = textLines[i];
-    if (!line) continue;
-    if (line.toLowerCase().indexOf('standort ') === 0) continue;
-    if (!data.academic_title && isAcademicTitle(line)) { data.academic_title = line; continue; }
+  let companyIdx = -1, nameIdx = -1;
+  let companyConfidence = 'high', nameConfidence = 'high';
 
-    // Firma+Name nach Muster "Nachname Branche" / "Vorname Nachname"
-    // (typisch bei Einzelunternehmen/Handwerksbetrieben, z.B. "Meyer
-    // Innenausbau" gefolgt von "David Meyer"). isCompanyName() erkennt
-    // Branchen nur über eine feste Wortliste (GmbH, Bau, Handels, …) — bei
-    // Wörtern wie "Innenausbau", "Trockenbau", "Sanierung" usw. schlägt das
-    // fehl. Die generische Namens-Erkennung achtet nur auf Großschreibung,
-    // nicht auf Bedeutung, und reißt die Firmenzeile dann fälschlich als
-    // Name an sich — der echte Name in der Folgezeile geht komplett
-    // verloren (real passiert, wiederholt gemeldet). Generischer Fix statt
-    // weiterer Wortlisten-Flickerei: teilen sich Zeile und Folgezeile einen
-    // Nachnamen, UND die Folgezeile ist für sich genommen eindeutig ein
-    // Personenname, dann ist die AKTUELLE Zeile die Firma — unabhängig
-    // davon, welches Branchenwort sie enthält.
-    if (!companyFound && !nameFound && !isCompanyName(line)) {
-      const ownerWords = splitWs(line);
-      const looksLikeTwoCapWords = ownerWords.length === 2
-        && ownerWords.every((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
-      if (looksLikeTwoCapWords) {
-        const next = textLines[i + 1];
-        if (next && isPersonName(next)) {
-          const nextWords = splitWs(next);
-          const nextSurname = nextWords[nextWords.length - 1].toLowerCase();
-          const sharesSurname = ownerWords.some((w) => w.toLowerCase() === nextSurname);
-          if (sharesSurname) {
-            companyFound = line;
-            nameFound = correctName(next);
-            textLines[i + 1] = '';
-            continue;
-          }
-        }
-      }
-    }
+  // ---- Phase A: "Firma + Name mit gemeinsamem Nachnamen" (z.B. "Meyer
+  // Innenausbau" gefolgt von "David Meyer") — betrifft zwei GETRENNTE
+  // Zeilen und muss deshalb atomar (beide zusammen oder keine) entschieden
+  // werden, bevor Phase B die Zeilen einzeln bewertet. Würde man das nur
+  // als Punkte-Bonus auf eine Zeile umsetzen, könnte die zugehörige Name-
+  // Zeile trotzdem an eine ganz andere Zeile im Text verlieren.
+  for (let i = 0; i < textLines.length && companyIdx === -1; i++) {
+    if (claimed[i] || isSkippable(i)) continue;
+    const line = textLines[i];
+    if (isCompanyName(line)) continue; // eindeutige Firma braucht die Paar-Heuristik nicht
+    const ownerWords = splitWs(line);
+    const looksLikeTwoCapWords = ownerWords.length === 2
+      && ownerWords.every((w) => /^[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ\-']*$/.test(w) || isUpperStr(w));
+    if (!looksLikeTwoCapWords) continue;
+    const j = i + 1;
+    if (j >= textLines.length || claimed[j] || isSkippable(j)) continue;
+    const next = textLines[j];
+    if (!isPersonName(next)) continue;
+    const nextWords = splitWs(next);
+    const nextSurname = nextWords[nextWords.length - 1].toLowerCase();
+    if (!ownerWords.some((w) => w.toLowerCase() === nextSurname)) continue;
+    companyFound = line; companyIdx = i;
+    nameFound = correctName(next); nameIdx = j;
+    claimed[i] = true; claimed[j] = true;
+  }
 
-    if (!companyFound && isCompanyName(line)) {
-      companyFound = line;
-      const words = splitWs(line);
-      if (words.length === 3 && !nameFound) {
-        const last = words[words.length - 1].toLowerCase();
-        if (EP.CRAFT_JOBS.some((c) => last.indexOf(c) !== -1)) nameFound = correctName(words.slice(0, 2).join(' '));
-      }
-      if (!nameFound && i + 1 < textLines.length) {
-        const next = textLines[i + 1];
-        // Zeilenlänge ODER eindeutige Rechtsform: "GmbH & Co. KG" hat 4
-        // Wörter (an "&"/"." vorbei) und wäre am reinen Wortzahl-Limit
-        // (≤2) gescheitert, obwohl es unzweifelhaft die Fortsetzung des
-        // Firmennamens ist (Chris-Beispiel "Zimmerei Hauser" + "GmbH & Co.
-        // KG" auf zwei Zeilen — wurden bisher NIE zusammengeführt).
-        if (next && (splitWs(next).length <= 2 || isCompanyName(next)) && !isPersonName(next) && !isJobTitle(next) && !isAcademicTitle(next)
-          && next.toLowerCase().indexOf('standort') !== 0 && !/\d{5}/.test(next) && !/\d+$/.test(next)) {
-          companyFound = companyFound + ' ' + next;
-          textLines[i + 1] = '';
-        }
-      }
-      continue;
+  // ---- Phase B: Punktzahl + beste Zeile je Kategorie, über alle noch
+  // unbeanspruchten Zeilen. Reihenfolge ist bewusst gewählt (Firma vor
+  // Akad.-Titel vor Name vor Funktion) — "Architekt, Dipl. Ing." muss vor
+  // der Funktions-Prüfung als Akad.-Titel beansprucht werden, sonst
+  // gewinnt dort fälschlich die Funktion.
+  if (companyIdx === -1) {
+    const best = pickBest(remaining(), (idx) => scoreCompany(textLines[idx]), COMPANY_FLOOR);
+    if (best.idx !== -1) {
+      companyFound = textLines[best.idx]; companyIdx = best.idx; claimed[best.idx] = true;
+      companyConfidence = confidenceFromMargin(best.margin);
     }
-    if (!nameFound && isPersonName(line)) {
-      let corrected = correctName(line);
-      const prefixes = ['Dipl.-Ing.', 'Dr.', 'Prof.', 'Dipl.', 'M.Sc.', 'B.Sc.', 'M.A.', 'B.A.'];
-      for (const p of prefixes) {
+  }
+  if (!data.academic_title) {
+    const idx = remaining().find((idx) => isAcademicTitle(textLines[idx]));
+    if (idx !== undefined) { data.academic_title = textLines[idx]; claimed[idx] = true; }
+  }
+  if (nameIdx === -1) {
+    const best = pickBest(remaining(), (idx) => scorePerson(textLines[idx]), PERSON_FLOOR);
+    if (best.idx !== -1) {
+      let corrected = correctName(textLines[best.idx]);
+      for (const p of NAME_PREFIXES) {
         if (corrected.indexOf(p) !== -1) { if (!data.academic_title) data.academic_title = p; corrected = corrected.replace(p, '').trim(); break; }
       }
-      nameFound = corrected;
-      continue;
+      nameFound = corrected; nameIdx = best.idx; claimed[best.idx] = true;
+      nameConfidence = confidenceFromMargin(best.margin);
     }
-    if (isJobTitle(line)) { if (!titleFound) titleFound = line; continue; }
-    if (isSlogan(line)) continue; // Werbesprüche komplett ignorieren
-    if (!companyFound && line.toLowerCase().indexOf('standort') !== 0) {
-      if (isCompanyName(line) || !isPersonName(line)) companyFound = line;
+  }
+  {
+    const best = pickBest(remaining(), (idx) => scoreJobTitle(textLines[idx]), JOBTITLE_FLOOR);
+    if (best.idx !== -1) { titleFound = textLines[best.idx]; claimed[best.idx] = true; }
+  }
+
+  // ---- Phase C: bleibt eine Zeile ganz ohne positive Kategorie-Punkte
+  // übrig und ist die Firma noch leer, wird sie trotzdem übernommen
+  // (Beispiel "Bauen mit Lehm" — passt strukturell in keine Kategorie,
+  // ist aber offensichtlich die Firma). Dafür gibt es keinerlei positives
+  // Signal, deshalb immer als unsicher markiert — das ist der Fall, den
+  // Chris im Dialog sehen soll, statt dass die App still rät.
+  if (companyIdx === -1) {
+    const idx = remaining().find((idx) => !isPersonName(textLines[idx]));
+    if (idx !== undefined) { companyFound = textLines[idx]; companyIdx = idx; claimed[idx] = true; companyConfidence = 'low'; }
+  }
+
+  // ---- Nachbearbeitung der Firmen-Gewinnerzeile (wie bisher, nur nicht
+  // mehr inline während einer Vorwärts-Schleife, sondern erst jetzt, wo
+  // der Gewinner feststeht) ----
+  if (companyIdx !== -1) {
+    const words = splitWs(companyFound);
+    if (words.length === 3 && !nameFound) {
+      const last = words[words.length - 1].toLowerCase();
+      if (EP.CRAFT_JOBS.some((c) => last.indexOf(c) !== -1)) nameFound = correctName(words.slice(0, 2).join(' '));
+    }
+    const j = companyIdx + 1;
+    if (j < textLines.length && !claimed[j]) {
+      const next = textLines[j];
+      // Zeilenlänge ODER eindeutige Rechtsform ODER reine Rechtsform-
+      // Bausteine: "GmbH & Co. KG" hat 4 Wörter UND gilt seit der
+      // Punktzahl-Korrektur oben nicht mehr als "isCompanyName" (das war
+      // nötig, damit so eine Zeile nicht selbst als Firma gewinnt) — ohne
+      // isAllLegalFormTokens() als dritte Alternative würde die
+      // Zusammenführung hier nicht mehr greifen.
+      if (next && (splitWs(next).length <= 2 || isCompanyName(next) || isAllLegalFormTokens(next))
+        && !isPersonName(next) && !isJobTitle(next) && !isAcademicTitle(next)
+        && next.toLowerCase().indexOf('standort') !== 0 && !/\d{5}/.test(next) && !/\d+$/.test(next)) {
+        companyFound = companyFound + ' ' + next;
+        claimed[j] = true;
+      }
     }
   }
 
   if (nameFound) data.name = nameFound;
   if (companyFound) data.company = correctCompany(companyFound);
   if (titleFound) data.title = titleFound;
+  data._confidence = {};
+  if (companyFound) data._confidence.company = companyConfidence;
+  if (nameFound) data._confidence.name = nameConfidence;
   return data;
 };
 
@@ -867,7 +969,20 @@ CRM.emailParser.analyze = function () {
     const el = document.getElementById('ep-' + key);
     if (el) el.value = data[key] || '';
   });
-  CRM.toast('Analysiert — bitte Felder prüfen.', 'success');
+  // Firma/Name: bei knapper oder fehlender Erkennung (siehe parse()s
+  // Scoring) den Rand gelb markieren, statt still zu raten — Chris-
+  // Feedback 2026-09-14 ("wie kann man verhindern, dass ich das jedes
+  // Mal erst am falschen Ergebnis merke").
+  const conf = data._confidence || {};
+  let unsicher = false;
+  ['company', 'name'].forEach((key) => {
+    const el = document.getElementById('ep-' + key);
+    if (!el) return;
+    const istUnsicher = conf[key] === 'low';
+    el.classList.toggle('ep-unsicher', istUnsicher);
+    if (istUnsicher) unsicher = true;
+  });
+  CRM.toast(unsicher ? 'Analysiert — bitte Firma/Name prüfen (nicht eindeutig erkannt).' : 'Analysiert — bitte Felder prüfen.', unsicher ? 'error' : 'success');
 };
 
 CRM.emailParser.createContact = function () {
