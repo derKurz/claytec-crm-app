@@ -30,6 +30,13 @@ CRM.emailParser.COMPANY_INDICATORS = [
   // "architekten gruber | hettiger | haus" — Büroname beginnt mit der
   // Berufsgruppe im Plural, nicht mit "Architektur"/"Ingenieurbüro").
   'Architekten', 'Ingenieure',
+  // Kurzform von "Stuckateur" in Betriebsnamen (Chris-Feedback 2026-09:
+  // "Rupp Stuck" wurde als Personenname gelesen, weil "Stuck" allein hier
+  // fehlte — "Stuckateur" trifft nur bei ausgeschriebenem Wort). Zusätzliche
+  // Absicherung neben dem Bindestrich-Fix, greift auch wenn Firma und
+  // Ansprechpartner keinen gemeinsamen Nachnamen teilen (z.B. angestellter
+  // Mitarbeiter statt Inhaber).
+  'Stuck',
 ];
 
 CRM.emailParser.CRAFT_JOBS = [
@@ -257,7 +264,14 @@ CRM.emailParser.parse = function (rawText) {
       || ll.indexOf('t ') === 0 || ll.indexOf('f ') === 0 || ll.indexOf('m ') === 0
       || (data.street && line === data.street);
     if (!isStructural && line) {
-      const cleaned = line.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+      let cleaned = line.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+      // Einzelner Bindestrich am Anfang/Ende ist fast immer ein abgeschnittener
+      // Funktions-Zusatz (z.B. "Sebastian Rupp -" statt "Sebastian Rupp -
+      // Inhaber") und wird von isPersonName() sonst als drittes "Wort"
+      // mitgezählt — dadurch fällt die Zeile durch die Namenserkennung und
+      // landet faelschlich im Firmen-Auffangbecken (Chris-Feedback 2026-09:
+      // "Rupp Stuck" / "Sebastian Rupp" wurden dadurch vertauscht).
+      cleaned = cleaned.replace(/\s*[-–—]\s*$/, '').replace(/^[-–—]\s*/, '').trim();
       if (cleaned) textLines.push(cleaned);
     }
   });
