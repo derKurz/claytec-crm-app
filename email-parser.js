@@ -105,7 +105,9 @@ CRM.emailParser.parse = function (rawText) {
     const lineLower = line.toLowerCase();
 
     if (line.indexOf('@') !== -1) {
-      const ms = line.match(/[\w.-]+@[\w.-]+\.\w+/g) || [];
+      // Leerzeichen direkt vor/nach dem @ (Tippfehler, z.B. "name@ domain.de")
+      // vor dem Erkennen entfernen — sonst geht die ganze Adresse verloren.
+      const ms = line.replace(/\s*@\s*/g, '@').match(/[\w.-]+@[\w.-]+\.\w+/g) || [];
       ms.forEach((em) => { if (emailsFound.indexOf(em) === -1) emailsFound.push(em); });
     }
 
@@ -126,7 +128,7 @@ CRM.emailParser.parse = function (rawText) {
       // sind oft durchgehend kleingeschrieben (Chris-Beispiel "fahrgasse 5,
       // 97828 marktheidenfeld"); die erkannten Teile werden weiter unten
       // per normalizeCasing() wieder in Groß-/Kleinschreibung gebracht.
-      const addrMatch = line.match(/^([A-ZÄÖÜa-zäöü][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)\s+(\d+[a-z]?)\s*[-–]\s*(\d{5})\s+([A-ZÄÖÜa-zäöü][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)/);
+      const addrMatch = line.match(/^([A-ZÄÖÜa-zäöü][a-zäöüß\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)\s+(\d+(?:\s?[a-z])?)\s*[-–]\s*(\d{5})\s+([A-ZÄÖÜa-zäöü][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*)/);
       if (addrMatch) {
         data.street = normalizeCasing(addrMatch[1] + ' ' + addrMatch[2]);
         data.postal = addrMatch[3];
@@ -153,7 +155,9 @@ CRM.emailParser.parse = function (rawText) {
       // Hausnummer kann durch Bindestrich ODER Schrägstrich getrennt sein
       // (z.B. "Bahnhofstraße 27 / 29" bei Doppel-/Nachbargebäuden) — vorher
       // wurde nur "-" akzeptiert, die Straße ging dann komplett verloren.
-      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+[a-z]?(?:\s*[-–\/]\s*\d+[a-z]?)?)$/i);
+      // Der Buchstaben-Zusatz ("2b") kann auch mit Leerzeichen geschrieben
+      // sein ("2 b", Chris-Beispiel "Tauchersreuther Hauptstraße 2 b").
+      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+(?:\s?[a-z])?(?:\s*[-–\/]\s*\d+(?:\s?[a-z])?)?)$/i);
       if (streetMatch) data.street = line;
     }
 
@@ -207,9 +211,20 @@ CRM.emailParser.parse = function (rawText) {
     const d = String(n).replace(/[^\d+]/g, '').replace(/^\+49/, '0').replace(/^0049/, '0');
     return /^01[567]/.test(d);
   };
+  // Die Vorwahl gewinnt immer gegen das Label: manche schreiben ihre Handy-
+  // nummer unter "Tel."/"T" statt "Mobil"/"M" (Chris-Beispiel "Tel.:0179-...").
+  // Ohne diese Korrektur landet so eine Nummer fest im Festnetz-Feld und
+  // blockiert dort den Platz für eine echte, unbeschriftete Festnetznummer
+  // weiter unten im Text — die geht dann komplett verloren.
+  // Die Vorwahl gewinnt immer gegen das Label: manche schreiben ihre Handy-
+  // nummer unter "Tel."/"T" statt "Mobil"/"M" (Chris-Beispiel "Tel.:0179-...").
+  // Ohne diese Korrektur landet so eine Nummer fest im Festnetz-Feld und
+  // blockiert dort den Platz für eine echte, unbeschriftete Festnetznummer
+  // weiter unten im Text — die geht dann komplett verloren.
   let mobilePhone = null, workPhone = null;
   phonesFound.forEach(([t, n]) => {
-    if (t === 'unknown') t = isMobileNum(n) ? 'mobile' : 'work';
+    if (t !== 'mobile' && isMobileNum(n)) t = 'mobile';
+    else if (t === 'unknown') t = 'work';
     if (t === 'mobile' && !mobilePhone) mobilePhone = n;
     else if (t === 'work' && !workPhone) workPhone = n;
   });
