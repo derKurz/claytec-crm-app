@@ -66,20 +66,33 @@ CRM.renderHeuteListe = function () {
       <span style="color:var(--text-dim);font-size:13px" id="agenda-selection-count"></span>
     </div>`;
 
-  const section = (title, taskItems, visitItems) => {
+  // Aufklappbar (Chris-Feedback 2026-09-15): Zustand bleibt nur für die
+  // laufende Sitzung im Speicher (wie CRM._agendaSelection/_calMode
+  // daneben), nicht in localStorage — jede Sektion merkt sich für sich,
+  // ob sie zu- oder aufgeklappt ist, auch über mehrere renderHeuteListe()-
+  // Aufrufe hinweg (z.B. nach dem Abhaken einer Aufgabe).
+  CRM._agendaCollapsed = CRM._agendaCollapsed || {};
+  const section = (key, title, taskItems, visitItems) => {
     const taskRows = taskItems.map(({ t, st }) => CRM.taskRow(t, st)).join('');
     const visitRows = visitItems.map(({ c, due }) => CRM.visitRow(c, due)).join('');
     const count = taskItems.length + visitItems.length;
     if (!count) return `<div class="card"><h3 style="margin-top:0">${title} (0)</h3><p style="color:var(--text-dim);font-size:13px">Nichts offen.</p></div>`;
-    return `<div class="card"><h3 style="margin-top:0">${title} (${count})</h3>${taskRows}${visitRows}</div>`;
+    const collapsed = !!CRM._agendaCollapsed[key];
+    return `<div class="card">
+      <h3 class="agenda-section-head" onclick="CRM.toggleAgendaSection('${key}')">
+        <span>${title} (${count})</span>
+        <span class="agenda-section-chev">${collapsed ? '▸' : '▾'}</span>
+      </h3>
+      <div${collapsed ? ' hidden' : ''}>${taskRows}${visitRows}</div>
+    </div>`;
   };
 
   body.innerHTML = `
     ${quickAdd}
     ${tourBar}
-    ${section('Überfällig', tasks.overdue, visits.overdue)}
-    ${section('Heute fällig', tasks.today, visits.today)}
-    ${section('Diese Woche', tasks.week, visits.week)}
+    ${section('overdue', 'Überfällig', tasks.overdue, visits.overdue)}
+    ${section('today', 'Heute fällig', tasks.today, visits.today)}
+    ${section('week', 'Diese Woche', tasks.week, visits.week)}
   `;
 
   body.querySelectorAll('.agenda-check').forEach((cb) => {
@@ -93,6 +106,15 @@ CRM.renderHeuteListe = function () {
   const titleInput = document.getElementById('heute-task-title');
   if (titleInput) titleInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') CRM.quickAddTask(); });
   CRM.updateAgendaSelectionCount();
+};
+
+/* Klapp-Zustand einer der drei "Heute"-Sektionen umschalten (Überfällig/
+   Heute fällig/Diese Woche) und die Liste neu zeichnen — nur #heute-body,
+   nicht die ganze Startseite. */
+CRM.toggleAgendaSection = function (key) {
+  CRM._agendaCollapsed = CRM._agendaCollapsed || {};
+  CRM._agendaCollapsed[key] = !CRM._agendaCollapsed[key];
+  CRM.renderHeuteListe();
 };
 
 /* Chris-Feedback (2026-08, Screenshot "Diese Woche"): ".list-item" ist
