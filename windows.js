@@ -76,7 +76,14 @@ CRM.win.openDraftFromForm = function () {
   const typeEl = document.getElementById('ep-type');
   const srcEl = document.getElementById('ep-source');
   const draftContact = CRM.emailParser.toContact(data, typeEl ? typeEl.value : 'bauherr', srcEl ? srcEl.value : 'eigene');
+  CRM.win.openDraftFromContact(draftContact);
+};
 
+/* Wie openDraftFromForm(), aber mit einem bereits fertigen Entwurfs-
+   Kontaktobjekt statt aus dem "+ Neuer Kontakt"-DOM zu lesen — Zweitnutzer:
+   die "🔍 Vergleichen"-Karte beim automatischen Anlegen aus "E-Mail
+   ablegen" heraus (dort gibt es kein #ep-company-Formular). */
+CRM.win.openDraftFromContact = function (draftContact) {
   const already = CRM.win._wins.find((w) => w.kind === 'draft');
   if (already) {
     already.draftContact = draftContact;

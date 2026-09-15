@@ -615,6 +615,7 @@ CRM.mailAblage = { _contactId: null };
 
 /* Eigene Adressen: Mails VON diesen Adressen sind ausgehend */
 CRM.mailAblage.OWN_PATTERNS = ['claytec.com', 'kurz.christian78@gmail.com'];
+CRM.mailAblage.isOwn = function (m) { return !!m && CRM.mailAblage.OWN_PATTERNS.some((p) => m.toLowerCase().includes(p)); };
 
 CRM.mailAblage.open = function (prefContactId, prefProjectId, prefill) {
   CRM.mailAblage._contactId = prefContactId || null;
@@ -656,6 +657,64 @@ CRM.mailAblage.open = function (prefContactId, prefProjectId, prefill) {
   if (!prefill) setTimeout(() => { const t = document.getElementById('ma-input'); if (t) t.focus(); }, 60);
 };
 
+/* ============================================================
+   Automatische Adresserkennung beim Ablegen (Chris-Feedback 2026-09-15):
+   "Wenn ich eine E-Mail mit Adresse einfüge, soll die Adresse erkannt,
+   gegen bestehende Kontakte abgeglichen und bei einem neuen Kontakt
+   automatisch (nach kurzer Bestätigung) angelegt werden — ohne
+   Dialogwechsel, ohne die Mail nochmal einfügen zu müssen."
+   Läuft NUR, wenn die Mailadressen-Suche in analyze() nichts fand.
+   ============================================================ */
+
+/* Kontakttyp-Vermutung aus Firma/Funktion/Titel — entscheidet NIE allein,
+   sondern befüllt nur die Dropdown-Vorauswahl in showNeuForm(). Der
+   bestehende toContact()-Rückfall 'bauherr' wäre für eine geschäftliche
+   Signatur inhaltlich falsch (email-parser.js toContact()). */
+CRM.mailAblage._typVorschlag = function (data) {
+  const text = [data.company, data.title, data.academic_title].filter(Boolean).join(' ').toLowerCase();
+  const hat = (liste) => liste.some((w) => text.indexOf(w) !== -1);
+  if (hat(['architekt', 'architektur', 'planungsbüro', 'ingenieurbüro', 'ingenieure', 'stadtplaner', 'bda', 'planer'])) return 'architekt';
+  if (hat(['baustoffe', 'baustoffhandel', 'naturbaustoffe', 'bauzentrum', 'baumarkt', 'handels'])) return 'haendler';
+  if (hat(CRM.emailParser.CRAFT_JOBS.concat(['zimmerei', 'schreinerei', 'tischlerei', 'malerei', 'dachdeckerei', 'stuckateur', 'stuck', 'trockenbau', 'innenausbau', 'maurerbetrieb', 'bauunternehmen']))) return 'verarbeiter';
+  if (hat(['gemeinde', 'markt', 'stadtverwaltung', 'landratsamt', 'bauamt', 'regierung von', 'verwaltungsgemeinschaft'])) return 'behoerde';
+  const privatDomains = ['gmx.', 'web.de', 'gmail.', 't-online.', 'outlook.', 'hotmail.', 'freenet.', 'aol.', 'icloud.'];
+  if (!data.company && data.email && privatDomains.some((d) => data.email.toLowerCase().indexOf(d) !== -1)) return 'bauherr';
+  return '';
+};
+
+/* Wertet den eingefügten Text mit dem Kontaktanalyse-Parser aus und
+   gleicht ihn gegen bestehende Kontakte ab (Firma+PLZ, dieselbe
+   Ähnlichkeitsprüfung wie beim Excel-Import). Ergebnis in
+   CRM.mailAblage._parsedMatch, wird in renderMatch()/showNeuForm()
+   gelesen. */
+CRM.mailAblage._analyseAdresse = function () {
+  const text = (document.getElementById('ma-input') || {}).value || '';
+  const data = CRM.emailParser.parse(text);
+  // Eigene Adresse (z.B. aus einer zitierten "Von:"-Kopfzeile in einer
+  // weitergeleiteten Mail) darf nie als Kontakt-Mailadresse durchgehen.
+  if (data.email && CRM.mailAblage.isOwn(data.email)) data.email = '';
+  if (data.email2 && CRM.mailAblage.isOwn(data.email2)) data.email2 = '';
+  if (!data.company && !data.name) { CRM.mailAblage._parsedMatch = null; return; }
+  const typ = CRM.mailAblage._typVorschlag(data);
+  const kand = CRM.emailParser.toContact(data, typ, 'eigene');
+  let treffer = null, bestScore = 0;
+  CRM.db.getContacts().forEach((x) => {
+    const score = CRM.importer.matchScore(kand, x);
+    if (score > bestScore) { bestScore = score; treffer = x; }
+  });
+  if (bestScore < CRM.importer.DUPLICATE_THRESHOLD) treffer = null;
+  // Gründe, warum die Erkennung hier unsicher ist — werden in der
+  // Anlege-Karte als Klartext gezeigt, nicht nur als oranger Rand.
+  const gruende = [];
+  if (data._confidence && data._confidence.company === 'low') gruende.push('Firma nicht eindeutig erkannt');
+  if (data._confidence && data._confidence.name === 'low') gruende.push('Name nicht eindeutig erkannt');
+  if (data.email && CRM.mailAblage._detectedMail && data.email.toLowerCase() !== CRM.mailAblage._detectedMail.toLowerCase()) {
+    gruende.push('Signatur weicht von der Absenderadresse ab — evtl. eine zitierte/weitergeleitete Mail');
+  }
+  if (!data.postal) gruende.push('Keine PLZ erkannt — Abgleich mit bestehenden Kontakten unsicher');
+  CRM.mailAblage._parsedMatch = { data, kand, treffer, typVorschlag: typ, unsicher: gruende.length > 0, gruende };
+};
+
 /* Kopfzeilen der eingefügten Mail auswerten (deutsch + englisch) */
 CRM.mailAblage.analyze = function () {
   const text = document.getElementById('ma-input').value;
@@ -679,8 +738,7 @@ CRM.mailAblage.analyze = function () {
   const toMail = mailIn(toLine);
 
   // Richtung: kommt die Mail VON einer eigenen Adresse → ausgehend
-  const isOwn = (m) => m && CRM.mailAblage.OWN_PATTERNS.some((p) => m.toLowerCase().includes(p));
-  const direction = isOwn(fromMail) ? 'out' : 'in';
+  const direction = CRM.mailAblage.isOwn(fromMail) ? 'out' : 'in';
   document.getElementById('ma-direction').value = direction;
   if (subject) document.getElementById('ma-subject').value = subject.replace(/^(AW|RE|WG|FW|FWD)\s*:\s*/i, '');
 
@@ -695,9 +753,14 @@ CRM.mailAblage.analyze = function () {
 
   // Kontakt über die Kunden-Mailadresse finden (bei ausgehender Mail: Empfänger)
   const partnerMail = (direction === 'out' ? (toMail || fromMail) : fromMail);
-  CRM.mailAblage._detectedMail = partnerMail || '';
+  // Nie die eigene Adresse als "Absender/Empfänger" übernehmen — kann sonst
+  // passieren, wenn eine weitergeleitete Mail keine eigene "An:"-Zeile hat
+  // (partnerMail fällt dann auf fromMail zurück, das die eigene Adresse
+  // ist). Ohne diese Sperre würde die eigene Adresse später als "erkannte
+  // E-Mail" eines neu angelegten Kontakts gespeichert.
+  CRM.mailAblage._detectedMail = (partnerMail && !CRM.mailAblage.isOwn(partnerMail)) ? partnerMail : '';
   let found = null;
-  if (partnerMail && !isOwn(partnerMail)) {
+  if (partnerMail && !CRM.mailAblage.isOwn(partnerMail)) {
     const pm = partnerMail.toLowerCase();
     found = CRM.db.getContacts().find((c) =>
       String(c.emailFirma || '').toLowerCase() === pm
@@ -705,6 +768,12 @@ CRM.mailAblage.analyze = function () {
       || (Array.isArray(c.ansprechpartner) ? c.ansprechpartner : []).some((a) => String(a.email || '').toLowerCase() === pm));
   }
   CRM.mailAblage._contactId = found ? found.id : CRM.mailAblage._contactId;
+  // Adress-Auswertung nur, wenn noch kein Kontakt feststeht (weder über die
+  // Mailadresse gerade eben, noch von einem vorherigen Aufruf/einer
+  // Vorbelegung wie "Antwort dokumentieren") — die Mailadresse ist der
+  // zuverlässigere Treffer und hat immer Vorrang.
+  CRM.mailAblage._parsedMatch = null;
+  if (!CRM.mailAblage._contactId) CRM.mailAblage._analyseAdresse();
   CRM.mailAblage.renderMatch(!found);
 };
 
@@ -721,13 +790,20 @@ CRM.mailAblage.renderMatch = function (showPicker) {
       </div>`;
     return;
   }
+  const pm = CRM.mailAblage._parsedMatch;
+  const vorschlagHtml = (pm && pm.treffer) ? `
+    <div style="background:rgba(90,155,255,.12);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <span>💡 Aus der Signatur erkannt: <strong>${esc(pm.treffer.firma1)}</strong> <span style="color:var(--text-dim);font-size:12px">(${esc(pm.treffer.plz)} ${esc(pm.treffer.ort)})</span> — ist das der Absender?</span>
+      <button class="btn btn-sm btn-primary" onclick="CRM.mailAblage._contactId='${pm.treffer.id}';CRM.mailAblage.renderMatch()">✓ Ja, der ist es</button>
+    </div>` : '';
   el.innerHTML = `
+    ${vorschlagHtml}
     <div style="border:1px solid var(--orange);border-radius:8px;padding:8px 12px">
       <div style="margin-bottom:6px;font-size:13px">${showPicker ? '⚠ Kein Kontakt mit dieser Adresse gefunden — bitte wählen:' : 'Kontakt wählen (oder oben „▼ Zuordnen" für automatische Erkennung):'}</div>
       <input id="ma-contact-search" placeholder="Firma, Ort, PLZ suchen..." autocomplete="off">
       <div id="ma-contact-results" style="margin-top:6px"></div>
       <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
-        ${showPicker && CRM.mailAblage._detectedMail ? `<button class="btn btn-sm" onclick="CRM.closeModal();CRM.emailParser.openDialog()">➕ Als neuen Kontakt anlegen</button>` : ''}
+        ${showPicker ? `<button class="btn btn-sm" onclick="CRM.mailAblage.showNeuForm()">➕ Als neuen Kontakt anlegen</button>` : ''}
         <button class="btn btn-sm" onclick="CRM.mailAblage.showPrivateForm()">🏠 Als private Anfrage ablegen</button>
       </div>
     </div>`;
@@ -843,6 +919,115 @@ CRM.mailAblage.savePrivate = function () {
   });
   CRM.mailAblage._contactId = c.id;
   CRM.mailAblage.save(); // legt die E-Mail als comm ab und zeigt „Kontakt öffnen"
+};
+
+/* ============================================================
+   Neuer Kontakt aus der erkannten Adresse — Bestätigungskarte
+   (Chris-Feedback 2026-09-15, "Variante B"): zeigt die aus der Signatur
+   erkannten Felder, EIN Tipp legt den Kontakt an. Kein Dialogwechsel,
+   der eingefügte Mailtext bleibt die ganze Zeit erhalten.
+   ============================================================ */
+CRM.mailAblage.showNeuForm = function () {
+  const el = document.getElementById('ma-match');
+  if (!el) return;
+  const pm = CRM.mailAblage._parsedMatch || { data: {}, unsicher: false, gruende: [] };
+  const d = pm.data || {};
+  const mail = d.email || CRM.mailAblage._detectedMail || '';
+  const typeOpts = '<option value="">– bitte wählen –</option>' + CRM.TYPES.map((t) =>
+    `<option value="${t}"${t === pm.typVorschlag ? ' selected' : ''}>${CRM.TYPE_LABELS[t]}</option>`).join('');
+  el.innerHTML = `
+    <div style="border:1px solid var(--accent);border-radius:8px;padding:10px 12px">
+      <div style="font-size:13px;margin-bottom:8px">➕ <strong>Neuer Kontakt</strong> — bitte kurz prüfen, bevor er angelegt wird.</div>
+      ${pm.unsicher ? `<div style="font-size:12px;color:var(--orange);margin-bottom:8px">⚠ ${pm.gruende.map(esc).join(' · ')}</div>` : ''}
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <div class="col" style="min-width:200px"><label>Firma</label><input id="ma-neu-company" class="${d._confidence && d._confidence.company === 'low' ? 'ep-unsicher' : ''}" value="${escAttr(d.company || '')}"></div>
+        <div class="col" style="min-width:200px"><label>Name</label><input id="ma-neu-name" class="${d._confidence && d._confidence.name === 'low' ? 'ep-unsicher' : ''}" value="${escAttr(d.name || '')}"></div>
+      </div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <div class="col" style="min-width:160px"><label>Straße</label><input id="ma-neu-street" value="${escAttr(d.street || '')}"></div>
+        <div class="col" style="max-width:100px"><label>PLZ</label><input id="ma-neu-postal" value="${escAttr(d.postal || '')}"></div>
+        <div class="col" style="min-width:140px"><label>Ort</label><input id="ma-neu-city" value="${escAttr(d.city || '')}"></div>
+      </div>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <div class="col" style="min-width:180px"><label>Kontakttyp</label><select id="ma-neu-type">${typeOpts}</select></div>
+        <div class="col" style="min-width:180px">${mail ? `<label>E-Mail</label><p style="font-size:13px;margin:0;padding:8px 0">📧 ${esc(mail)}</p>` : ''}</div>
+      </div>
+      <div id="ma-neu-dup-warning"></div>
+      <div class="row" style="gap:6px;margin-top:8px">
+        <button class="btn btn-sm" onclick="CRM.mailAblage.renderMatch(true)">Zurück</button>
+        <button class="btn btn-sm" onclick="CRM.mailAblage.openVollesFormular()" title="Übergibt den eingefügten Text unverändert an das vollständige Kontaktformular">✎ Im vollen Formular öffnen</button>
+        <button class="btn btn-sm ${pm.unsicher ? '' : 'btn-primary'}" onclick="CRM.mailAblage.saveNeu()">➕ ${pm.unsicher ? 'Anlegen — bitte prüfen' : 'Anlegen & weiter'}</button>
+      </div>
+    </div>`;
+  setTimeout(() => { const f = document.getElementById('ma-neu-company'); if (f) f.focus(); }, 50);
+};
+
+/* Notausgang aus der Karte: der eingefügte Text geht unverändert ins
+   volle "+ Neuer Kontakt"-Formular über — kein erneutes Einfügen nötig
+   (gleiches Muster wie CRM.voice._promoteToContact() in voice-commands.js). */
+CRM.mailAblage.openVollesFormular = function () {
+  const text = (document.getElementById('ma-input') || {}).value || '';
+  CRM.emailParser.openDialog();
+  const input = document.getElementById('ep-input');
+  if (input) input.value = text;
+  CRM.emailParser.analyze();
+};
+
+CRM.mailAblage.saveNeu = function () {
+  const val = (id) => (document.getElementById(id) || {}).value || '';
+  const company = val('ma-neu-company').trim();
+  const name = val('ma-neu-name').trim();
+  if (!company && !name) { CRM.toast('Mindestens Firma oder Name nötig.', 'error'); return; }
+  const typ = val('ma-neu-type');
+  if (!typ) { CRM.toast('Bitte Kontakttyp wählen.', 'error'); return; }
+  const pm = CRM.mailAblage._parsedMatch || { data: {} };
+  const data = Object.assign({}, pm.data, {
+    company, name, street: val('ma-neu-street').trim(), postal: val('ma-neu-postal').trim(), city: val('ma-neu-city').trim(),
+  });
+  const c = CRM.emailParser.toContact(data, typ, 'eigene');
+  // Absenderadresse am neuen Kontakt hinterlegen, damit die nächste Mail
+  // derselben Person sofort automatisch zugeordnet wird (der eigentliche
+  // Zweck der Übung) — nur ergänzen, falls toContact sie nicht schon
+  // (z.B. als generische Firmen-Mail) übernommen hat.
+  const mail = (data.email || CRM.mailAblage._detectedMail || '').toLowerCase();
+  if (mail) {
+    const schonDa = String(c.emailFirma || '').toLowerCase() === mail
+      || (c.ansprechpartner || []).some((a) => String(a.email || '').toLowerCase() === mail);
+    if (!schonDa) {
+      if (c.ansprechpartner && c.ansprechpartner[0]) c.ansprechpartner[0].email = c.ansprechpartner[0].email || mail;
+      else c.ansprechpartner = [{ id: CRM.uid('ap'), name: '', vorname: '', funktion: '', telefon: '', email: mail, istHaupt: true }];
+    }
+  }
+
+  // Gleiche Duplikatprüfung wie im vollen Formular (Firmenname normalisiert
+  // + gleiche PLZ) — nicht-destruktiver Hinweis, die Karte bleibt stehen.
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-zäöüß0-9]/g, '');
+  const dup = CRM.db.getContacts().find((x) => norm(x.firma1) === norm(c.firma1) && (!c.plz || x.plz === c.plz));
+  const warnEl = document.getElementById('ma-neu-dup-warning');
+  if (dup) {
+    if (warnEl) {
+      warnEl.innerHTML = `
+        <div class="card" style="border-color:var(--orange);margin-top:10px;padding:10px 12px">
+          <div style="font-size:13px;margin-bottom:8px">⚠️ Möglicher Doppelkontakt: „<strong>${esc(dup.firma1)}</strong>" (${esc(dup.plz)} ${esc(dup.ort)}) existiert bereits. Deine Eingaben oben bleiben erhalten.</div>
+          <div class="row" style="gap:6px">
+            <button type="button" class="btn btn-sm" onclick='CRM.win.openDraftFromContact(${JSON.stringify(c).replace(/'/g, "&#39;")})' title="Öffnet ein Vergleichsfenster mit diesem Kontakt — diese Karte bleibt geöffnet">🔍 Vergleichen</button>
+            <button type="button" class="btn btn-sm btn-primary" onclick='CRM.mailAblage._forceNeu(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Trotzdem neu anlegen</button>
+          </div>
+        </div>`;
+      warnEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    return;
+  }
+  if (warnEl) warnEl.innerHTML = '';
+  CRM.mailAblage._forceNeu(c);
+};
+
+CRM.mailAblage._forceNeu = function (c) {
+  const pid = (document.getElementById('ma-project') || {}).value || '';
+  if (pid) CRM.emailParser._pendingProjectId = pid;
+  const saved = CRM.emailParser._addContactMitNachlauf(c, { openDetail: false });
+  CRM.mailAblage._contactId = saved.id;
+  CRM.mailAblage.renderMatch();
 };
 
 /* ============================================================
@@ -1021,7 +1206,16 @@ CRM.emailParser.createContact = function () {
   CRM.emailParser._forceAdd(c);
 };
 
-CRM.emailParser._forceAdd = function (c) {
+// Gemeinsamer Nachlauf nach dem eigentlichen Speichern: Verknüpfungen,
+// Toast, Listen-Refresh, Geocoding, vCard. Der Sprung ins Kontaktprofil
+// (opts.openDetail, Standard: an) läuft über CRM.openContactDetail() →
+// CRM.openModal() → CRM.closeModal() (app.js) — schließt also JEDES
+// gerade offene Modal mit. Für das volle "+ Neuer Kontakt"-Formular ist
+// das gewünscht (der Anlege-Vorgang IST das Modal). Für "E-Mail ablegen"
+// wäre das fatal: es würde sich selbst schließen und den eingefügten
+// Mailtext vernichten — deshalb dort opts.openDetail:false übergeben.
+CRM.emailParser._addContactMitNachlauf = function (c, opts) {
+  opts = opts || {};
   const saved = CRM.db.addContact(c);
   if (CRM.emailParser._pendingProjectId) CRM.linkContactToProject(saved.id, CRM.emailParser._pendingProjectId);
   (CRM.emailParser._pendingLinks || []).forEach((linkId) => CRM.linkContacts(saved.id, linkId));
@@ -1030,11 +1224,16 @@ CRM.emailParser._forceAdd = function (c) {
   CRM.emailParser._pendingProjectId = '';
   CRM.toast(linkCount ? `Kontakt angelegt und ${linkCount} Verknüpfung(en) gesetzt.` : 'Kontakt angelegt.', 'success');
   CRM.renderContactList();
-  CRM.openContactDetail(saved.id);
+  if (opts.openDetail !== false) CRM.openContactDetail(saved.id);
   if (CRM.geocoding && CRM.geocoding.geocodeSingle) CRM.geocoding.geocodeSingle(saved.id);
   // vCard automatisch im Kundenordner ablegen (nur am Laptop mit
   // verbundenem Claytec-Ordner; sonst still — 📇-Button im Profil bleibt)
   if (CRM.vcard) CRM.vcard.autoSave(saved.id);
+  return saved;
+};
+
+CRM.emailParser._forceAdd = function (c) {
+  return CRM.emailParser._addContactMitNachlauf(c);
 };
 
 /* ============================================================
