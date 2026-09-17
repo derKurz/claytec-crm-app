@@ -213,7 +213,7 @@ CRM.renderContactDetailModal = function (id) {
     return;
   }
   const due = CRM.getDueStatus(c);
-  const dueLabelMap = { overdue: 'Überfällig', today: 'Heute fällig', week: 'Diese Woche fällig', ok: 'OK (' + due.diffDays + ' Tage)' };
+  const dueLabelMap = { overdue: 'Überfällig', today: 'Heute fällig', week: 'Diese Woche fällig', ok: 'OK (' + due.diffDays + ' Tage)', none: 'Noch nie besucht' };
 
   const typeOptions = CRM.TYPES.map((t) => `<option value="${t}" ${c.type === t ? 'selected' : ''}>${CRM.TYPE_LABELS[t]}</option>`).join('');
   const sourceOptions = CRM.SOURCES.map((s) => `<option value="${s}" ${c.source === s ? 'selected' : ''}>${CRM.SOURCE_LABELS[s]}</option>`).join('');

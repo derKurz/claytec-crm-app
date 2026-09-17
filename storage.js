@@ -919,18 +919,29 @@ CRM.getLastVisit = function (contact) {
   return contact.visits.reduce((latest, v) => (!latest || v.date > latest.date ? v : latest), null);
 };
 
+// Chris-Feedback 2026-09-17: 144 Kontakte tauchten unter "Diese Woche
+// fällig" auf, obwohl er dafür nichts angelegt hatte. Ursache: fehlte ein
+// Besuch, wurde ersatzweise das Anlagedatum (createdAt) als Startpunkt für
+// den A/B/C-Rhythmus genommen — jeder importierte, nie besuchte Kontakt
+// lief so nach 30/60/90 Tagen automatisch als "fällig" auf, unabhängig
+// davon, ob überhaupt schon eine echte Beziehung zu diesem Kontakt
+// besteht. Jetzt: ohne echten Besuch gibt es schlicht KEIN automatisches
+// Fälligkeitsdatum — der Rhythmus beginnt erst mit dem ersten von Chris
+// selbst erfassten Besuch. Für "Erinnerung an neue, noch nie besuchte
+// Kontakte" gibt es bereits die frei steuerbare Aufgaben-Funktion.
 CRM.getNextDueDate = function (contact) {
+  const last = CRM.getLastVisit(contact);
+  if (!last) return null;
   const settings = CRM.db.getSettings();
   const interval = settings.intervals[contact.abc] || 60;
-  const last = CRM.getLastVisit(contact);
-  const base = last ? new Date(last.date) : new Date(contact.createdAt || Date.now());
-  const due = new Date(base);
+  const due = new Date(last.date);
   due.setDate(due.getDate() + interval);
   return due;
 };
 
 CRM.getDueStatus = function (contact) {
   const due = CRM.getNextDueDate(contact);
+  if (!due) return { status: 'none', diffDays: null, due: null };
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
@@ -1404,7 +1415,7 @@ CRM.backup = {
     const contactRows = contacts.map((c) => {
       const last = CRM.getLastVisit(c);
       const due = CRM.getDueStatus(c);
-      const dueLabels = { overdue: 'Überfällig', today: 'Heute', week: 'Diese Woche', ok: 'OK' };
+      const dueLabels = { overdue: 'Überfällig', today: 'Heute', week: 'Diese Woche', ok: 'OK', none: '–' };
       const visitHist = (c.visits || []).slice().sort((a, b) => (a.date < b.date ? 1 : -1))
         .map((v) => `${v.date}: ${v.note || '(ohne Notiz)'}`).join(' | ');
       const links = []

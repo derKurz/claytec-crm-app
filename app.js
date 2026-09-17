@@ -307,7 +307,7 @@ CRM.contactRowHtml = function (c, opts) {
   const checkboxClass = o.checkboxClass || 'contact-check';
   const selectionSet = o.selectionSet || new Set();
   const due = CRM.getDueStatus(c);
-  const dueLabel = { overdue: 'Überfällig', today: 'Heute', week: 'Diese Woche', ok: 'OK' }[due.status];
+  const dueLabel = { overdue: 'Überfällig', today: 'Heute', week: 'Diese Woche', ok: 'OK', none: '–' }[due.status];
   const checked = selectionSet.has(c.id) ? 'checked' : '';
   const todoText = CRM.getOpenTodoText(c);
   const todo = todoText ? `<span class="badge badge-todo" title="${esc(todoText)}">❗ ${esc(todoText)}</span>` : '';

@@ -355,6 +355,7 @@ CRM.collectCalendarEvents = function () {
   });
   CRM.db.getContacts().forEach((c) => {
     const due = CRM.getNextDueDate(c);
+    if (!due) return; // noch nie besucht -> kein automatischer Kalender-Marker
     const ds = CRM.ymd(due);
     push(ds, { type: 'visit', label: '📍 ' + c.firma1, id: c.id, contactId: c.id, color: CRM.TYPE_COLORS ? (CRM.TYPE_COLORS[c.type] || '#888') : '#888' });
   });
