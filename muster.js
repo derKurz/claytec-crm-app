@@ -63,6 +63,7 @@ CRM.muster.start = function (opts) {
   m._einheit = {};   // pro Artikel: 'stk' oder 've'
   m._openKats = null; // wird in renderListe gesetzt: nur erste Kategorie offen
   m._suche = '';
+  m._journalEntry = null; // Journal-Eintrag dieses Dialogs (siehe _journal)
   m._kopf = { kunde: '', knr: '', ap: '', adresse: '', anlass: '' };
   m._adrQuelle = 'firma';
   m._kontaktQuery = opts.query || '';
@@ -334,7 +335,8 @@ CRM.muster._stepKarte = function () {
       + '</div>',
     footer: '<button class="btn" onclick="CRM.muster._zurueck()">‹ Ändern</button>'
       + '<button class="btn" onclick="CRM.muster.copy()">📋 Kopieren</button>'
-      + '<button class="btn btn-primary" onclick="CRM.muster.send()">✉ Bestell-Mail öffnen</button>',
+      + '<button class="btn btn-primary" onclick="CRM.muster.send()">✉ Bestell-Mail öffnen</button>'
+      + '<button class="btn" onclick="CRM.muster._abbrechen()">✓ Fertig</button>',
   };
 };
 
@@ -645,9 +647,19 @@ CRM.muster._journal = function (c) {
     const adr = String(CRM.muster._kopf.adresse || '').trim().replace(/\s*\n+\s*/g, ', ');
     if (adr) ziel = ' → ' + CRM.muster._adrLabel() + ': ' + adr;
   }
+  const content = 'Werbemittel bestellt: ' + txt + ziel;
+  // Wird in DIESEM Dialog mehrfach kopiert/gesendet (oder nach "Ändern"
+  // erneut), den einen Eintrag aktualisieren statt Doppeleinträge zu
+  // erzeugen.
+  const alt = CRM.muster._journalEntry;
+  if (alt && CRM.db._journal.indexOf(alt) >= 0) {
+    alt.content = content;
+    CRM.db.saveJournal();
+    return;
+  }
   // Feldnamen müssen zum Journal-Datenmodell passen (entryType/content) —
   // sonst wird der Eintrag zwar gespeichert, aber leer angezeigt.
-  CRM.db.addJournalEntry({ contactId: c.id, entryType: 'muster', content: 'Werbemittel bestellt: ' + txt + ziel, inputMethod: 'muster' });
+  CRM.muster._journalEntry = CRM.db.addJournalEntry({ contactId: c.id, entryType: 'muster', content, inputMethod: 'muster' });
 };
 
 CRM.muster.send = function () {
@@ -664,7 +676,8 @@ CRM.muster.send = function () {
     if (t && !t.done) { CRM.db.updateTask(taskId, { done: true, doneAt: new Date().toISOString() }); taskInfo = ' Aufgabe erledigt.'; }
     CRM.muster._taskId = null;
   }
-  CRM.closeModal();
+  // Bestellkarte bleibt stehen (Chris 2026-09-21: "das ist Quatsch, dass es
+  // verschwindet") — geschlossen wird nur mit "Fertig".
   window.location.href = 'mailto:' + encodeURIComponent(to)
     + '?subject=' + encodeURIComponent(res.betreff)
     + '&body=' + encodeURIComponent(res.body);
@@ -681,8 +694,7 @@ CRM.muster.copy = function () {
   CRM._copyRichText('<pre>' + esc2(res.betreff) + '\n\n' + esc2(res.body) + '</pre>', res.betreff + '\n\n' + res.body)
     .then(() => {
       CRM.muster._journal(res.c);
-      CRM.closeModal();
-      CRM.toast('✓ Kopiert (' + res.zeilen.length + ' Positionen) — im Journal vermerkt.', 'success');
+      CRM.toast('✓ Kopiert (' + res.zeilen.length + ' Positionen) — im Journal vermerkt. Die Karte bleibt offen.', 'success');
     })
     .catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
 };
