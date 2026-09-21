@@ -116,6 +116,10 @@ button{font-family:inherit}
 /* Aufklappbare "Heute"-Sektionen (Überfällig/Heute fällig/Diese Woche) */
 .agenda-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;min-height:44px;margin:-14px -14px 0;padding:14px;user-select:none}
 .agenda-section-chev{color:var(--text-dim);font-size:12px;flex-shrink:0}
+/* Muster versenden: große Tippflächen für die Lieferadresse (Schritt 2) */
+.mu-tile{display:block;width:100%;text-align:left;min-height:56px;padding:10px 12px;margin-bottom:8px;background:var(--bg-elev2);border:1px solid var(--border);border-radius:10px;color:var(--text);cursor:pointer;font:inherit}
+.mu-tile.active{border-color:var(--accent);background:rgba(30,142,80,.10)}
+.mu-tile-sub{font-size:12px;color:var(--text-dim);margin-top:2px}
 
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .col{flex:1;min-width:120px}

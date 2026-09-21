@@ -1147,7 +1147,11 @@ CRM.initHeaderSearch = function () {
     { icon: '📍', label: 'Regionen', keys: ['regionen', 'region', 'gebiet'], run: () => CRM.switchTab('regionen') },
     { icon: '🕸️', label: 'Netzwerk', keys: ['netzwerk', 'beziehung'], run: () => CRM.switchTab('netzwerk') },
     { icon: '📋', label: 'Projekte', keys: ['projekte', 'projekt', 'baustelle', 'bv'], run: () => CRM.switchTab('projekte') },
-    { icon: '📦', label: 'Muster-Lager', keys: ['muster', 'lager', 'inventur'], run: () => { if (CRM.lager && CRM.lager.openDialog) CRM.lager.openDialog(); else CRM.switchTab('start'); } },
+    // Chris (2026-09-21): "wenn ich Muster eingebe, die Option haben, Muster
+    // versenden zu können" — Kontakt → Adresse → Muster → Bestellkarte.
+    // "muster kraft" wählt den Kontakt vor, wenn genau einer passt.
+    { icon: '📦', label: 'Muster versenden — Bestellung an Innendienst', keys: ['muster', 'muster versenden', 'muster bestellen', 'musterversand', 'werbemittel', 'bestellung'], run: (q) => { if (CRM.muster && CRM.muster.startFromSearch) CRM.muster.startFromSearch(q); } },
+    { icon: '📦', label: 'Muster-Lager — Bestand im Auto', keys: ['muster', 'lager', 'inventur'], run: () => { if (CRM.lager && CRM.lager.openDialog) CRM.lager.openDialog(); else CRM.switchTab('start'); } },
     { icon: '🏨', label: 'Hotels / Übernachtungen', keys: ['hotel', 'hotels', 'uebernachtung', 'übernachtung', 'gasthof'], run: () => { if (CRM.hotels && CRM.hotels.openDialog) CRM.hotels.openDialog(); } },
     { icon: '💾', label: 'Backup erstellen', keys: ['backup', 'sicherung', 'sichern'], run: () => CRM.backup && CRM.backup.exportJSON() },
     { icon: '📥', label: 'Handy-Eingang verarbeiten', keys: ['eingang', 'sync', 'synchronisieren'], run: () => CRM.ablage && CRM.ablage.processEingang(false) },
@@ -1226,7 +1230,7 @@ CRM.initHeaderSearch = function () {
         const d = row.dataset;
         if (d.action != null) {
           input.value = ''; results.classList.add('hidden');
-          const cmd = COMMANDS[+d.action]; if (cmd) cmd.run();
+          const cmd = COMMANDS[+d.action]; if (cmd) cmd.run(q);
         } else if (d.plz != null) {
           input.value = ''; results.classList.add('hidden'); CRM.jumpToContactsFilter({ plz: d.plz });
         } else if (d.ort != null) {

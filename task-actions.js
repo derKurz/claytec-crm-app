@@ -266,6 +266,13 @@ CRM.taskActions._saveEditor = function () {
 CRM.taskActions.menuHtml = function (taskId, returnType, returnId) {
   const ridArg = returnId ? `'${returnId}'` : 'null';
   const ctx = `CRM.taskActions.uiCtx('${returnType}',${ridArg})`;
+  // Muster bestellen nur dort anbieten, wo der Kontakt eindeutig ist: in der
+  // Aufgabenliste eines Kontaktprofils. Auf Startseite/Agenda bewusst nicht
+  // (Chris 2026-08: "den brauche ich da nicht") — deshalb NICHT aus
+  // task.contactId geraten, sondern nur bei returnType 'contact'.
+  const musterItem = (returnType === 'contact' && returnId)
+    ? `<button onclick="event.stopPropagation();CRM.muster.open('${returnId}','${taskId}')">📦 Muster bestellen &amp; erledigen</button>`
+    : '';
   return `<div class="ov-menu">
     <button class="btn btn-sm" title="Weitere Aktionen" onclick="event.stopPropagation();CRM.toggleOvMenu(this,event)">⋯</button>
     <div class="ov-menu-list hidden">
@@ -273,6 +280,7 @@ CRM.taskActions.menuHtml = function (taskId, returnType, returnId) {
       <button onclick="event.stopPropagation();CRM.taskActions.postpone('${taskId}','woche',${ctx})">📅 Auf nächste Woche</button>
       <button onclick="event.stopPropagation();CRM.taskActions.openPostponeDialog('${taskId}',${ctx})">📆 Datum wählen…</button>
       <button onclick="event.stopPropagation();CRM.taskActions.openEditor('${taskId}',${ctx})">✏️ Bearbeiten &amp; verknüpfen</button>
+      ${musterItem}
       <button onclick="event.stopPropagation();CRM.taskActions.remove('${taskId}',${ctx})" style="color:var(--red)">🗑 Löschen</button>
     </div>
   </div>`;
