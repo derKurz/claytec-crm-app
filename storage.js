@@ -58,7 +58,13 @@ CRM.ABC = ['A', 'B', 'C'];
    unten — das ist die einzige Stelle, die eine Gruppenmitgliedschaft prüft
    oder setzt; alles andere im Code ruft nur diese Primitiven. */
 CRM.FOKUS_GRUPPEN = [
-  { key: 'rohbaustoff', icon: '🧱', label: 'Rohbaustoff', quelle: 'manuell' },
+  // Chris 2026-09-22 (Korrektur): keine eigene, freie "Rohbaustoff"-Gruppe —
+  // gemeint sind Baustoffhändler, die zur Eurobaustoff-Gruppe gehören. Das
+  // ist bereits vorhanden (c.type + c.source, Feld "Listenquelle" im
+  // Kontaktprofil) — daher BERECHNET statt manuell, wie "Meine Verarbeiter"
+  // unten: kein Nachpflegen nötig, neu importierte Eurobaustoff-Händler
+  // fallen automatisch mit rein.
+  { key: 'eurobaustoff', icon: '🛒', label: 'Eurobaustoff-Händler', quelle: 'berechnet', test: (c) => c.type === 'haendler' && c.source === 'eurobaustoff' },
   { key: 'top25', icon: '🏆', label: 'Top 25', quelle: 'feld', test: (c) => !!c.top25, set: (c, on) => { c.top25 = on; } },
   // Chris 2026-09-22 (Korrektur): "meine Verarbeiter" sind nicht alle
   // Kontakte vom Typ Verarbeiter, sondern nur die, mit denen aktuell
