@@ -206,6 +206,19 @@ CRM.cdToggle = function (key) {
   try { localStorage.setItem('crmCdSections', JSON.stringify(st)); } catch (e) { /* voll/privat */ }
 };
 
+/* Fokusgruppen-Chips im Profilkopf (Chris 2026-09-22: "ich brauche
+   Schwerpunkte"). Ersetzt den früheren einzelnen Top-25-Button — Top-25 ist
+   jetzt einer dieser fünf Chips (quelle:'feld', schreibt weiter in c.top25,
+   siehe CRM.FOKUS_GRUPPEN in storage.js). Gleiches Toggle-Badge-Muster wie
+   der bisherige Aktiv-Button oben. */
+CRM.fokusBadgesHtml = function (c) {
+  const chips = CRM.FOKUS_GRUPPEN.map((g) => {
+    const on = CRM.inFokusGruppe(c, g.key);
+    return `<button class="badge badge-toggle${on ? ' badge-on-gold' : ''}" title="${on ? '„' + esc2(g.label) + '" entfernen' : 'Zu „' + esc2(g.label) + '" hinzufügen'}" onclick="CRM.toggleFokusGruppe('${c.id}','${g.key}')">${g.icon} ${esc2(g.label)}</button>`;
+  }).join('');
+  return `<div class="li-badges cd-meta cd-fokus"><span style="font-size:11px;color:var(--text-dim);align-self:center">🎯 Schwerpunkte:</span>${chips}</div>`;
+};
+
 CRM.renderContactDetailModal = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) {
@@ -276,7 +289,6 @@ CRM.renderContactDetailModal = function (id) {
       <div>
         <h2 style="margin:0 0 6px">${esc2(CRM.displayNameDisambig(c))} ${c.isPartner ? '⭐' : ''}</h2>
         <div class="li-badges cd-meta">
-          <button class="badge badge-toggle ${c.top25 ? 'badge-on-gold' : ''}" title="${c.top25 ? 'Top-25-Markierung entfernen' : 'Als Top-25-Kunde markieren'}" onclick="CRM.toggleContactTop25('${c.id}')">🏆 Top-25</button>
           <button class="badge badge-toggle ${c.aktiv ? 'badge-on-gold' : ''}" title="${c.aktiv ? 'Aktiv-Markierung entfernen' : 'Als aktiv markieren'}" onclick="CRM.toggleContactAktiv('${c.id}')">${c.aktiv ? '⭐' : '☆'} Aktiv</button>
           <span class="badge badge-${c.type}">${CRM.TYPE_LABELS[c.type]}</span>
           <span class="badge badge-${c.abc}">${c.abc}</span>
@@ -284,6 +296,7 @@ CRM.renderContactDetailModal = function (id) {
           <span class="badge ${due.status === 'overdue' ? 'badge-overdue' : ''}">${dueLabelMap[due.status]}</span>
           <button class="badge" style="cursor:pointer;border-color:var(--accent);color:var(--accent)" title="Region im Regionen-Tab öffnen" onclick="CRM.closeModal();CRM.goToRegion('${CRM.regionForPlz(c.plz)}')">📍 ${esc2(CRM.regionNameForPlz(c.plz))}</button>
         </div>
+        ${CRM.fokusBadgesHtml(c)}
         ${(() => {
           // Ansprechpartner gehört in den Kopf — im Außendienst die zweitwichtigste
           // Information nach dem Firmennamen, bisher nur tief in den Stammdaten.

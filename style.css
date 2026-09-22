@@ -453,6 +453,22 @@ body.resizing-col{cursor:col-resize;user-select:none}
 .qf-btn.active{background:var(--accent);color:#06121c;border-color:var(--accent)}
 .mobile-only-filter{display:none}
 
+/* Fokusgruppen-Leiste (Chris 2026-09-22): eigene Zeile ÜBER den Quick-
+   Filtern — die primäre Navigation gegen die Kontaktflut, nicht ein
+   sechster Chip im ohnehin vollen Scroller. Chevron-Muster wie
+   .agenda-section-head/.agenda-section-chev. */
+.fokus-bar{background:var(--bg-elev);border:1px solid var(--border);border-radius:var(--radius);
+  padding:10px 12px;margin-bottom:var(--space-2)}
+.fokus-bar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  cursor:pointer;min-height:44px;margin:-10px -12px 0;padding:10px 12px;user-select:none;font-weight:600}
+.fokus-chips{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:8px}
+.fokus-chip{padding:6px 12px;min-height:44px;font-size:13px;border-radius:99px;
+  border:1px solid var(--border);background:var(--bg-elev2);color:var(--text-dim);cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px}
+.fokus-chip.active{background:var(--accent);color:#06121c;border-color:var(--accent)}
+.fokus-chip-n{background:rgba(0,0,0,.15);border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600}
+.fokus-chip.active .fokus-chip-n{background:rgba(0,0,0,.25)}
+
 /* contain: Ist das Board am Anschlag, wandert die Geste nicht an Chrome
    weiter — sie gehört dann dem Reiterwechsel (siehe CRM.swipe). */
 .kanban{display:flex;gap:10px;overflow-x:auto;height:100%;overscroll-behavior-x:contain}
@@ -564,6 +580,7 @@ body.resizing-col{cursor:col-resize;user-select:none}
      Feinschliff der Icon-/Aktions-Buttons siehe Block am Dateiende. */
   .btn{min-height:44px}
   .qf-btn{min-height:44px}
+  .badge-toggle{min-height:44px}
 
   /* Typ-Filter als horizontale Chip-Leiste statt Dropdown */
   .mobile-only-filter{display:inline-flex}
@@ -1083,6 +1100,16 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
   font:inherit;font-size:11px;min-height:34px;padding:0 10px;display:inline-flex;align-items:center;gap:3px;
 }
 .badge-on-gold{border-color:var(--accent-2);color:var(--accent-2);background:rgba(255,193,7,.12)}
+/* Fokusgruppen-Chip-Zeile im Kontaktprofil, siehe CRM.fokusBadgesHtml */
+.cd-fokus{margin-top:6px}
+
+/* Karte: Segmented Control "Alle zeigen / Nur Schwerpunkte" (Chris
+   2026-09-22) — steht über den Typ-Checkboxen im Filter-Panel. */
+.map-fokus-toggle{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.map-fokus-toggle button{flex:1;min-height:40px;border:none;background:var(--bg-elev2);color:var(--text-dim);
+  font:inherit;font-size:13px;cursor:pointer}
+.map-fokus-toggle button.active{background:var(--accent);color:#06121c;font-weight:600}
+.map-fokus-toggle button+button{border-left:1px solid var(--border)}
 
 /* Mikrofon-Einstiege: Desktop-Kopfzeilenknopf ist ein normaler .btn
    (immer sichtbar, header ist tab-übergreifend). Mobiler FAB spiegelt

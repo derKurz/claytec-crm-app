@@ -14,6 +14,65 @@ CRM.map = {
   // der Sichtbarkeitsprüfung unten sonst "unsichtbar" bedeutet, siehe
   // filters.types[c.type]-Check).
   filters: { types: Object.fromEntries(CRM.TYPES.map((t) => [t, true])), partnerOnly: false, query: '' },
+  // Fokusgruppen (Chris 2026-09-22): Kontakte, die trotz aktivem Fokus-Modus
+  // EINMALIG eingeblendet wurden (z.B. über "📍 Auf Karte zeigen" bei einem
+  // Nicht-Fokus-Kontakt, siehe CRM.showContactOnMap in app.js). Bewusst nur
+  // In-Memory — das ist eine Ausnahme für die laufende Sitzung, kein Dauerzustand.
+  _fokusAusnahme: new Set(),
+};
+
+/* ============================================================
+   Fokusgruppen auf der Karte (Chris 2026-09-22: "ich möchte nicht, dass
+   alle Kontakte auf der Karte grundsätzlich gezeigt werden"). Der Schalter
+   selbst schreibt SOFORT in die Settings (anders als filters.types/
+   partnerOnly oben, die bewusst nur In-Memory bleiben) — das behebt
+   zugleich den bestehenden Mangel, dass Kartenfilter bisher jeden Reload
+   nicht überlebten.
+   ============================================================ */
+/* Notbremse: sind (noch) 0 Kontakte in irgendeiner Gruppe, wird trotz
+   eingeschaltetem Schalter alles gezeigt — sonst wirkt die App beim ersten
+   Start kaputt, bevor Chris überhaupt etwas einsortiert hat. */
+CRM.map.fokusAktiv = function () {
+  return !!CRM.db.getSettings().mapFokusOnly && CRM.fokusCounts().total > 0;
+};
+/* null/leer gespeichert = alle Gruppen zählen mit (auch später ergänzte). */
+CRM.map.fokusGruppen = function () {
+  const g = CRM.db.getSettings().mapFokusGruppen;
+  return (g && g.length) ? new Set(g) : new Set(CRM.FOKUS_GRUPPEN.map((x) => x.key));
+};
+CRM.map.fokusVisible = function (c) {
+  return CRM.isFokusKontakt(c, CRM.map.fokusGruppen());
+};
+CRM.map.setFokusOnly = function (on) {
+  CRM.db.saveSettings({ mapFokusOnly: on });
+  CRM.map._fokusAusnahme.clear();
+  CRM.map.renderControls();
+  CRM.map.refresh();
+};
+/* HTML-Block "🎯 Anzeige" — steht bewusst ÜBER den Typ-Checkboxen, weil das
+   jetzt der wichtigste Schalter ist. */
+CRM.map._fokusBlockHtml = function () {
+  const aktiv = !!CRM.db.getSettings().mapFokusOnly;
+  const gruppen = CRM.map.fokusGruppen();
+  const checks = CRM.FOKUS_GRUPPEN.map((g) => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:4px"><input type="checkbox" class="map-fokus-gruppe" data-key="${g.key}" ${gruppen.has(g.key) ? 'checked' : ''} style="width:auto"> ${g.icon} ${esc2(g.label)}</label>`).join('');
+  return `
+    <div style="font-weight:600;margin-bottom:6px">🎯 Anzeige</div>
+    <div class="map-fokus-toggle">
+      <button class="${!aktiv ? 'active' : ''}" onclick="CRM.map.setFokusOnly(false)">Alle zeigen</button>
+      <button class="${aktiv ? 'active' : ''}" onclick="CRM.map.setFokusOnly(true)">Nur Schwerpunkte</button>
+    </div>
+    <div style="margin:8px 0 10px;${aktiv ? '' : 'opacity:.5;pointer-events:none'}">${checks}</div>`;
+};
+CRM.map.toggleFokusGruppe = function (key) {
+  const cur = CRM.db.getSettings().mapFokusGruppen;
+  const arr = (cur && cur.length) ? cur.slice() : CRM.FOKUS_GRUPPEN.map((g) => g.key);
+  const i = arr.indexOf(key);
+  if (i >= 0) arr.splice(i, 1); else arr.push(key);
+  // Sind wieder alle angehakt, auf null zurücksetzen — sonst würde eine
+  // später neu hinzugefügte Gruppe fälschlich als "abgewählt" gelten.
+  const allOn = arr.length === CRM.FOKUS_GRUPPEN.length;
+  CRM.db.saveSettings({ mapFokusGruppen: allOn ? null : arr });
+  CRM.map.refresh();
 };
 
 CRM.map.init = function () {
@@ -502,11 +561,19 @@ CRM.map.refresh = function () {
   const all = CRM.db.getContacts();
   const withCoords = all.filter((c) => c.lat != null && c.lng != null);
   const q = (CRM.map.filters.query || '').trim().toLowerCase();
-  const filtered = withCoords.filter((c) =>
+  const fokusAktiv = CRM.map.fokusAktiv();
+  const vorFokus = withCoords.filter((c) =>
     !c.archived // archivierte Kontakte nie auf der Karte
     && CRM.map.filters.types[c.type]
     && (!CRM.map.filters.partnerOnly || c.isPartner)
     && (!q || String(c.ort || '').toLowerCase().includes(q) || String(c.plz || '').toLowerCase().includes(q)));
+  // Fokusgruppen (Chris 2026-09-22): Tour-Auswahl und einmalige Ausnahmen
+  // überstimmen den Fokus immer — sonst landet eine geplante Tour mit
+  // Nicht-Fokus-Kontakten auf einer leeren Karte (siehe CRM.routeSelectedOnMap/
+  // CRM.routeRegionsOnMap in app.js/regions.js).
+  const filtered = vorFokus.filter((c) =>
+    !fokusAktiv || CRM.map.selectedIds.has(c.id) || CRM.map._fokusAusnahme.has(c.id) || CRM.map.fokusVisible(c));
+  const ausgeblendet = vorFokus.length - filtered.length;
   const markers = [];
   filtered.forEach((c) => {
     const sel = CRM.map.selectedIds.has(c.id);
@@ -519,7 +586,11 @@ CRM.map.refresh = function () {
   // Bulk-Insert: bei MarkerCluster deutlich schneller als einzeln
   if (CRM.map.markersLayer.addLayers) CRM.map.markersLayer.addLayers(markers);
   else markers.forEach((m) => CRM.map.markersLayer.addLayer(m));
-  CRM.map.updateStatusLine(all.length, withCoords.length, filtered.length);
+  // Notbremse sichtbar machen: Schalter ist an, aber es greift nichts, weil
+  // noch niemand einsortiert ist — sonst wirkt "Nur Schwerpunkte" wie ein
+  // stiller Bug statt einer bewussten Ausnahme.
+  const fokusHinweis = fokusAktiv ? ausgeblendet : (CRM.db.getSettings().mapFokusOnly ? 'leer' : null);
+  CRM.map.updateStatusLine(all.length, withCoords.length, filtered.length, fokusHinweis);
 
   // Bei aktiver Ort/PLZ-Suche automatisch auf die Treffer zoomen
   if (q && filtered.length) {
@@ -633,6 +704,7 @@ CRM.map.renderControls = function () {
     <hr style="border-color:var(--border)">
     <div class="map-sec-head" onclick="CRM.map.toggleSection('filter')"><span>Filter</span><span id="map-sec-arrow-filter">${fOpen ? '▾' : '▸'}</span></div>
     <div class="map-sec-body${fOpen ? '' : ' hidden'}" id="map-sec-filter">
+      ${CRM.map._fokusBlockHtml()}
       <input id="map-filter-query" placeholder="🔍 Kontakte nach Ort/PLZ filtern..." value="${escAttr(CRM.map.filters.query || '')}" style="margin:8px 0 10px">
       ${Object.keys(CRM.TYPE_LABELS).map((t) => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:4px"><input type="checkbox" class="map-filter-type" data-type="${t}" checked style="width:auto"> ${CRM.TYPE_LABELS[t]}</label>`).join('')}
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px"><input type="checkbox" id="map-filter-partner" style="width:auto"> Nur Partner ⭐</label>
@@ -665,6 +737,9 @@ CRM.map.renderControls = function () {
     CRM.map.filters.partnerOnly = e.target.checked;
     CRM.map.refresh();
   });
+  el.querySelectorAll('.map-fokus-gruppe').forEach((cb) => cb.addEventListener('change', (e) => {
+    CRM.map.toggleFokusGruppe(e.target.dataset.key);
+  }));
   CRM.map.updateTourCount();
   CRM.map.updatePanelHint();
 };
@@ -729,6 +804,10 @@ CRM.map.updatePanelHint = function () {
   if (!el) return;
   if (CRM.map._panelOffen !== false) { el.textContent = ''; return; }
   const teile = [];
+  // Auch bei eingeklapptem Panel sichtbar (Chris 2026-09-22: das Panel ist
+  // am Handy meist zu — sonst merkt man nicht, dass gefiltert wird).
+  if (CRM.map.fokusAktiv()) teile.push('🎯 Nur Schwerpunkte');
+  else if (CRM.db.getSettings().mapFokusOnly) teile.push('🎯 Noch keine Schwerpunkte vergeben');
   if (CRM.map._suchort) teile.push('📍 ' + CRM.map._suchort.name);
   const n = CRM.map.selectedIds.size + (CRM.map._suchortInTour ? 1 : 0);
   if (n) teile.push(n + ' Stopps');
@@ -861,9 +940,13 @@ CRM.map.clearTourSelection = function () {
   CRM.map.refresh();
   CRM.map.updateTourCount();
 };
-CRM.map.updateStatusLine = function (total, withCoords, shown) {
+CRM.map.updateStatusLine = function (total, withCoords, shown, fokusHinweis) {
   const el = document.getElementById('map-status-line');
-  if (el) el.textContent = `${shown} Pins sichtbar · ${withCoords}/${total} geocodiert`;
+  if (!el) return;
+  let txt = `${shown} Pins sichtbar · ${withCoords}/${total} geocodiert`;
+  if (fokusHinweis === 'leer') txt += ' · 🎯 Noch keine Schwerpunkte vergeben';
+  else if (typeof fokusHinweis === 'number') txt += fokusHinweis > 0 ? ` · 🎯 Fokus aktiv, ${fokusHinweis} ausgeblendet` : ' · 🎯 Fokus aktiv';
+  el.textContent = txt;
 };
 
 CRM.map.startTour = function () {

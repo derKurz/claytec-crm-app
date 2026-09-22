@@ -194,6 +194,10 @@ CRM.restoreLastTab = function () {
    Kontaktliste (einfache Tabellenansicht für Schritt 1)
    ============================================================ */
 CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
+/* Fokusgruppen-Filter der Kontaktliste (Chris 2026-09-22): mehrere Gruppen
+   gleichzeitig aktiv = ODER (Gruppen sind nicht exklusiv), Kombination mit
+   Suche/Typ/Quick-Filtern bleibt UND — siehe CRM.contactMatchesFilters. */
+CRM._fokusFilter = CRM._fokusFilter || new Set();
 
 /* PLZ-Bereich parsen: "80-85", "80–85", "8000-8500" → {min, max} (auf Präfix-Länge normalisiert) */
 CRM.parsePlzRange = function (raw) {
@@ -224,6 +228,7 @@ CRM.getContactFilters = function () {
     source: document.getElementById('filter-source')?.value || '',
     abc: document.getElementById('filter-abc')?.value || '',
     qf: CRM._quickFilters,
+    fokus: CRM._fokusFilter,
   };
 };
 
@@ -231,6 +236,8 @@ CRM.contactMatchesFilters = function (c, f) {
   // Archiv: standardmäßig ausgeblendet; nur im Archiv-Filter sichtbar
   if (f.qf.archiv) { if (!c.archived) return false; }
   else if (c.archived) return false;
+  // Fokusgruppen (ODER über alle aktiven Chips) — leerer Filter = kein Einfluss
+  if (f.fokus && f.fokus.size && !CRM.isFokusKontakt(c, f.fokus)) return false;
   // Präziser Regionsfilter (mehrere, auch nicht benachbarte Gebiete) aus dem Regionen-Tab
   if (CRM._regionFilter && CRM._regionFilter.size) {
     if (!CRM._regionFilter.has(CRM.regionForPlz(c.plz))) return false;
@@ -347,6 +354,7 @@ CRM.renderContactList = function () {
     return;
   }
 
+  CRM.renderFokusFilterBar();
   const f = CRM.getContactFilters();
   let filtered = contacts.filter((c) => CRM.contactMatchesFilters(c, f));
   if (f.text) {
@@ -381,6 +389,7 @@ CRM.renderContactList = function () {
       <button class="btn btn-sm" onclick="CRM.selectAllFiltered()">☑️ Alle auswählen</button>
       <button class="btn btn-sm" onclick="CRM.markSelectedAktiv()">⭐ Aktiv markieren</button>
       <button class="btn btn-sm" onclick="CRM.unmarkSelectedAktiv()">☆ Markierung weg</button>
+      <button class="btn btn-sm" onclick="CRM.openFokusZuweisenDialog()">🎯 Zu Schwerpunkt…</button>
       <button class="btn btn-sm btn-primary" onclick="CRM.archiveSelectedContacts()">🗄️ Archivieren</button>
       <button class="btn btn-sm" onclick="CRM.reactivateSelectedContacts()">↩️ Reaktivieren</button>
       <button class="btn btn-sm" onclick="CRM.routeSelectedGoogle()">🗺️ Route</button>
@@ -596,7 +605,9 @@ CRM.getFilteredContacts = function () {
   return CRM.db.getContacts().filter((c) => CRM.contactMatchesFilters(c, f));
 };
 CRM._isProtectedContact = function (c) {
-  return !!c.isPartner || !!c.aktiv || ((c.visits || []).length > 0);
+  // Fokusgruppen-Mitgliedschaft schützt mit (Chris 2026-09-22): eine mühsam
+  // von Hand kuratierte Gruppe soll nicht durch "🧹 Bereinigen" verschwinden.
+  return !!c.isPartner || !!c.aktiv || ((c.visits || []).length > 0) || ((c.fokus || []).length > 0);
 };
 CRM.openCleanupDialog = function () {
   const all = CRM.db.getContacts();
@@ -605,6 +616,7 @@ CRM.openCleanupDialog = function () {
   const protectedArr = filtered.filter(CRM._isProtectedContact);
   const partnerN = filtered.filter((c) => c.isPartner).length;
   const visitedN = filtered.filter((c) => (c.visits || []).length > 0).length;
+  const fokusN = filtered.filter((c) => (c.fokus || []).length > 0).length;
   CRM._cleanupState = { filtered, protectedArr };
   const noFilter = filtered.length === all.length;
   const toDelete = filtered.length - protectedArr.length;
@@ -614,7 +626,7 @@ CRM.openCleanupDialog = function () {
     ${noFilter ? `<p style="background:rgba(255,92,92,.12);border:1px solid var(--red);border-radius:8px;padding:8px 10px;font-size:13px">⚠️ <strong>Kein Filter aktiv</strong> — das betrifft deine GESAMTE Liste. Setz oben zuerst einen Filter (Suche, Typ, Region, PLZ, Quelle), um gezielt zu kürzen.</p>` : ''}
     <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:14px;cursor:pointer">
       <input type="checkbox" id="cleanup-protect" checked>
-      🛡️ Partner (${partnerN}) und besuchte (${visitedN}) Kontakte schützen
+      🛡️ Partner (${partnerN}), besuchte (${visitedN}) und Schwerpunkt-Kontakte (${fokusN}) schützen
     </label>
     <p style="font-size:15px;margin:6px 0">➡️ Es werden <strong id="cleanup-todelete" style="color:var(--red)">${toDelete}</strong> Kontakte gelöscht.</p>
     <p style="color:var(--text-dim);font-size:12px">Vor dem Löschen wird automatisch ein <strong>Backup</strong> erstellt; danach kannst du per „↶ Rückgängig" sofort zurück. Große Bereinigungen am besten am <strong>Laptop</strong> machen, dann Backup aufs Handy einspielen.</p>
@@ -730,6 +742,62 @@ CRM._setAktivForSelection = function (value) {
 };
 CRM.markSelectedAktiv = function () { CRM._setAktivForSelection(true); };
 CRM.unmarkSelectedAktiv = function () { CRM._setAktivForSelection(false); };
+
+/* Fokusgruppen für die ausgewählten Kontakte setzen (Chris 2026-09-22:
+   Migration der ~1000 Bestandskontakte per Mehrfachauswahl statt neuer
+   Auswahl-UI). 1:1 nach dem Muster von _setArchivedForSelection — MIT
+   Undo-Snapshot, weil hier auch mal 100+ Kontakte in einem Rutsch landen. */
+CRM._setFokusForSelection = function (key, value) {
+  const ids = new Set(CRM._contactSelection || []);
+  if (!ids.size) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
+  const def = CRM.fokusDef(key);
+  if (!def) return;
+  let undoOk = true;
+  try { CRM.takeSnapshot((value ? 'Vor Zuordnen zu ' : 'Vor Entfernen aus ') + def.label); } catch (e) { undoOk = false; }
+  let n = 0;
+  CRM.db.getContacts().forEach((c) => {
+    if (!ids.has(c.id)) return;
+    if (CRM.inFokusGruppe(c, key) === !!value) return; // schon im gewünschten Zustand
+    CRM.setFokusGruppe(c, key, value);
+    n++;
+  });
+  CRM.db.saveContacts();
+  CRM._contactSelection.clear();
+  CRM.closeModal();
+  CRM.renderContactList();
+  if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+  if (CRM.renderDashboard) CRM.renderDashboard();
+  const msg = value
+    ? ('🎯 ' + n + ' Kontakte zu „' + def.label + '" hinzugefügt.')
+    : (n + ' Kontakte aus „' + def.label + '" entfernt.');
+  if (undoOk) CRM.toastUndo(msg); else CRM.toast(msg, 'success');
+};
+
+/* Dialog aus der Auswahl-Toolbar: "🎯 Zu Schwerpunkt…" — zeigt, wie viele
+   der ausgewählten Kontakte schon in jeder Gruppe stehen, damit klar ist
+   ob der Klick hinzufügt oder (bei "Entfernen") wieder rausnimmt. */
+CRM.openFokusZuweisenDialog = function () {
+  const ids = Array.from(CRM._contactSelection || []);
+  if (!ids.length) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
+  const contacts = ids.map((id) => CRM.db.getContact(id)).filter(Boolean);
+  const rows = CRM.FOKUS_GRUPPEN.map((g) => {
+    const schon = contacts.filter((c) => CRM.inFokusGruppe(c, g.key)).length;
+    return `<div class="list-item" style="cursor:default">
+      <div class="li-main"><div class="li-title">${g.icon} ${esc(g.label)}</div>
+        <div class="li-sub" style="font-size:12px;color:var(--text-dim)">${schon} von ${contacts.length} schon zugeordnet</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-primary" onclick="CRM._setFokusForSelection('${g.key}',true)">+ Hinzufügen</button>
+        <button class="btn btn-sm" onclick="CRM._setFokusForSelection('${g.key}',false)">− Entfernen</button>
+      </div>
+    </div>`;
+  }).join('');
+  CRM.openModal(`
+    <h2>🎯 ${contacts.length} Kontakte zuordnen</h2>
+    <p style="color:var(--text-dim);font-size:13px">Wähle eine Schwerpunktgruppe — „Hinzufügen" ergänzt sie bei allen ausgewählten Kontakten, „Entfernen" nimmt sie wieder raus. Nichts passiert automatisch.</p>
+    ${rows}
+    <div class="modal-footer"><button class="btn" onclick="CRM.renderContactList();CRM.closeModal()">Schließen</button></div>
+  `);
+};
 /* Aktiv-Markierung eines einzelnen Kontakts umschalten (aus der Detailansicht). */
 CRM.toggleContactAktiv = function (id) {
   const c = CRM.db.getContact(id);
@@ -749,6 +817,22 @@ CRM.toggleContactTop25 = function (id) {
   CRM.renderContactList();
   if (CRM.openContactDetail) CRM.openContactDetail(id);
   CRM.toast(c.top25 ? '🏆 Als Top-25-Kunde markiert.' : 'Top-25-Markierung entfernt.', 'success');
+};
+
+/* Fokusgruppen-Chip im Kontaktprofil umschalten (siehe CRM.fokusBadgesHtml,
+   contact-detail.js). top25 läuft über denselben Weg wie bisher — schreibt
+   nur weiter in c.top25 statt c.fokus (quelle:'feld' in CRM.FOKUS_GRUPPEN). */
+CRM.toggleFokusGruppe = function (id, key) {
+  const c = CRM.db.getContact(id);
+  const def = CRM.fokusDef(key);
+  if (!c || !def) return;
+  const on = !CRM.inFokusGruppe(c, key);
+  CRM.setFokusGruppe(c, key, on);
+  CRM.db.saveContacts();
+  CRM.renderContactList();
+  if (CRM.map && CRM.map.refresh) CRM.map.refresh();
+  if (CRM.openContactDetail) CRM.openContactDetail(id);
+  CRM.toast(on ? (def.icon + ' Zu „' + def.label + '" hinzugefügt.') : ('Aus „' + def.label + '" entfernt.'), 'success');
 };
 
 CRM._selectedContacts = function () {
@@ -814,6 +898,14 @@ CRM.showContactOnMap = function (id) {
   const c = CRM.db.getContact(id);
   if (!c) return;
   if (c.lat == null || c.lng == null) { CRM.toast('Dieser Kontakt ist noch nicht geocodiert (Karte öffnen → Geocoding).', 'error'); return; }
+  // Fallstrick (Fokusgruppen, Chris 2026-09-22): showWith() zoomt nur, baut
+  // aber selbst KEINEN Marker — bei aktivem Fokus wäre der Kontakt sonst gar
+  // nicht auf der Karte und man zoomt auf leere Fläche. Einmalige Ausnahme.
+  if (CRM.map.fokusAktiv && CRM.map.fokusAktiv() && !CRM.map.fokusVisible(c)) {
+    CRM.map._fokusAusnahme.add(id);
+    CRM.map.refresh();
+    CRM.toast('🎯 Liegt außerhalb deiner Schwerpunkte — einmalig eingeblendet.', 'success');
+  }
   CRM.map.showWith([c]);
   setTimeout(() => CRM.map.openSidePanel(id), 120);
 };
@@ -1414,6 +1506,11 @@ CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
     CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
     CRM._regionFilter = new Set();
+    // Sonst bliebe ein unsichtbarer Fokus-Filter aktiv, obwohl alle anderen
+    // Filter-Chips schon zurückgesetzt aussehen (Chris 2026-09-22, Fallstrick
+    // aus dem Plan-Review).
+    CRM._fokusFilter.clear();
+    CRM.renderFokusFilterBar();
     ['contact-search', 'filter-ort', 'filter-plz'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     ['filter-type', 'filter-source', 'filter-abc'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.querySelectorAll('.typ-chip').forEach((b) => b.classList.toggle('active', b.dataset.typ === ''));
@@ -1426,6 +1523,56 @@ CRM.toggleQuickFilter = function (qf) {
   document.querySelectorAll('#contact-quick-filters .qf-btn[data-qf]').forEach((b) => {
     if (b.dataset.qf !== 'reset') b.classList.toggle('active', !!CRM._quickFilters[b.dataset.qf]);
   });
+  CRM.renderContactList();
+};
+
+/* ============================================================
+   Fokusgruppen-Leiste in der Kontaktliste (Chris 2026-09-22: "ich brauche
+   Schwerpunkte, auf die ich mich konzentrieren kann"). Eigene Leiste ÜBER
+   den Quick-Filter-Chips statt ein sechster Chip dort — die sind am Handy
+   schon ein voller horizontaler Scroller (style.css .quick-filters). Klapp-
+   Zustand ist dauerhaft (primäre Navigation, kein Sitzungszustand wie bei
+   CRM._agendaCollapsed).
+   ============================================================ */
+CRM.renderFokusFilterBar = function () {
+  const el = document.getElementById('contact-fokus-bar');
+  if (!el) return;
+  const zu = localStorage.getItem('crmFokusBar') === 'zu';
+  const counts = CRM.fokusCounts();
+  const chip = (key, icon, label, n) => `<button class="fokus-chip${CRM._fokusFilter.has(key) ? ' active' : ''}" data-fokus="${key}">${icon} ${esc(label)} <span class="fokus-chip-n">${n}</span></button>`;
+  const chips = chip('', '', 'Alle Schwerpunkte', counts.total)
+    + CRM.FOKUS_GRUPPEN.map((g) => chip(g.key, g.icon, g.label, counts[g.key] || 0)).join('');
+  el.innerHTML = `
+    <div class="fokus-bar-head" onclick="CRM.toggleFokusBar()">
+      <span>🎯 Meine Schwerpunkte</span>
+      <span class="agenda-section-chev">${zu ? '▸' : '▾'}</span>
+    </div>
+    <div class="fokus-chips" style="${zu ? 'display:none' : ''}">${chips}</div>`;
+  el.querySelectorAll('.fokus-chip[data-fokus]').forEach((btn) => {
+    btn.addEventListener('click', () => CRM.toggleFokusFilter(btn.dataset.fokus));
+  });
+};
+CRM.toggleFokusBar = function () {
+  const zu = localStorage.getItem('crmFokusBar') === 'zu';
+  try { localStorage.setItem('crmFokusBar', zu ? 'auf' : 'zu'); } catch (e) { /* voll/privat */ }
+  CRM.renderFokusFilterBar();
+};
+/* '' = "Alle Schwerpunkte" (ODER über alle Gruppen) → leert die anderen
+   Chips; ein einzelner Gruppen-Chip toggelt sich in die Auswahl rein/raus
+   (mehrere Chips = ODER untereinander). */
+CRM.toggleFokusFilter = function (key) {
+  if (key === '') CRM._fokusFilter = CRM._fokusFilter.size === CRM.FOKUS_GRUPPEN.length ? new Set() : new Set(CRM.FOKUS_GRUPPEN.map((g) => g.key));
+  else if (CRM._fokusFilter.has(key)) CRM._fokusFilter.delete(key);
+  else CRM._fokusFilter.add(key);
+  CRM.renderFokusFilterBar();
+  CRM.renderContactList();
+};
+/* Sprung aus Startseite/Kopfsuche (Phase 4-Vorbereitung, siehe jumpToContactsFilter) */
+CRM.jumpToContactsFokus = function (key) {
+  CRM.switchTab('kontakte');
+  CRM._fokusFilter = new Set([key]);
+  try { localStorage.removeItem('crmFokusBar'); } catch (e) { /* voll/privat */ }
+  CRM.renderFokusFilterBar();
   CRM.renderContactList();
 };
 

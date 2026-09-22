@@ -48,6 +48,64 @@ CRM.SOURCE_LABELS = {
 };
 CRM.ABC = ['A', 'B', 'C'];
 
+/* ============================================================
+   Fokusgruppen (Chris 2026-09-22): "zu viele Kontakte, ich brauche
+   Schwerpunkte". Kuratierte, feste Liste statt freier tags[] — Chris will
+   wiederverwendbare Kategorien ohne Tippfehler-Wildwuchs, die Karte/Liste/
+   Startseite gezielt filtern können. quelle:'feld' = reine Sicht auf ein
+   bestehendes Feld (kein Doppelspeicher, siehe Top-25); quelle:'manuell' =
+   Mitgliedschaft steht in c.fokus[]. Siehe CRM.inFokusGruppe/setFokusGruppe
+   unten — das ist die einzige Stelle, die eine Gruppenmitgliedschaft prüft
+   oder setzt; alles andere im Code ruft nur diese Primitiven. */
+CRM.FOKUS_GRUPPEN = [
+  { key: 'rohbaustoff', icon: '🧱', label: 'Rohbaustoff', quelle: 'manuell' },
+  { key: 'top25', icon: '🏆', label: 'Top 25', quelle: 'feld', test: (c) => !!c.top25, set: (c, on) => { c.top25 = on; } },
+  { key: 'meineVerarbeiter', icon: '🔨', label: 'Meine Verarbeiter', quelle: 'manuell' },
+  { key: 'wichtig', icon: '❗', label: 'Meine Wichtigen', quelle: 'manuell' },
+  { key: 'laufend', icon: '🔥', label: 'Läuft gerade', quelle: 'manuell' },
+];
+
+CRM.fokusDef = function (key) {
+  return CRM.FOKUS_GRUPPEN.find((g) => g.key === key) || null;
+};
+CRM.inFokusGruppe = function (c, key) {
+  const def = CRM.fokusDef(key);
+  if (!def) return false;
+  return def.test ? def.test(c) : (c.fokus || []).includes(key);
+};
+CRM.contactFokusKeys = function (c) {
+  return CRM.FOKUS_GRUPPEN.filter((g) => CRM.inFokusGruppe(c, g.key)).map((g) => g.key);
+};
+/* keys: iterable von Keys oder leer/null = irgendeine Gruppe zählt (für die
+   Karten-/Dashboard-"ist das ein Fokus-Kontakt überhaupt"-Frage). */
+CRM.isFokusKontakt = function (c, keys) {
+  const list = keys && keys.size !== undefined ? Array.from(keys) : (keys || CRM.FOKUS_GRUPPEN.map((g) => g.key));
+  return list.some((k) => CRM.inFokusGruppe(c, k));
+};
+CRM.setFokusGruppe = function (c, key, on) {
+  const def = CRM.fokusDef(key);
+  if (!def) return;
+  if (def.set) { def.set(c, on); return; }
+  const arr = Array.isArray(c.fokus) ? c.fokus.slice() : [];
+  const i = arr.indexOf(key);
+  if (on && i < 0) arr.push(key);
+  else if (!on && i >= 0) arr.splice(i, 1);
+  c.fokus = arr;
+};
+/* Live-Zähler für Chips/Übersichten — einmal pro Render berechnen, nicht
+   pro Chip einzeln über alle Kontakte iterieren. */
+CRM.fokusCounts = function () {
+  const out = { total: 0 };
+  CRM.FOKUS_GRUPPEN.forEach((g) => { out[g.key] = 0; });
+  CRM.db.getContacts().forEach((c) => {
+    if (c.archived) return;
+    let any = false;
+    CRM.FOKUS_GRUPPEN.forEach((g) => { if (CRM.inFokusGruppe(c, g.key)) { out[g.key]++; any = true; } });
+    if (any) out.total++;
+  });
+  return out;
+};
+
 CRM.PROJECT_STATUS = ['planung', 'ausschreibung', 'laufend', 'abgeschlossen'];
 CRM.PROJECT_KATEGORIEN = ['baustelle', 'gross'];
 CRM.PROJECT_KATEGORIE_LABELS = { baustelle: '🏠 Baustelle', gross: '🏢 Großprojekt' };
@@ -90,6 +148,12 @@ CRM.DEFAULT_SETTINGS = {
   // Antwort-Vorbereitung: datensparsam lässt Klarnamen/Telefon/Mail/Straße weg.
   // Firma und Projekt bleiben IMMER als Referenz erhalten (Zuordnung nötig).
   antwortDatensparsam: true,
+  // Fokusgruppen (Chris 2026-09-22): Default AUS, damit die Karte beim
+  // ersten Öffnen mit noch leeren Gruppen nicht "kaputt" wirkt — siehe
+  // Notbremse in CRM.map.fokusAktiv(). null = alle Gruppen zählen mit.
+  mapFokusOnly: false,
+  mapFokusGruppen: null,
+  fokusSetupDone: false,
 };
 
 /* ---------- low-level storage helpers ---------- */
@@ -154,6 +218,7 @@ CRM.db = {
     this._migrateContactTypes();
     this._migrateBauherrTypes();
     this._migrateAnsprechpartner();
+    this._migrateFokus();
   },
 
   /* Phase 1 Abschluss (OFFLINE_SYNC.md): Dexie wird die tatsächliche
@@ -244,6 +309,17 @@ CRM.db = {
         needsFix = true;
       }
       if (needsFix) changed++;
+    });
+    if (changed) this.saveContacts();
+  },
+
+  /* Fokusgruppen (Chris 2026-09-22): nur defensiv das Array anlegen, NIE
+     Kontakte automatisch zuordnen — Chris hat ausdrücklich verlangt, dass
+     die Einsortierung manuell bleibt. Läuft bei jedem Init, danach No-Op. */
+  _migrateFokus() {
+    let changed = 0;
+    this._contacts.forEach((c) => {
+      if (!Array.isArray(c.fokus)) { c.fokus = []; changed++; }
     });
     if (changed) this.saveContacts();
   },
@@ -568,6 +644,7 @@ CRM.makeEmptyContact = function () {
     lng: null,
     geocodeStatus: 'pending', // pending | ok | failed | manual
     tags: [],
+    fokus: [], // Fokusgruppen-Keys, siehe CRM.FOKUS_GRUPPEN — bewusst getrennt von tags (feste Kategorien, keine Freitext-Tippfehler)
     nextStep: '', // = "To Do" (Spalte in der Übersicht, Spalte G im Besuchsprotokoll)
     notiz: '', // freie Kurznotiz, inline unter der Adresse einblendbar
     visits: [], // {id, date, note, createdAt}
