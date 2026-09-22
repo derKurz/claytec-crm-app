@@ -83,6 +83,7 @@ CRM.activities.build = function (contactId) {
       text: j.content || '(ohne Text)',
       projectId: j.projectId || null, quelle: 'journal', id: j.id,
       status: j.status || 'offen', erledigtAm: j.erledigtAm || '',
+      muster: j.muster || null,
     });
   });
 
@@ -147,6 +148,16 @@ CRM.activities.renderInner = function (contactId) {
     const statusVermerk = erledigt
       ? `<div class="act-status act-status-done">✓ Erledigt${a.erledigtAm ? ' am ' + a.erledigtAm.split('-').reverse().join('.') : ''}</div>`
       : (inArbeit ? '<div class="act-status act-status-wip">🔧 In Arbeit</div>' : '');
+    // Bestellung (muster.js): Statuschip + Möglichkeit, sie wieder zu öffnen/
+    // zu ändern oder erneut zu bestellen — nicht nur der Text bleibt (Chris
+    // 2026-09-22: Formulardaten müssen gespeichert und bearbeitbar sein).
+    const musterVermerk = a.muster
+      ? `<div class="act-status act-status-muster">${esc2((CRM.muster && CRM.muster.STATUS_LABELS[a.muster.status]) || a.muster.status)}</div>`
+      : '';
+    const musterBtns = a.muster
+      ? `<button class="btn btn-sm" title="Bestellung öffnen und ändern" onclick="event.stopPropagation();CRM.muster.openEntry('${a.id}')">📂 Öffnen/ändern</button>
+         <button class="btn btn-sm" title="Genau diese Bestellung nochmal aufgeben" onclick="event.stopPropagation();CRM.muster.duplicateEntry('${a.id}')">↻ Nochmal</button>`
+      : '';
     // Status-Knopf nur für echte Vorgänge — die Aufgaben-Historie steht ohnehin fest auf erledigt
     const statusBtn = a.quelle !== 'task'
       ? `<button class="btn btn-sm act-status-btn" title="Status setzen: offen / in Arbeit / erledigt" onclick="CRM.activities.statusDialog('${contactId}','${a.quelle}','${a.id}')">${erledigt ? '↩' : '✓'}</button>`
@@ -162,12 +173,14 @@ CRM.activities.renderInner = function (contactId) {
           <div class="act-text">${esc2(a.text)}</div>
           ${a.quelle === 'visit' && a.excelFiled ? '<div class="act-status" style="color:var(--green)">✓ in Excel abgelegt</div>' : ''}
           ${statusVermerk}
+          ${musterVermerk}
           ${projChip}
           ${a.eingehendeMail ? `
             <div class="act-actions">
               <button class="btn btn-sm" onclick="event.stopPropagation();CRM.mailAntwort.prepare('${contactId}','${a.id}')">🤖 Antwort vorbereiten</button>
               <button class="btn btn-sm" onclick="event.stopPropagation();CRM.mailAntwort.dokumentieren('${contactId}','${a.id}')">✉ Antwort dokumentieren</button>
             </div>` : ''}
+          ${a.muster ? `<div class="act-actions">${musterBtns}</div>` : ''}
         </div>
         <div class="act-btns">
           ${a.quelle === 'visit' && CRM.ablage && CRM.ablage.supported()

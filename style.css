@@ -880,6 +880,7 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .act-status{font-size:11px;font-weight:600;margin-top:3px}
 .act-status-done{color:var(--green)}
 .act-status-wip{color:var(--orange)}
+.act-status-muster{color:var(--accent-2)}
 .act-row-done .act-head strong,.act-row-done .act-text{text-decoration:line-through;opacity:.55}
 .act-status-opt{display:flex;align-items:center;gap:8px;font-size:15px;cursor:pointer}
 .act-status-opt input{width:auto}

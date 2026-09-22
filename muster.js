@@ -199,6 +199,10 @@ CRM.muster._weiter = function () {
   } else if (m._step === 'muster') {
     // Pflichtprüfung schon hier: die Bestellkarte ist dadurch nie unvollständig.
     if (!m._pruefe(m._collect())) return;
+    // Als Entwurf sichern, BEVOR die Karte gezeigt wird (Chris 2026-09-22:
+    // Formulardaten müssen gespeichert und wiederauffindbar sein) — auch wer
+    // die Karte ohne Kopieren/Senden verlässt, verliert die Bestellung nicht.
+    m._journal('entwurf');
     m._step = 'karte';
   }
   m._render();
@@ -632,41 +636,67 @@ CRM.muster._pruefe = function (res) {
   return true;
 };
 
-CRM.muster._journal = function (c) {
-  const txt = Object.keys(CRM.muster._mengen).map((nr) => {
+/* Status einer Bestellung — auch als Beschriftung in der Aktivitäten-Liste. */
+CRM.muster.STATUS_LABELS = { entwurf: 'Entwurf', kopiert: 'Kopiert', gesendet: 'Bestellt' };
+
+/* Speichert die Bestellung NICHT nur als Text, sondern als Datenobjekt
+   (Chris 2026-09-22: "das muss gespeichert und wieder auffindbar sein und
+   bearbeitet werden können" — Text allein reicht nicht). Das Objekt hängt
+   am Journal-Eintrag (entry.muster) und reist damit automatisch mit dem
+   Journal durch Backup/Zusammenführen zwischen Handy und Laptop. */
+CRM.muster._journal = function (status) {
+  const m = CRM.muster;
+  const res = m._collect();
+  const txt = Object.keys(m._mengen).map((nr) => {
     const it = (CRM.WERBEMITTEL || []).find((x) => x.nr === nr);
-    const ton = CRM.muster._farbton[nr];
-    const m = CRM.muster._mengen[nr];
-    const unit = (it && it.ve > 1 && CRM.muster._einheit[nr] === 've') ? ' VE ' : '× ';
-    return m + unit + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
+    const ton = m._farbton[nr];
+    const menge = m._mengen[nr];
+    const unit = (it && it.ve > 1 && m._einheit[nr] === 've') ? ' VE ' : '× ';
+    return menge + unit + (it ? it.name : nr) + (ton ? ' (' + ton + ')' : '');
   }).join(', ');
   // Geht die Sendung NICHT an die Firmenadresse (Baustelle/andere Adresse),
   // gehört das ins Journal — sonst weiß später niemand, wohin sie ging.
   let ziel = '';
-  if (CRM.muster._adrQuelle !== 'firma') {
-    const adr = String(CRM.muster._kopf.adresse || '').trim().replace(/\s*\n+\s*/g, ', ');
-    if (adr) ziel = ' → ' + CRM.muster._adrLabel() + ': ' + adr;
+  if (m._adrQuelle !== 'firma') {
+    const adr = String(m._kopf.adresse || '').trim().replace(/\s*\n+\s*/g, ', ');
+    if (adr) ziel = ' → ' + m._adrLabel() + ': ' + adr;
   }
-  const content = 'Werbemittel bestellt: ' + txt + ziel;
+  const praefix = status === 'entwurf' ? 'Entwurf: ' : 'Werbemittel bestellt: ';
+  const content = praefix + txt + ziel;
+  const musterData = {
+    kopf: Object.assign({}, m._kopf),
+    adrQuelle: m._adrQuelle,
+    mengen: Object.assign({}, m._mengen),
+    einheit: Object.assign({}, m._einheit),
+    farbton: Object.assign({}, m._farbton),
+    farbtonNr: Object.assign({}, m._farbtonNr || {}),
+    taskId: m._taskId || null,
+    betreff: res.betreff,
+    body: res.body,
+    status,
+    gespeichertAm: new Date().toISOString(),
+  };
   // Wird in DIESEM Dialog mehrfach kopiert/gesendet (oder nach "Ändern"
   // erneut), den einen Eintrag aktualisieren statt Doppeleinträge zu
   // erzeugen.
-  const alt = CRM.muster._journalEntry;
+  const alt = m._journalEntry;
   if (alt && CRM.db._journal.indexOf(alt) >= 0) {
     alt.content = content;
+    alt.muster = musterData;
     CRM.db.saveJournal();
-    return;
+    return alt;
   }
   // Feldnamen müssen zum Journal-Datenmodell passen (entryType/content) —
   // sonst wird der Eintrag zwar gespeichert, aber leer angezeigt.
-  CRM.muster._journalEntry = CRM.db.addJournalEntry({ contactId: c.id, entryType: 'muster', content, inputMethod: 'muster' });
+  m._journalEntry = CRM.db.addJournalEntry({ contactId: res.c.id, entryType: 'muster', content, inputMethod: 'muster', muster: musterData });
+  return m._journalEntry;
 };
 
 CRM.muster.send = function () {
   const res = CRM.muster._collect();
   if (!CRM.muster._pruefe(res)) return;
   const to = CRM.db.getSettings().musterEmail || 'auftrag@claytec.com';
-  CRM.muster._journal(res.c);
+  CRM.muster._journal('gesendet');
   // Wurde der Versand aus einer Aufgabe heraus gestartet, gilt sie mit dem
   // Verschicken als erledigt.
   const taskId = CRM.muster._taskId;
@@ -693,8 +723,50 @@ CRM.muster.copy = function () {
   if (!CRM.muster._pruefe(res)) return;
   CRM._copyRichText('<pre>' + esc2(res.betreff) + '\n\n' + esc2(res.body) + '</pre>', res.betreff + '\n\n' + res.body)
     .then(() => {
-      CRM.muster._journal(res.c);
+      CRM.muster._journal('kopiert');
       CRM.toast('✓ Kopiert (' + res.zeilen.length + ' Positionen) — im Journal vermerkt. Die Karte bleibt offen.', 'success');
     })
     .catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+};
+
+/* Aus der Aktivitäten-Liste heraus: eine gespeicherte Bestellung wieder
+   öffnen (Kunde/Adresse/Positionen/Mengen/Einheiten/Farbtöne exakt wie
+   gespeichert) und auf der Bestellkarte weiterbearbeiten. "‹ Ändern" führt
+   von dort zurück bis zur Artikelliste. */
+CRM.muster.openEntry = function (entryId) {
+  const m = CRM.muster;
+  const entry = CRM.db.getJournalEntries().find((j) => j.id === entryId);
+  if (!entry || !entry.muster) return;
+  const c = CRM.db.getContact(entry.contactId);
+  if (!c) { CRM.toast('Kontakt nicht mehr vorhanden.', 'error'); return; }
+  const d = entry.muster;
+  m._contactId = c.id;
+  m._taskId = d.taskId || null;
+  m._mengen = Object.assign({}, d.mengen);
+  m._einheit = Object.assign({}, d.einheit);
+  m._farbton = Object.assign({}, d.farbton);
+  m._farbtonNr = Object.assign({}, d.farbtonNr);
+  m._openKats = null;
+  m._suche = '';
+  m._kopf = Object.assign({ kunde: '', knr: '', ap: '', adresse: '', anlass: '' }, d.kopf);
+  m._adrQuelle = d.adrQuelle || 'firma';
+  m._kontaktQuery = '';
+  m._skipKontakt = true;
+  m._journalEntry = entry;
+  m._nurFav = m.getFavoriten().length > 0;
+  m._step = 'karte';
+  CRM.openModal('', { dismissible: false });
+  m._render();
+};
+
+/* "Nochmal bestellen": Inhalt einer gespeicherten Bestellung übernehmen,
+   aber als NEUEN Entwurf — der ursprüngliche Eintrag bleibt unverändert. */
+CRM.muster.duplicateEntry = function (entryId) {
+  const m = CRM.muster;
+  const entry = CRM.db.getJournalEntries().find((j) => j.id === entryId);
+  if (!entry || !entry.muster) return;
+  m.openEntry(entryId);
+  m._journalEntry = null; // erzwingt einen neuen Eintrag statt Überschreiben
+  m._journal('entwurf');
+  m._render();
 };
