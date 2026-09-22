@@ -60,11 +60,32 @@ CRM.ABC = ['A', 'B', 'C'];
 CRM.FOKUS_GRUPPEN = [
   { key: 'rohbaustoff', icon: '🧱', label: 'Rohbaustoff', quelle: 'manuell' },
   { key: 'top25', icon: '🏆', label: 'Top 25', quelle: 'feld', test: (c) => !!c.top25, set: (c, on) => { c.top25 = on; } },
-  { key: 'meineVerarbeiter', icon: '🔨', label: 'Meine Verarbeiter', quelle: 'manuell' },
+  // Chris 2026-09-22 (Korrektur): "meine Verarbeiter" sind nicht alle
+  // Kontakte vom Typ Verarbeiter, sondern nur die, mit denen aktuell
+  // zusammengearbeitet wird — Besuch/Journal/Kommunikation/offene Aufgabe
+  // in den letzten 24 Monaten. Bewusst BERECHNET statt manuell: neu
+  // angelegte passende Kontakte fallen automatisch mit rein, kein
+  // Nachpflegen nötig. Siehe CRM.hatAktivitaetSeit unten.
+  { key: 'meineVerarbeiter', icon: '🔨', label: 'Meine Verarbeiter', quelle: 'berechnet', test: (c) => c.type === 'verarbeiter' && CRM.hatAktivitaetSeit(c, 24) },
   { key: 'wichtig', icon: '❗', label: 'Meine Wichtigen', quelle: 'manuell' },
   { key: 'laufend', icon: '🔥', label: 'Läuft gerade', quelle: 'manuell' },
 ];
 
+/* Hatte dieser Kontakt in den letzten `monate` Monaten Aktivität (Besuch,
+   Journal-Eintrag, Kommunikation) — oder eine offene Aufgabe (zählt
+   unabhängig vom Datum, eine offene Aufgabe IST eine aktuelle Anfrage)?
+   Grundlage für berechnete Fokusgruppen wie "Meine Verarbeiter". */
+CRM.hatAktivitaetSeit = function (c, monate) {
+  const grenze = new Date();
+  grenze.setMonth(grenze.getMonth() - monate);
+  const grenzeIso = grenze.toISOString();
+  const grenzeDatum = grenzeIso.slice(0, 10);
+  if ((c.visits || []).some((v) => (v.date || '') >= grenzeDatum)) return true;
+  if (CRM.db.getJournalForContact(c.id).some((j) => (j.createdAt || '') >= grenzeIso)) return true;
+  if (CRM.db.getCommsForContact(c.id).some((m) => (m.date || '') >= grenzeDatum)) return true;
+  if (CRM.db.getTasksForContact(c.id).some((t) => !t.done)) return true;
+  return false;
+};
 CRM.fokusDef = function (key) {
   return CRM.FOKUS_GRUPPEN.find((g) => g.key === key) || null;
 };

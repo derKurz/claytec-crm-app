@@ -752,6 +752,7 @@ CRM._setFokusForSelection = function (key, value) {
   if (!ids.size) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
   const def = CRM.fokusDef(key);
   if (!def) return;
+  if (def.quelle === 'berechnet') { CRM.toast('„' + def.label + '" wird automatisch ermittelt und lässt sich nicht manuell zuordnen.', 'error'); return; }
   let undoOk = true;
   try { CRM.takeSnapshot((value ? 'Vor Zuordnen zu ' : 'Vor Entfernen aus ') + def.label); } catch (e) { undoOk = false; }
   let n = 0;
@@ -780,7 +781,9 @@ CRM.openFokusZuweisenDialog = function () {
   const ids = Array.from(CRM._contactSelection || []);
   if (!ids.length) { CRM.toast('Keine Kontakte ausgewählt.', 'error'); return; }
   const contacts = ids.map((id) => CRM.db.getContact(id)).filter(Boolean);
-  const rows = CRM.FOKUS_GRUPPEN.map((g) => {
+  // Berechnete Gruppen (z.B. "Meine Verarbeiter") lassen sich nicht manuell
+  // zuweisen — sie ergeben sich automatisch aus Typ + Aktivität.
+  const rows = CRM.FOKUS_GRUPPEN.filter((g) => g.quelle !== 'berechnet').map((g) => {
     const schon = contacts.filter((c) => CRM.inFokusGruppe(c, g.key)).length;
     return `<div class="list-item" style="cursor:default">
       <div class="li-main"><div class="li-title">${g.icon} ${esc(g.label)}</div>
@@ -826,6 +829,7 @@ CRM.toggleFokusGruppe = function (id, key) {
   const c = CRM.db.getContact(id);
   const def = CRM.fokusDef(key);
   if (!c || !def) return;
+  if (def.quelle === 'berechnet') { CRM.toast('„' + def.label + '" wird automatisch ermittelt und lässt sich nicht manuell setzen.', 'error'); return; }
   const on = !CRM.inFokusGruppe(c, key);
   CRM.setFokusGruppe(c, key, on);
   CRM.db.saveContacts();

@@ -214,6 +214,13 @@ CRM.cdToggle = function (key) {
 CRM.fokusBadgesHtml = function (c) {
   const chips = CRM.FOKUS_GRUPPEN.map((g) => {
     const on = CRM.inFokusGruppe(c, g.key);
+    // Berechnete Gruppen (z.B. "Meine Verarbeiter": Typ + Aktivität der
+    // letzten 24 Monate) sind NICHT antippbar — sonst wirkt der Chip, als
+    // würde ein Tippen etwas speichern, obwohl er nur eine Berechnung
+    // anzeigt (Chris 2026-09-22).
+    if (g.quelle === 'berechnet') {
+      return `<span class="badge badge-toggle badge-berechnet${on ? ' badge-on-gold' : ''}" title="Automatisch ermittelt: ${esc2(g.label)}${on ? ' trifft zu' : ' trifft nicht zu'} (nicht manuell setzbar)">${g.icon} ${esc2(g.label)}</span>`;
+    }
     return `<button class="badge badge-toggle${on ? ' badge-on-gold' : ''}" title="${on ? '„' + esc2(g.label) + '" entfernen' : 'Zu „' + esc2(g.label) + '" hinzufügen'}" onclick="CRM.toggleFokusGruppe('${c.id}','${g.key}')">${g.icon} ${esc2(g.label)}</button>`;
   }).join('');
   return `<div class="li-badges cd-meta cd-fokus"><span style="font-size:11px;color:var(--text-dim);align-self:center">🎯 Schwerpunkte:</span>${chips}</div>`;
