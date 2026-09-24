@@ -581,6 +581,27 @@ CRM.addAnsprechpartner = function (contactId) {
   CRM.renderContactList();
 };
 
+/* Wie CRM.addAnsprechpartner, aber mit VORBEFÜLLTEN Feldern (Sprach-
+   steuerung 2026-09-24, A4: Chris liest eine Signatur vor, die Firma gibt
+   es schon — dann soll die Person als Ansprechpartner an die bestehende
+   Firma, nicht als zweite Firma angelegt werden). apData kommt aus
+   CRM.emailParser.apFromData(). Refresht die Ansprechpartner-Liste nur,
+   wenn das Kontaktprofil gerade offen ist (Aufruf auch ohne offenes Profil
+   möglich, z.B. direkt aus der Sprachbefehl-Vorschau). */
+CRM.addAnsprechpartnerData = function (contactId, apData) {
+  const c = CRM.db.getContact(contactId);
+  if (!c) return null;
+  c.ansprechpartner = Array.isArray(c.ansprechpartner) ? c.ansprechpartner : [];
+  const ap = Object.assign(CRM.makeEmptyAnsprechpartner(), apData || {});
+  if (!c.ansprechpartner.length) ap.istHaupt = true;
+  c.ansprechpartner.push(ap);
+  c.updatedAt = new Date().toISOString();
+  CRM.db.saveContacts();
+  if (document.getElementById('cd-ap-list')) CRM._refreshAnsprechpartnerList(contactId);
+  CRM.renderContactList();
+  return ap;
+};
+
 CRM.setMainAnsprechpartner = function (contactId, apId) {
   const c = CRM.db.getContact(contactId);
   if (!c || !Array.isArray(c.ansprechpartner)) return;

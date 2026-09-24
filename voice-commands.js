@@ -57,6 +57,13 @@ CRM.voice._TRIGGERS = [
   // "War heute bei Erdraum..." fiel bisher KOMPLETT in unrecognized, weil
   // nur "Besuch bei" als Auslöser galt. "ich" davor optional.
   { type: 'visit', re: /\b(?:neuer\s+)?(?:(?:baustellen|bau\s*stein(?:en)?)\s*)?besuch\s*(?:anlegen\s+|erstellen\s+)?bei\b|\b(?:ich\s+)?war\s+(?:heute\s+|gerade\s+|eben\s+|vorhin\s+|kurz\s+)?bei\b/gi },
+  // Chris (2026-09-24, echte Wispr-Sätze): "Termin bei X" ist für ihn
+  // Alltagssprache für einen STATTGEFUNDENEN Kundentermin, genau wie
+  // "Besuch bei"/"war bei" — eigener Trigger-Typ (nicht einfach im visit-
+  // Muster mit-ergänzt), weil "Termin bei" zusätzlich eine Zukunfts-Sperre
+  // braucht (siehe _FUTURE_RE unten): "Termin bei X am Freitag" ist eine
+  // Planung, kein Besuch, und darf keinen Besuchseintrag erzeugen.
+  { type: 'termin', re: /\b(?:ich\s+)?(?:hatte\s+)?(?:(?:einen|den)\s+)?(?:kunden|baustellen)?termin\s+(?:heute\s+|gerade\s+|eben\s+|vorhin\s+)?bei\b/gi },
   { type: 'note', re: /\bneue\s+notiz\b\s*:?/gi },
   { type: 'muster', re: /\bmuster\s+(?:versenden|schicken|senden)\b/gi },
   // "Aufgabe für Firma Meier: ..." — der optionale Teil in der Klammer
@@ -163,6 +170,24 @@ CRM.voice.parseUtterance = function (transcript) {
   // die Verknüpfung selbst. Gilt für JEDEN Besuch der ganzen Kette (ein
   // gemeinsam genanntes Bauvorhaben betrifft alle genannten Firmen).
   const PROJECT_CLAUSE_RE = /\s*wegen\s+(?:des\s+|dem\s+|der\s+)?(?:bauvorhabens?|bv|objekts?|projekts?)\s+(.+)$/i;
+  // Zukunfts-Sperre für "Termin bei" (Chris 2026-09-24): ein Satz mit einer
+  // erkennbaren Zukunftsangabe ist eine PLANUNG, kein stattgefundener
+  // Besuch — dann lieber gar keinen Besuch anlegen (Satz bleibt Text/
+  // "nicht zugeordnet") als einen falschen. "Besuch bei"/"war bei" bleiben
+  // davon unberührt (Chris nennt die nur für tatsächlich Geschehenes).
+  const FUTURE_WORDS_RE = /\b(vereinbar\w*|ausgemacht|ausmachen|geplant|planen|verschoben|um\s*\d{1,2}([:.]\d{2})?\s*uhr)\b/i;
+  const isFutureTermin = (satzstueck) => {
+    if (FUTURE_WORDS_RE.test(satzstueck)) return true;
+    if (window.CRM && CRM.speech && CRM.speech.parseGermanDate) {
+      const heute = CRM.ymd ? CRM.ymd(new Date()) : new Date().toISOString().slice(0, 10);
+      const d = CRM.speech.parseGermanDate(satzstueck, heute);
+      // "heute"/"gerade"/"eben"/"vorhin" landen selbst schon im Trigger-Wort,
+      // parseGermanDate würde für reinen Trigger-Text nichts finden — nur
+      // ein Datum NACH heute zählt als Planung.
+      if (d && d.iso > heute) return true;
+    }
+    return false;
+  };
   const triggerCmds = found.map((f, i) => {
     let end = found[i + 1] ? found[i + 1].start : text.length;
     // an einer bereits vergebenen Verknüpfen-Spanne stoppen, falls die
@@ -170,10 +195,18 @@ CRM.voice.parseUtterance = function (transcript) {
     linkCmds.forEach((lc) => { if (lc.start >= f.triggerEnd && lc.start < end) end = lc.start; });
     const periodIdx = text.indexOf('.', f.triggerEnd);
     if (periodIdx !== -1 && periodIdx < end) end = periodIdx;
+    // Zeilenumbruch zählt wie ein Punkt als Klausel-Ende (wichtig für
+    // Wispr-/Stichpunkt-Text, siehe _normalizeList) — nur für visit/termin,
+    // die übrigen Trigger beziehen sich ohnehin nur auf einen Kontakt.
+    if (f.type === 'visit' || f.type === 'termin') {
+      const nlIdx = text.indexOf('\n', f.triggerEnd);
+      if (nlIdx !== -1 && nlIdx < end) end = nlIdx;
+    }
     const contentRaw = CRM.voice._cleanClause(text.slice(f.triggerEnd, end));
     const rawText = text.slice(f.start, end).trim();
 
-    if (f.type === 'visit') {
+    if (f.type === 'visit' || f.type === 'termin') {
+      if (f.type === 'termin' && isFutureTermin(rawText)) return []; // Planung, kein Besuch — Satz bleibt unclaimed
       const projMatch = contentRaw.match(PROJECT_CLAUSE_RE);
       const contentOhneProjekt = projMatch ? CRM.voice._cleanClause(contentRaw.slice(0, projMatch.index)) : contentRaw;
       // GETEILTE Referenz (bewusst, anders als bei Kontakt-Zuordnungen):
@@ -277,6 +310,199 @@ CRM.voice.parseUtterance = function (transcript) {
   return all;
 };
 
+/* ============================================================
+   CRM.voice.analyze(text) — Deutungs-Schicht (Chris 2026-09-24, echte
+   Wispr-Sätze): parseUtterance() bleibt unverändert die GRAMMATIK-Schicht
+   (Trigger zerlegen, Kontakte auflösen) — die 33 bestehenden Tests rufen
+   sie weiterhin direkt auf und bleiben grün. analyze() davor/danach deutet
+   nur das um, was parseUtterance NICHT verstanden hat (unrecognized/
+   unsupported), oder erkennt VORAB einen ganz anderen Fall (neuer Kontakt/
+   Signatur). Ablauf:
+     1. _asrFixes        — bekannte Verhörer korrigieren (sichtbar/abschaltbar)
+     2. _detectContactCreate — "Neuer Kontakt"/Signatur? Dann EIN exklusiver Befehl
+     3. _normalizeList    — Stichpunkte/Kopfzeile+Firmenzeile zusammenführen
+     4. parseUtterance    — wie bisher (inkl. neuem "Termin bei"-Trigger)
+     5. _attachReports    — unzugeordneter Freitext nach einem Besuch -> Bericht
+     6. _suggestTasks     — Aufgaben-Vorschläge aus dem Bericht (Opt-in)
+   ============================================================ */
+CRM.voice.analyze = function (rawText, opts) {
+  opts = opts || {};
+  const text = String(rawText || '');
+  const fixed = opts.skipAsrFixes ? { text, fixes: [] } : CRM.voice._asrFixes(text);
+  const created = CRM.voice._detectContactCreate(fixed.text);
+  if (created) return { commands: [created], fixes: fixed.fixes };
+  const normalized = CRM.voice._normalizeList(fixed.text);
+  let all = CRM.voice.parseUtterance(normalized);
+  all = CRM.voice._attachReports(all);
+  all = CRM.voice._suggestTasks(all);
+  return { commands: all, fixes: fixed.fixes };
+};
+
+/* ---------- 1) Verhörer-Korrektur (A5) — feste Wortliste, NUR die 3
+   dokumentierten Claytec-Produkte (CLAUDE.md). Firmen-/Ortsnamen laufen
+   über die klangliche Suche in resolveContact/resolveProject (A6), nicht
+   hier — eine Wortliste würde dort nur EINEN Einzelfall abdecken. ---------- */
+CRM.voice._ASR_FIXES = [
+  { re: /\bjo[sz]?\s?sim[ae]r?\b|\byosima\b/gi, to: 'YOSIMA' },
+  { re: /\bleim\s?bauplatte(n?)\b/gi, to: 'Lehmbauplatte$1' },
+  { re: /\b(?:le\s?mix|lehmix)\b/gi, to: 'LEMIX' },
+];
+CRM.voice._asrFixes = function (text) {
+  let out = text;
+  const fixes = [];
+  CRM.voice._ASR_FIXES.forEach((f) => {
+    const re = new RegExp(f.re.source, f.re.flags);
+    out = out.replace(re, (m, ...rest) => {
+      const replacement = f.to.replace(/\$(\d)/g, (_, n) => rest[n - 1] || '');
+      if (m.toLowerCase() !== replacement.toLowerCase()) fixes.push(m + ' → ' + replacement);
+      return replacement;
+    });
+  });
+  return { text: out, fixes };
+};
+
+/* ---------- 2) "Neuer Kontakt" / vorgelesene Signatur (A4) ---------- */
+/* Punktesystem für "sieht das strukturell wie eine Signatur/Visitenkarte
+   aus" — bewusst keine feste Trigger-Wortliste (Firmen klingen zu
+   unterschiedlich), sondern Anhaltspunkte, die eine echte Signatur fast
+   immer hat. Nur wenn KEIN anderer Sprachbefehl-Trigger im Text vorkommt
+   (sonst bliebe "Besuch bei Erdraum, neue Nummer 0941…" ein Besuch). */
+CRM.voice._SIGNATURE_PATTERNS = [
+  { re: /\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]/, pts: 2 },
+  { re: /[\w.+-]+@[\w.-]+\.\w+/, pts: 2 },
+  { re: /\b(?:T|Tel\.?|Telefon|Fon|M|Mobil|Fax)\s*[:.]?\s*\+?\d{2,}|(?:\d[\s\/-]?){8,}/i, pts: 1 },
+  { re: /\bwww\.|https?:\/\//i, pts: 1 },
+  { re: /\b(GmbH|AG|KG|OHG|UG|e\.\s?K\.?|GbR|eG)\b/, pts: 1 },
+  { re: /\b[A-ZÄÖÜ][a-zäöüß]+(?:stra[ßs]e|str\.?|weg|allee|gasse|platz)\b.{0,15}\d/i, pts: 1 },
+];
+CRM.voice._looksLikeSignature = function (text) {
+  let score = 0, hasAnchor = false;
+  CRM.voice._SIGNATURE_PATTERNS.forEach((p) => {
+    if (p.re.test(text)) {
+      score += p.pts;
+      if (p.pts >= 2) hasAnchor = true;
+    }
+  });
+  return score >= 3 && hasAnchor;
+};
+CRM.voice._CONTACT_CREATE_RE = /^\s*(?:neue[rn]?\s+kontakt|kontakt\s+(?:anlegen|erstellen))\b\s*(?:anlegen|erstellen)?\s*[:.,-]?\s*/i;
+CRM.voice._detectContactCreate = function (text) {
+  const explicitMatch = text.match(CRM.voice._CONTACT_CREATE_RE);
+  let content = null;
+  if (explicitMatch) {
+    content = text.slice(explicitMatch[0].length).trim();
+  } else {
+    // Strukturell nur prüfen, wenn kein anderer Trigger im Text steckt.
+    const hatAnderenTrigger = CRM.voice._TRIGGERS.some((t) => new RegExp(t.re.source, t.re.flags.replace('g', '')).test(text))
+      || new RegExp(CRM.voice._LINK_RE.source, CRM.voice._LINK_RE.flags.replace('g', '')).test(text);
+    if (!hatAnderenTrigger && CRM.voice._looksLikeSignature(text)) content = text.trim();
+  }
+  if (content === null) return null;
+  // Wispr-Signaturen sind oft eine oder wenige, kommadurchsetzte Zeilen —
+  // erst in das von parse() erwartete Zeilenformat bringen (reine Funktion,
+  // rührt parse() selbst nicht an).
+  const lineCount = content.split('\n').filter((l) => l.trim()).length;
+  const forParse = (content && lineCount < 3) ? CRM.emailParser.splitFlatSignature(content) : content;
+  const data = content ? CRM.emailParser.parse(forParse) : { company: '', name: '', _confidence: {} };
+  const match = content ? CRM.mailAblage.matchParsed(data, data.email || '') : null;
+  return {
+    intent: 'contactcreate', start: 0, end: text.length, rawText: text,
+    data: (match && match.data) || data,
+    match: match,
+    typ: (match && match.typVorschlag) || '',
+  };
+};
+
+/* ---------- 3) Stichpunkte / Kopfzeile+Firmenzeile (A3) ---------- */
+CRM.voice._BULLET_RE = /^\s*[-–•*]\s*/;
+CRM.voice._TERMIN_HEADER_RE = /^(?:ich\s+)?(?:hatte\s+)?(?:kunden|baustellen)?(?:termin|besuch)(?:\s+(?:heute|gerade|eben|vorhin))?$/i;
+CRM.voice._normalizeList = function (text) {
+  let lines = text.split('\n');
+  const nonEmpty = lines.filter((l) => l.trim());
+  const bulletCount = nonEmpty.filter((l) => CRM.voice._BULLET_RE.test(l)).length;
+  if (nonEmpty.length >= 3 && bulletCount >= 2) {
+    lines = lines.map((l) => l.replace(CRM.voice._BULLET_RE, ''));
+  }
+  // Kopfzeilen-Regel: 1. Zeile nur "Termin/Besuch (heute/…)", 2. Zeile kurz
+  // und ohne eigenen Trigger -> "Termin bei <2. Zeile>" (Chris' Stichpunkt-
+  // Beispiel: "Termin heute" / "Beiwa Lauf" -> "Termin bei Beiwa Lauf").
+  const trimmed = lines.map((l) => l.trim());
+  const erste = trimmed[0] || '';
+  const zweite = trimmed[1] || '';
+  if (erste && zweite && CRM.voice._TERMIN_HEADER_RE.test(erste) && zweite.split(/\s+/).length <= 5) {
+    const hatTrigger = CRM.voice._TRIGGERS.some((t) => new RegExp(t.re.source, t.re.flags.replace('g', '')).test(zweite));
+    if (!hatTrigger) {
+      const rest = lines.slice(2);
+      return ['Termin bei ' + zweite].concat(rest).join('\n');
+    }
+  }
+  return lines.join('\n');
+};
+
+/* ---------- 5) Freitext nach einem Besuch -> Besuchsbericht (A2) ---------- */
+/* Sende-Wünsche ("schicken/senden/versenden") bleiben eigene unsupported-
+   Zeilen — erledigte Fakten ("zugesandt", "geschickt") zählen NICHT dazu
+   und bleiben im Bericht. Satzweise geprüft, damit ein Chunk mit beidem
+   (Bericht + ein Sende-Wunsch) sauber getrennt wird. */
+CRM.voice._SEND_RE = /\b(schick\w*|send\w*|versend\w*)\b/i;
+CRM.voice._splitSentences = function (text) {
+  const geschuetzt = String(text || '').replace(/(\d)\.(?=\s|\d|$)/g, '$1\x00');
+  return geschuetzt.split(/[.!?\n]+/).map((s) => s.replace(/\x00/g, '.').trim()).filter(Boolean);
+};
+CRM.voice._attachReports = function (all) {
+  let chain = null; // {start, visits:[...]} — Besuch(e) mit demselben start = eine Kette
+  const out = [];
+  all.forEach((cmd) => {
+    if (cmd.intent === 'visit') {
+      if (!chain || chain.start !== cmd.start) chain = { start: cmd.start, visits: [] };
+      chain.visits.push(cmd);
+      out.push(cmd);
+      return;
+    }
+    if (cmd.intent === 'link' || cmd.intent === 'projectcreate' || cmd.intent === 'projectnote') {
+      chain = null; // eigener Bezug — kein Bericht mehr an einen früheren Besuch
+      out.push(cmd);
+      return;
+    }
+    if ((cmd.intent === 'unrecognized' || cmd.intent === 'unsupported') && chain && chain.visits.length) {
+      const sentences = CRM.voice._splitSentences(cmd.rawText);
+      const sendParts = sentences.filter((s) => CRM.voice._SEND_RE.test(s));
+      const keepParts = sentences.filter((s) => !CRM.voice._SEND_RE.test(s));
+      if (keepParts.length) {
+        const txt = keepParts.join('. ');
+        // Eigene Kopie pro Besuch (kein geteiltes Objekt) — eine spätere
+        // Korrektur bei A darf den Bericht bei B nicht mitverändern.
+        chain.visits.forEach((v) => { v.report = v.report ? v.report + '\n' + txt : txt; });
+      }
+      if (sendParts.length) {
+        out.push({ intent: 'unsupported', start: cmd.start, end: cmd.end, rawText: sendParts.join('. ') });
+      }
+      return; // Original-Zeile ist absorbiert (ganz oder teilweise umgewandelt)
+    }
+    out.push(cmd);
+  });
+  return out;
+};
+
+/* ---------- 6) Aufgaben-Vorschläge aus dem Bericht (A3, Opt-in) ---------- */
+CRM.voice._suggestTasks = function (all) {
+  if (!(window.CRM && CRM.speech && CRM.speech.detectTasks)) return all;
+  const out = all.slice();
+  const heute = CRM.ymd ? CRM.ymd(new Date()) : new Date().toISOString().slice(0, 10);
+  all.forEach((cmd, i) => {
+    if (cmd.intent !== 'visit' || !(cmd.report || '').trim()) return;
+    const vorschlaege = CRM.speech.detectTasks(cmd.report, heute);
+    vorschlaege.forEach((v) => {
+      out.push({
+        intent: 'task', start: cmd.start, end: cmd.end, rawText: v.title,
+        title: v.title, due: v.due || '', suggested: true, accepted: false,
+        targetExplicit: false, resolution: cmd.resolution ? Object.assign({}, cmd.resolution) : null,
+      });
+    });
+  });
+  return out;
+};
+
 /* Sucht rückwärts den nächstgelegenen Befehl, der bereits einen
    Kontakt "mitbringt" (Besuch, oder die rechte Seite einer
    Kontakt-Verknüpfung) — gibt dessen resolution-OBJEKT (per Referenz)
@@ -325,6 +551,12 @@ CRM.voice.resolveContact = function (nameHint, locationHint) {
     if (m2.length === 1) return { status: 'resolved', contact: m2[0], query: combined };
     if (m2.length > 1) return { status: 'ambiguous', candidates: m2.slice(0, 8), query: combined };
   }
+  // Letzte Stufe (A6, Chris 2026-09-24: "Wallauf" war ein Wispr-Verhörer
+  // von "BayWa Lauf") — klangliche Ähnlichkeit gegen die echte Kontakt-
+  // datenbank, NIE automatisch übernommen (siehe status 'phonetic', wird
+  // in der Vorschau ausdrücklich bestätigungspflichtig dargestellt).
+  const guess = CRM.voice._phoneticGuess(combined, contacts, 'contact');
+  if (guess) return { status: 'phonetic', contact: guess, query: combined };
   return { status: 'notfound', query: combined, contact: null };
 };
 
@@ -353,7 +585,64 @@ CRM.voice.resolveProject = function (nameHint, locationHint) {
     if (m2.length === 1) return { status: 'resolved', project: m2[0], query: combined };
     if (m2.length > 1) return { status: 'ambiguous', candidates: m2.slice(0, 8), query: combined };
   }
+  const guess = CRM.voice._phoneticGuess(combined, projects, 'project');
+  if (guess) return { status: 'phonetic', project: guess, query: combined };
   return { status: 'notfound', query: combined, project: null };
+};
+
+/* ============================================================
+   Klangliche Ähnlichkeitssuche (A6) — Levenshtein-basiert, gegen die
+   echte Kontakt-/Projektdatenbank, kein fester Wortlisten-Fix. Nur EIN
+   klarer Treffer mit deutlichem Abstand zum zweitbesten gilt überhaupt
+   als Vorschlag; alles andere bleibt "notfound". Rein lokal, kein Lernen/
+   Merken — jeder Satz wird neu geprüft (Chris 2026-09-24).
+   ============================================================ */
+CRM.voice._levenshtein = function (a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+};
+CRM.voice._similarity = function (a, b) {
+  if (!a || !b) return 0;
+  return 1 - CRM.voice._levenshtein(a, b) / Math.max(a.length, b.length);
+};
+CRM.voice._PHONETIC_THRESHOLD = 0.5;
+CRM.voice._PHONETIC_MARGIN = 0.1;
+// Rechtsformen weglassen (Chris' "Wallauf" für "BayWa AG, Lauf a.d.
+// Pegnitz" — das "AG" und der lange Ortszusatz verwässern sonst die
+// Ähnlichkeit spürbar, gemessen an echten Beispielen: "BayWa Lauf" statt
+// "BayWa AG Lauf a.d. Pegnitz" hebt die Trefferquote deutlich).
+CRM.voice._LEGAL_FORM_WORDS_RE = /\b(gmbh|co\s*kg|kg|ag|ohg|ug|e\.?\s?v\.?|eg|gbr|mbh|inc|ltd|llc|e\.?\s?k\.?)\b\.?/gi;
+CRM.voice._phoneticGuess = function (query, items, kind) {
+  const qn = CRM.searchNorm(query).replace(/\s+/g, '');
+  if (qn.length < 4 || !items || !items.length) return null;
+  let best = null, bestScore = 0, second = 0;
+  items.forEach((it) => {
+    const rawName = kind === 'project' ? (it.name || '') : (it.firma1 || '');
+    if (!rawName) return;
+    const name = rawName.replace(CRM.voice._LEGAL_FORM_WORDS_RE, '').replace(/\s+/g, ' ').trim() || rawName;
+    const ortErstesWort = String(it.ort || '').split(/[\s,]+/)[0] || '';
+    const varianten = [name, ortErstesWort, name + ' ' + ortErstesWort, rawName]
+      .map((v) => CRM.searchNorm(v).replace(/\s+/g, '')).filter(Boolean);
+    let itemBest = 0;
+    varianten.forEach((v) => { const s = CRM.voice._similarity(qn, v); if (s > itemBest) itemBest = s; });
+    if (itemBest > bestScore) { second = bestScore; bestScore = itemBest; best = it; }
+    else if (itemBest > second) second = itemBest;
+  });
+  if (best && bestScore >= CRM.voice._PHONETIC_THRESHOLD && (bestScore - second) >= CRM.voice._PHONETIC_MARGIN) return best;
+  return null;
 };
 
 /* ============================================================
@@ -370,8 +659,21 @@ CRM.voice._resDesc = function (res, kind) {
   if (res.status === 'resolved') {
     return esc(kind === 'project' ? CRM.voice._projectLabel(res.project) : CRM.voice._contactLabel(res.contact));
   }
+  if (res.status === 'phonetic') {
+    return '🔊 Klingt wie: ' + esc(kind === 'project' ? CRM.voice._projectLabel(res.project) : CRM.voice._contactLabel(res.contact)) + ' — passt das?';
+  }
   if (res.status === 'ambiguous') return '„' + esc(res.query) + '" — mehrdeutig, bitte auswählen';
   return '„' + esc(res.query) + '" — nicht gefunden';
+};
+/* Liefert das resolution-Objekt zur passenden Seite eines Befehls —
+   gemeinsam genutzt von _pickCandidate und den Phonetic-Bestätigen/
+   Ablehnen-Funktionen, damit die Seiten-Zuordnung nur an einer Stelle steht. */
+CRM.voice._resForSide = function (cmd, side) {
+  if (side === 'left') return cmd.leftResolution;
+  if (side === 'right') return cmd.rightResolution;
+  if (side === 'project') return cmd.projectResolution;
+  if (side === 'projectlink') return cmd.linkResolution;
+  return cmd.resolution;
 };
 
 /* ============================================================
@@ -403,9 +705,16 @@ CRM.voice.buildPreview = function (commands) {
     }
     n++;
     if (cmd.intent === 'unsupported') {
+      // A2 (Chris 2026-09-24): auch ein als "senden/schicken" erkannter
+      // Satz soll nicht spurlos verworfen werden können — genau wie bei
+      // "nicht zugeordnet" zwei Auswege, den Text doch noch zu verwenden.
       return '<div class="voice-cmd voice-cmd-blocked" data-idx="' + idx + '">'
         + '<span class="voice-cmd-badge">✕</span>'
-        + '<div class="voice-cmd-body"><div class="voice-cmd-desc"><strong>' + n + '.</strong> „' + esc(cmd.rawText) + '" — das kann ich noch nicht (diese Funktion gibt es in der App noch nicht, Phase 1 unterstützt nur Anlegen/Verknüpfen bereits vorhandener Funktionen).</div></div>'
+        + '<div class="voice-cmd-body"><div class="voice-cmd-desc"><strong>' + n + '.</strong> „' + esc(cmd.rawText) + '" — das kann ich noch nicht (diese Funktion gibt es in der App noch nicht, Phase 1 unterstützt nur Anlegen/Verknüpfen bereits vorhandener Funktionen).</div>'
+        + '<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">'
+        + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnrecognized(' + idx + ',\'task\')">→ als Aufgabe verwenden</button>'
+        + '<button class="btn btn-sm" onclick="CRM.voice._promoteUnsupportedToReport(' + idx + ')">→ in Bericht übernehmen</button>'
+        + '</div></div>'
         + '</div>';
     }
     return CRM.voice._cmdRowHtml(cmd, idx, n);
@@ -453,6 +762,19 @@ CRM.voice._entityPickerHtml = function (res, idx, side, kind) {
       + '</div>';
   }
 
+  if (res.status === 'phonetic') {
+    // Klanglicher Vorschlag (A6) — bewusst NICHT wie "ambiguous" mit
+    // Kandidatenliste, sondern EIN Vorschlag mit Ja/Nein, weil nur ein
+    // einziger, deutlich führender Treffer diesen Status überhaupt erreicht.
+    return '<div class="voice-cand-list" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
+      + '<div class="voice-cand-hint">🔊 „' + esc(res.query) + '" klingt wie ein Verhörer — passt das?</div>'
+      + '<div class="row" style="gap:6px;margin:4px 0">'
+      + '<button type="button" class="btn btn-sm btn-primary" onclick="CRM.voice._confirmPhonetic(' + idx + ',\'' + side + '\')">✓ Ja</button>'
+      + '<button type="button" class="btn btn-sm" onclick="CRM.voice._rejectPhonetic(' + idx + ',\'' + side + '\')">✕ Nein, weitersuchen</button>'
+      + '</div>'
+      + '</div>';
+  }
+
   const hint = res.status === 'ambiguous'
     ? 'Mehrere Treffer für „' + esc(res.query) + '" — bitte wählen, oder unten neu suchen:'
     : '„' + esc(res.query) + '" nicht gefunden — bitte suchen und zuordnen:';
@@ -497,6 +819,36 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
       desc += ' · Bauvorhaben <strong>' + CRM.voice._resDesc(cmd.projectResolution, 'project') + '</strong>';
       candidatesHtml += CRM.voice._entityPickerHtml(cmd.projectResolution, idx, 'project', 'project');
     }
+    // A2 (Chris 2026-09-24): frei erzählter Bericht landet automatisch hier
+    // (siehe CRM.voice._attachReports) — sichtbar und korrigierbar, statt
+    // unsichtbar im Hintergrund zu verschwinden.
+    candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Besuchsbericht <span style="font-weight:400;color:var(--text-dim)">(landet im Besuchsprotokoll/Excel — automatisch aus deinem Text übernommen)</span></label>'
+      + '<textarea class="voice-edit-input" rows="3" placeholder="(kein Bericht erkannt)" oninput="CRM.voice._updateCmdField(' + idx + ',\'report\',this.value)">' + esc(cmd.report || '') + '</textarea>';
+    if ((cmd.report || '').trim()) {
+      candidatesHtml += '<button class="btn btn-sm" style="margin-top:4px" onclick="CRM.voice._detachReport(' + idx + ')" title="Bericht stattdessen als eigene Journal-Notiz speichern, nicht im Besuchsprotokoll">✂ als eigene Notiz abtrennen</button>';
+    }
+    // A7: Bericht auch bei weiteren Kontakten desselben Bauvorhabens
+    // vermerken — jede Baustelle hat für Chris immer auch einen
+    // beliefernden Händler, der oft gar nicht namentlich genannt wird.
+    if (cmd.projectResolution && cmd.projectResolution.status === 'resolved') {
+      const proj = cmd.projectResolution.project;
+      const visitedId = cmd.resolution && cmd.resolution.status === 'resolved' ? cmd.resolution.contact.id : null;
+      const linked = (proj.contactIds || []).map((cid) => CRM.db.getContact(cid)).filter((c) => c && c.id !== visitedId);
+      const haendler = linked.filter((c) => c.type === 'haendler');
+      if (haendler.length) {
+        candidatesHtml += '<div style="margin-top:8px;font-size:12px">Auch bei verknüpften Kontakten dieses Bauvorhabens vermerken:</div>'
+          + haendler.map((h) => '<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:2px"><input type="checkbox" style="width:auto" ' + ((cmd.mirrorTo || []).indexOf(h.id) >= 0 ? 'checked' : '') + ' onchange="CRM.voice._toggleMirror(' + idx + ',\'' + h.id + '\',this.checked)"> ' + esc(h.firma1) + ' (Händler)</label>').join('');
+      } else if (cmd.newHaendlerId) {
+        candidatesHtml += '<div style="font-size:12px;color:var(--accent-2);margin-top:8px">✓ ' + esc((CRM.db.getContact(cmd.newHaendlerId) || {}).firma1 || '') + ' wird als beliefernder Händler verknüpft — <a href="#" onclick="event.preventDefault();CRM.voice._updateCmdField(' + idx + ',\'newHaendlerId\',null);CRM.voice._renderConfirmModal()">ändern</a></div>';
+      } else if (!cmd.haendlerSkip) {
+        candidatesHtml += '<div class="voice-cand-list" style="margin-top:8px">'
+          + '<div class="voice-cand-hint">🏗 Kein Baustoffhändler für „' + esc(proj.name || 'dieses Bauvorhaben') + '" hinterlegt — wer beliefert diese Baustelle?</div>'
+          + '<input type="text" class="voice-search-input" placeholder="Händler suchen…" oninput="CRM.voice._haendlerSearch(this,' + idx + ')">'
+          + '<div class="voice-search-results" id="voice-haendler-res-' + idx + '"></div>'
+          + '<button class="btn btn-sm" style="margin-top:4px" onclick="CRM.voice._skipHaendlerPrompt(' + idx + ')">✕ Jetzt nicht</button>'
+          + '</div>';
+      }
+    }
   } else if (cmd.intent === 'note') {
     desc = 'Notiz hinzufügen bei <strong>' + CRM.voice._resDesc(cmd.resolution, 'contact') + '</strong>';
     check(cmd.resolution);
@@ -515,7 +867,11 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     if (res && res.status === 'resolved') bezug = ' für <strong>' + esc(CRM.voice._contactLabel(res.contact)) + '</strong>';
     else if (res) bezug = ' für „' + esc(res.query) + '" <span style="color:var(--text-dim)">(noch nicht zugeordnet)</span>';
     else bezug = ' <span style="color:var(--text-dim)">(ohne Kontakt)</span>';
-    desc = 'Aufgabe anlegen' + bezug + ' — fällig heute';
+    const faelligLabel = cmd.due ? cmd.due.split('-').reverse().join('.') : 'heute';
+    desc = 'Aufgabe anlegen' + bezug + ' — fällig ' + faelligLabel;
+    // A3 (Chris 2026-09-24): aus dem Besuchsbericht abgeleiteter Vorschlag
+    // — NIE vorausgewählt, zählt unangenommen auch nicht als übersprungen.
+    if (cmd.suggested && !cmd.accepted) { desc = '💡 Vorschlag: ' + desc; ready = false; }
     // Ein ausdrücklich genannter, aber nicht gefundener Kontakt blockiert;
     // ein bloß geratener Kontext-Bezug nicht (die Aufgabe ist auch ohne
     // Zuordnung sinnvoll).
@@ -529,6 +885,14 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     // sie lieber ohne Kontakt speichert, statt erst die Suche zu bemühen.
     if (res) {
       candidatesHtml += '<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.voice._clearTaskContact(' + idx + ')">✕ ohne Kontakt anlegen</button>';
+    }
+    if (cmd.suggested) {
+      candidatesHtml += '<div class="row" style="gap:6px;margin-top:6px">'
+        + (cmd.accepted
+          ? '<span style="color:var(--accent-2);font-size:12px;align-self:center">✓ übernommen</span>'
+          : '<button class="btn btn-sm btn-primary" onclick="CRM.voice._acceptSuggestedTask(' + idx + ')">✓ übernehmen</button>')
+        + '<button class="btn btn-sm" onclick="CRM.voice._dropCmd(' + idx + ')">✕ weglassen</button>'
+        + '</div>';
     }
   } else if (cmd.intent === 'link') {
     desc = '<strong>' + CRM.voice._resDesc(cmd.leftResolution, 'contact') + '</strong> verknüpfen mit '
@@ -564,6 +928,14 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     candidatesHtml += CRM.voice._entityPickerHtml(cmd.projectResolution, idx, 'project', 'project');
     candidatesHtml += '<label style="margin:6px 0 2px;font-size:12px;display:block">Notiztext <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren)</span></label>'
       + '<input type="text" class="voice-edit-input" value="' + esc(cmd.content || '') + '" placeholder="(kein Text erkannt)" oninput="CRM.voice._updateCmdField(' + idx + ',\'content\',this.value)">';
+  } else if (cmd.intent === 'contactcreate') {
+    candidatesHtml = CRM.voice._contactCreateHtml(cmd, idx);
+    const treffer = cmd.match && cmd.match.treffer;
+    const brauchtNeuenKontakt = !treffer || cmd.decision === 'forceNew'; // sonst nur Ansprechpartner/Öffnen — kein Typ nötig
+    if (!(cmd.data.company || cmd.data.name)) ready = false;
+    if (brauchtNeuenKontakt && !cmd.typ) ready = false;
+    if (treffer && !cmd.decision) ready = false; // Chris muss aktiv eine der 3 Optionen wählen
+    desc = '➕ Neuer Kontakt' + ((cmd.data.company || cmd.data.name) ? ': <strong>' + esc(cmd.data.company || cmd.data.name) + '</strong>' : ' <span style="color:var(--text-dim)">(noch keine Angaben)</span>');
   }
 
   const cls = ready ? 'voice-cmd-ready' : 'voice-cmd-ambiguous';
@@ -584,6 +956,25 @@ CRM.voice.confirmAndExecute = function (commands, rawText) {
   if (rawText !== undefined) CRM.voice._lastTranscript = rawText;
   CRM.voice._logHistory(rawText, commands);
   CRM.voice._renderConfirmModal();
+};
+
+/* Gemeinsamer Einstieg für alle drei Aufrufstellen (Aufnahme prüfen, "Neu
+   prüfen", Verlauf erneut prüfen) — läuft über CRM.voice.analyze() statt
+   direkt über parseUtterance() (Chris 2026-09-24: "Termin"/Stichpunkte/
+   neuer Kontakt/Verhörer-Korrektur). _lastRawText merkt sich den Text VOR
+   der Verhörer-Korrektur, damit "↺ ohne Korrektur prüfen" wieder vom
+   Original ausgehen kann. */
+CRM.voice._runAnalyze = function (text, skipAsrFixes) {
+  CRM.voice._lastTranscript = text;
+  if (!skipAsrFixes) CRM.voice._lastRawText = text;
+  const result = CRM.voice.analyze(text, { skipAsrFixes: !!skipAsrFixes });
+  CRM.voice._pending = result.commands;
+  CRM.voice._pendingFixes = result.fixes || [];
+  CRM.voice._logHistory(text, result.commands);
+  CRM.voice._renderConfirmModal();
+};
+CRM.voice._reparseWithoutFixes = function () {
+  CRM.voice._runAnalyze(CRM.voice._lastRawText || CRM.voice._lastTranscript, true);
 };
 
 /* Chris-Frage (2026-08): "wo finde ich den gesprochenen Text? ist der
@@ -659,9 +1050,7 @@ CRM.voice.exportHistory = function () {
 CRM.voice.reuseFromHistory = function (i) {
   const h = (CRM.db.getSettings().voiceHistory || [])[i];
   if (!h) return;
-  CRM.voice._lastTranscript = h.text;
-  CRM.voice._pending = CRM.voice.parseUtterance(h.text);
-  CRM.voice._renderConfirmModal();
+  CRM.voice._runAnalyze(h.text);
 };
 
 /* Chris-Feedback (2026-08): die Texterkennung ist bei längeren/komplizierten
@@ -673,9 +1062,17 @@ CRM.voice.reuseFromHistory = function (i) {
    neu auf — ohne die Aufnahme zu wiederholen. */
 CRM.voice._renderConfirmModal = function () {
   const commands = CRM.voice._pending || [];
+  // A5: sichtbarer, abschaltbarer Hinweis auf automatisch korrigierte
+  // Verhörer (Josima→YOSIMA u.ä.) — Chris soll nie unbemerkt etwas anderes
+  // verstanden bekommen, als er gesagt hat.
+  const fixesHtml = (CRM.voice._pendingFixes && CRM.voice._pendingFixes.length)
+    ? '<p style="font-size:12px;color:var(--text-dim);margin:4px 0 10px">🔤 Automatisch korrigiert: ' + esc(CRM.voice._pendingFixes.join(', '))
+      + ' — <a href="#" onclick="event.preventDefault();CRM.voice._reparseWithoutFixes()">ohne Korrektur prüfen</a></p>'
+    : '';
   const html = '<h2>🎤 Sprachbefehl bestätigen</h2>'
     + '<label style="margin-top:0">Erkannter Text <span style="font-weight:400;color:var(--text-dim)">(bei Bedarf korrigieren, dann „Neu prüfen")</span></label>'
     + '<textarea id="voice-confirm-text" rows="2">' + esc(CRM.voice._lastTranscript || '') + '</textarea>'
+    + fixesHtml
     + '<div class="row" style="margin:6px 0 12px">'
     + '<button class="btn btn-sm" onclick="CRM.voice.reparseFromConfirm()">🔄 Neu prüfen</button>'
     + '</div>'
@@ -695,9 +1092,7 @@ CRM.voice.reparseFromConfirm = function () {
   const ta = document.getElementById('voice-confirm-text');
   const text = ta ? ta.value.trim() : '';
   if (!text) { CRM.toast('Bitte Text eingeben.', 'error'); return; }
-  CRM.voice._lastTranscript = text;
-  CRM.voice._pending = CRM.voice.parseUtterance(text);
-  CRM.voice._renderConfirmModal();
+  CRM.voice._runAnalyze(text);
 };
 
 CRM.voice._wirePreviewCandidates = function () {
@@ -733,12 +1128,7 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   if (!cmd) return;
   const entity = kind === 'project' ? CRM.db.getProject(id) : CRM.db.getContact(id);
   if (!entity) return;
-  let res;
-  if (side === 'left') res = cmd.leftResolution;
-  else if (side === 'right') res = cmd.rightResolution;
-  else if (side === 'project') res = cmd.projectResolution;
-  else if (side === 'projectlink') res = cmd.linkResolution;
-  else res = cmd.resolution;
+  let res = CRM.voice._resForSide(cmd, side);
   // Noch gar keine Auflösung vorhanden (allgemeine Aufgabe, der Chris
   // jetzt erst einen Kontakt zuweist, ein Besuch ohne genanntes
   // Bauvorhaben, dem jetzt eins zugeordnet wird, ODER ein neues Projekt
@@ -753,6 +1143,27 @@ CRM.voice._pickCandidate = function (idx, side, kind, id) {
   if (kind === 'project') res.project = entity; else res.contact = entity;
   // Neu zeichnen: dank geteilter Objekt-Referenz aktualisieren sich
   // davon abhängige Zeilen (z.B. "neue Notiz" nach diesem Besuch) mit.
+  CRM.voice._renderConfirmModal();
+};
+
+/* Klanglicher Vorschlag (A6) bestätigt/abgelehnt — NIE automatisch, immer
+   ein bewusster Tipp. Bestätigt: wird zu einem normalen 'resolved'-Treffer
+   (gleiche Objekt-Referenz, geteilte Kontexte aktualisieren sich mit).
+   Abgelehnt: zurück zu 'notfound', das normale Suchfeld erscheint. */
+CRM.voice._confirmPhonetic = function (idx, side) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  const res = cmd && CRM.voice._resForSide(cmd, side);
+  if (!res || res.status !== 'phonetic') return;
+  res.status = 'resolved';
+  CRM.voice._renderConfirmModal();
+};
+CRM.voice._rejectPhonetic = function (idx, side) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  const res = cmd && CRM.voice._resForSide(cmd, side);
+  if (!res || res.status !== 'phonetic') return;
+  res.status = 'notfound';
+  if ('contact' in res) res.contact = null;
+  if ('project' in res) res.project = null;
   CRM.voice._renderConfirmModal();
 };
 
@@ -784,6 +1195,65 @@ CRM.voice._updateCmdField = function (idx, field, value) {
   }
 };
 
+/* ============================================================
+   A4: "Neuer Kontakt" / vorgelesene Signatur — Vorschau-Karte. Baut die
+   "Variante B"-Bestätigungskarte (email-parser.js/mailAblage) im eigenen
+   DOM der Sprachvorschau nach, weil renderMatch()/showNeuForm() fest an
+   die #ma-*-Feld-IDs der Mail-Ablage gebunden sind. Bindet stattdessen an
+   cmd.data.* über _updateContactField.
+   ============================================================ */
+CRM.voice._updateContactField = function (idx, key, value) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.data[key] = value;
+};
+CRM.voice._setContactType = function (idx, value) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.typ = value;
+};
+/* Entscheidung bei Bestandstreffer (Chris 2026-09-24, Beispiel 3): primär
+   "Ansprechpartner hinzufügen" statt eine zweite Firma anzulegen. */
+CRM.voice._setContactDecision = function (idx, decision) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.decision = decision;
+  CRM.voice._renderConfirmModal();
+};
+CRM.voice._contactCreateHtml = function (cmd, idx) {
+  const d = cmd.data || {};
+  const m = cmd.match;
+  const field = (label, key, opts) => '<div class="col" style="min-width:' + ((opts && opts.w) || 160) + 'px"><label>' + label + '</label>'
+    + '<input class="' + (d._confidence && d._confidence[key] === 'low' ? 'ep-unsicher' : '') + '" value="' + escAttr(d[key] || '') + '" oninput="CRM.voice._updateContactField(' + idx + ',\'' + key + '\',this.value)"></div>';
+  const typeOpts = '<option value="">– bitte wählen –</option>' + CRM.TYPES.map((t) => '<option value="' + t + '"' + (t === cmd.typ ? ' selected' : '') + '>' + CRM.TYPE_LABELS[t] + '</option>').join('');
+  let html = '';
+  if (m && m.unsicher && m.gruende.length) {
+    html += '<div style="font-size:12px;color:var(--orange);margin-bottom:6px">⚠ ' + m.gruende.map(esc).join(' · ') + '</div>';
+  }
+  if (m && m.treffer) {
+    const t = m.treffer;
+    html += '<div style="background:rgba(90,155,255,.12);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;margin-bottom:8px">'
+      + '<div>💡 Gibt es schon: <strong>' + esc(t.firma1) + '</strong> <span style="color:var(--text-dim);font-size:12px">(' + esc(t.plz) + ' ' + esc(t.ort) + ')</span></div>'
+      + '<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">'
+      + '<button class="btn btn-sm btn-primary" onclick="CRM.voice._setContactDecision(' + idx + ',\'addAp\')">✓ Ansprechpartner hinzufügen' + (cmd.decision === 'addAp' ? ' ✓' : '') + '</button>'
+      + '<button class="btn btn-sm" onclick="CRM.voice._setContactDecision(' + idx + ',\'open\')">→ Nur Kontakt öffnen' + (cmd.decision === 'open' ? ' ✓' : '') + '</button>'
+      + '<button class="btn btn-sm" onclick="CRM.voice._setContactDecision(' + idx + ',\'forceNew\')">Trotzdem als neue Firma anlegen' + (cmd.decision === 'forceNew' ? ' ✓' : '') + '</button>'
+      + '</div></div>';
+  }
+  const felderAusblenden = m && m.treffer && cmd.decision && cmd.decision !== 'forceNew';
+  if (!felderAusblenden) {
+    html += '<div class="row" style="flex-wrap:wrap;gap:8px">' + field('Firma', 'company', { w: 200 }) + field('Name', 'name', { w: 200 }) + '</div>'
+      + '<div class="row" style="flex-wrap:wrap;gap:8px">' + field('Funktion', 'title') + field('Straße', 'street') + '</div>'
+      + '<div class="row" style="flex-wrap:wrap;gap:8px">' + field('PLZ', 'postal', { w: 90 }) + field('Ort', 'city') + '</div>'
+      + '<div class="row" style="flex-wrap:wrap;gap:8px">' + field('Telefon', 'phone_work') + field('Mobil', 'phone_mobile') + field('E-Mail', 'email', { w: 200 }) + '</div>'
+      + '<div class="row" style="flex-wrap:wrap;gap:8px"><div class="col" style="min-width:160px"><label>Kontakttyp</label><select onchange="CRM.voice._setContactType(' + idx + ',this.value)">' + typeOpts + '</select></div></div>';
+  }
+  if (!(d.company || d.name)) {
+    html += '<p style="color:var(--text-dim);font-size:12px;margin-top:6px">Signatur ins Textfeld oben diktieren/einfügen und „🔄 Neu prüfen" — oder Felder direkt ausfüllen.</p>';
+  }
+  return html;
+};
+
 // Projekt trotzdem OHNE die genannte Verknüpfung anlegen — der genannte
 // Kontakt wurde nicht gefunden (Verhörer/Tippfehler), das Projekt selbst
 // ist auch ohne die Verknüpfung sinnvoll.
@@ -803,6 +1273,85 @@ CRM.voice._clearTaskContact = function (idx) {
   if (!cmd) return;
   cmd.resolution = null;
   cmd.targetExplicit = false;
+  CRM.voice._renderConfirmModal();
+};
+
+/* ---------- A7: Bericht auch bei verknüpften/neu zu verknüpfenden
+   Händlern desselben Bauvorhabens (Chris 2026-09-24) ---------- */
+CRM.voice._toggleMirror = function (idx, contactId, on) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.mirrorTo = cmd.mirrorTo || [];
+  const i = cmd.mirrorTo.indexOf(contactId);
+  if (on && i < 0) cmd.mirrorTo.push(contactId);
+  else if (!on && i >= 0) cmd.mirrorTo.splice(i, 1);
+  // Kein Neuzeichnen nötig — reine Checkbox-Zustandsänderung, würde sonst
+  // das Bericht-Textfeld mitten im Tippen den Fokus rauben.
+};
+CRM.voice._haendlerSearch = function (input, idx) {
+  const q = input.value.trim();
+  const results = document.getElementById('voice-haendler-res-' + idx);
+  if (!results) return;
+  if (!q) { results.innerHTML = ''; return; }
+  const items = CRM.db.getContacts().filter((c) => !c.archived && c.type === 'haendler' && CRM.contactQueryMatch(q, c)).slice(0, 8);
+  results.innerHTML = items.length
+    ? items.map((c) => CRM.voice._candRowHtml(c, 'contact')).join('')
+    : '<div style="color:var(--text-dim);font-size:12px;padding:4px 2px">Keine Treffer unter den Händlern — <a href="#" onclick="event.preventDefault();CRM.voice._haendlerSearchAlleTypen(\'' + esc(q).replace(/'/g, '&#39;') + '\',' + idx + ')">auch andere Typen zeigen</a></div>';
+  results.querySelectorAll('.voice-cand-row').forEach((row) => {
+    row.addEventListener('click', () => { CRM.voice._pickHaendler(idx, row.dataset.id); });
+  });
+};
+CRM.voice._haendlerSearchAlleTypen = function (q, idx) {
+  const results = document.getElementById('voice-haendler-res-' + idx);
+  if (!results) return;
+  const items = CRM.db.getContacts().filter((c) => !c.archived && CRM.contactQueryMatch(q, c)).slice(0, 8);
+  results.innerHTML = items.length ? items.map((c) => CRM.voice._candRowHtml(c, 'contact')).join('') : '<div style="color:var(--text-dim);font-size:12px;padding:4px 2px">Keine Treffer.</div>';
+  results.querySelectorAll('.voice-cand-row').forEach((row) => {
+    row.addEventListener('click', () => { CRM.voice._pickHaendler(idx, row.dataset.id); });
+  });
+};
+CRM.voice._pickHaendler = function (idx, contactId) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.newHaendlerId = contactId;
+  cmd.haendlerSkip = false;
+  CRM.voice._renderConfirmModal();
+};
+CRM.voice._skipHaendlerPrompt = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.haendlerSkip = true;
+  CRM.voice._renderConfirmModal();
+};
+
+/* Bericht stattdessen als eigene Journal-Notiz speichern (Chris will es
+   nicht im offiziellen Besuchsprotokoll) — KOPIE der Kontakt-Zuordnung,
+   wie bei einer aus "nicht zugeordnet" erzeugten Aufgabe: eine spätere
+   Korrektur hier darf den Besuch selbst nicht mitverändern. */
+CRM.voice._detachReport = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd || !(cmd.report || '').trim()) return;
+  const noteCmd = {
+    intent: 'note', start: cmd.start, end: cmd.end,
+    rawText: cmd.report, content: cmd.report,
+    resolution: cmd.resolution ? Object.assign({}, cmd.resolution) : { status: 'notfound', query: '', contact: null },
+  };
+  cmd.report = '';
+  CRM.voice._pending.splice(idx + 1, 0, noteCmd);
+  CRM.voice._renderConfirmModal();
+};
+
+/* Vorschau-Zeile komplett verwerfen (A3: eine nicht angenommene Aufgaben-
+   Vorschlagszeile). */
+CRM.voice._dropCmd = function (idx) {
+  if (!CRM.voice._pending) return;
+  CRM.voice._pending.splice(idx, 1);
+  CRM.voice._renderConfirmModal();
+};
+CRM.voice._acceptSuggestedTask = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.accepted = true;
   CRM.voice._renderConfirmModal();
 };
 
@@ -831,7 +1380,37 @@ CRM.voice._promoteUnrecognized = function (idx, newIntent) {
   } else if (newIntent === 'task') {
     cmd.intent = 'task';
     cmd.title = cmd.rawText;
+    // A2 (Chris 2026-09-24): auch hier den zuletzt genannten Kontakt als
+    // Vorschlag übernehmen (Kopie, siehe Funktionskommentar oben) und ein
+    // im Text genanntes Datum statt immer "heute" verwenden.
+    const ctx = CRM.voice._contextContact(CRM.voice._pending, idx);
+    cmd.resolution = ctx ? Object.assign({}, ctx) : null;
+    cmd.targetExplicit = false;
+    if (window.CRM && CRM.speech && CRM.speech.parseGermanDate) {
+      const d = CRM.speech.parseGermanDate(cmd.rawText, CRM.ymd(new Date()));
+      if (d) cmd.due = d.iso;
+    }
   }
+  CRM.voice._renderConfirmModal();
+};
+
+/* "→ in Bericht übernehmen" an einer unsupported-Zeile (A2): hängt den
+   Text an den zuletzt genannten Besuch (bzw. die ganze Kette) an, statt
+   ihn als eigenen, unausführbaren Befehl stehen zu lassen. */
+CRM.voice._promoteUnsupportedToReport = function (idx) {
+  const all = CRM.voice._pending || [];
+  const cmd = all[idx];
+  if (!cmd) return;
+  let chainStart = null;
+  for (let i = idx - 1; i >= 0; i--) {
+    if (all[i].intent === 'visit') { chainStart = all[i].start; break; }
+    if (['link', 'projectcreate', 'projectnote'].indexOf(all[i].intent) >= 0) break;
+  }
+  if (chainStart == null) { CRM.toast('Kein vorheriger Besuch im Satz gefunden.', 'error'); return; }
+  all.filter((c) => c.intent === 'visit' && c.start === chainStart).forEach((v) => {
+    v.report = v.report ? v.report + '\n' + cmd.rawText : cmd.rawText;
+  });
+  all.splice(idx, 1);
   CRM.voice._renderConfirmModal();
 };
 
@@ -868,6 +1447,7 @@ CRM.voice.executeConfirmed = function () {
   let done = 0;
   let skipped = 0;
   let musterTarget = null; // Muster-Dialog erst NACH allen anderen Aktionen öffnen (nur 1 Modal gleichzeitig)
+  let openContactTarget = null; // dito für "→ Nur Kontakt öffnen" (A4)
 
   commands.forEach((cmd) => {
     if (cmd.intent === 'unrecognized') return;
@@ -875,13 +1455,39 @@ CRM.voice.executeConfirmed = function () {
 
     if (cmd.intent === 'visit') {
       if (cmd.resolution && cmd.resolution.status === 'resolved') {
-        CRM.addVisit(cmd.resolution.contact.id, null, '');
+        CRM.addVisit(cmd.resolution.contact.id, null, (cmd.report || '').trim());
         // Bauvorhaben-Verknüpfung ist Zusatznutzen: nur verknüpfen, wenn
         // aufgelöst — bleibt es offen/unklar, wird der Besuch trotzdem
         // ganz normal angelegt (kein skipped, kein Blockieren).
         if (cmd.projectResolution && cmd.projectResolution.status === 'resolved') {
-          CRM.linkContactToProject(cmd.resolution.contact.id, cmd.projectResolution.project.id);
+          const projId = cmd.projectResolution.project.id;
+          CRM.linkContactToProject(cmd.resolution.contact.id, projId);
+          // A7: Bericht zusätzlich bei bereits verknüpften Kontakten
+          // hinterlegen, die Chris in der Vorschau angehakt hat.
+          (cmd.mirrorTo || []).forEach((cid) => {
+            if (cid && cid !== cmd.resolution.contact.id) CRM.addVisit(cid, null, (cmd.report || '').trim());
+          });
+          // A7: neu ausgewählter, bisher nicht verknüpfter Händler — wird
+          // dauerhaft mit dem Bauvorhaben verknüpft UND bekommt denselben Bericht.
+          if (cmd.newHaendlerId && cmd.newHaendlerId !== cmd.resolution.contact.id) {
+            CRM.linkContactToProject(cmd.newHaendlerId, projId);
+            CRM.addVisit(cmd.newHaendlerId, null, (cmd.report || '').trim());
+          }
         }
+        done++;
+      } else skipped++;
+    } else if (cmd.intent === 'contactcreate') {
+      const treffer = cmd.match && cmd.match.treffer;
+      if (treffer && cmd.decision === 'open') {
+        openContactTarget = treffer.id;
+        done++;
+      } else if (treffer && cmd.decision === 'addAp') {
+        CRM.addAnsprechpartnerData(treffer.id, CRM.emailParser.apFromData(cmd.data));
+        done++;
+      } else if ((!treffer || cmd.decision === 'forceNew') && (cmd.data.company || cmd.data.name) && cmd.typ) {
+        const c = CRM.emailParser.toContact(cmd.data, cmd.typ, 'eigene');
+        const saved = CRM.emailParser._addContactMitNachlauf(c, { openDetail: false, toast: false });
+        openContactTarget = saved.id;
         done++;
       } else skipped++;
     } else if (cmd.intent === 'note') {
@@ -900,12 +1506,15 @@ CRM.voice.executeConfirmed = function () {
         done++;
       } else skipped++;
     } else if (cmd.intent === 'task') {
+      // Vorschlag (A3, aus dem Bericht abgeleitet) ohne "✓ übernehmen":
+      // zählt NICHT als übersprungen — Chris hat ihn nie angefordert.
+      if (cmd.suggested && !cmd.accepted) return;
       const res = cmd.resolution;
       const zielOffen = cmd.targetExplicit && !(res && res.status === 'resolved');
       if (cmd.title && !zielOffen) {
         CRM.db.addTask({
           title: cmd.title,
-          due: CRM.ymd(new Date()),
+          due: cmd.due || CRM.ymd(new Date()),
           contactId: (res && res.status === 'resolved') ? res.contact.id : null,
         });
         done++;
@@ -950,6 +1559,7 @@ CRM.voice.executeConfirmed = function () {
   }
   if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
   if (musterTarget) CRM.muster.open(musterTarget); // erst jetzt, damit CRM.openModal nicht vorher schon wieder schließt
+  else if (openContactTarget) CRM.openContactDetail(openContactTarget);
 };
 
 /* ============================================================
@@ -1057,8 +1667,7 @@ CRM.voice.reviewFromCapture = function () {
   const text = ta ? ta.value.trim() : (CRM.voice._lastTranscript || '').trim();
   CRM.voice.stop();
   if (!text) { CRM.toast('Kein Text erkannt.', 'error'); return; }
-  const commands = CRM.voice.parseUtterance(text);
-  CRM.voice.confirmAndExecute(commands, text);
+  CRM.voice._runAnalyze(text);
 };
 
 /* ---------- Mikrofon-Einstiege verdrahten ----------

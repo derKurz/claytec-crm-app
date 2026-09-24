@@ -605,6 +605,51 @@ CRM.emailParser.toContact = function (data, type, source) {
   return c;
 };
 
+/* Baut aus geparsten Daten einen vorbefüllten Ansprechpartner (Sprach-
+   steuerung 2026-09-24, A4): wenn eine vorgelesene Signatur zu einer
+   BESTEHENDEN Firma gehört, will Chris in der Regel keinen zweiten
+   Firmeneintrag, sondern die Person als neuen Ansprechpartner dort. Gleiche
+   Namens-/Funktions-/Kontaktdaten-Aufteilung wie in toContact() oben. */
+CRM.emailParser.apFromData = function (data) {
+  const ap = CRM.makeEmptyAnsprechpartner();
+  const nameParts = splitWs(data.name || '');
+  if (nameParts.length >= 2) { ap.name = nameParts[nameParts.length - 1]; ap.vorname = nameParts.slice(0, -1).join(' '); }
+  else if (nameParts.length === 1) ap.name = nameParts[0];
+  ap.funktion = [data.academic_title, data.title].filter(Boolean).join(' - ');
+  ap.telefon = data.phone_mobile || data.phone_work || '';
+  ap.email = data.email || data.email2 || '';
+  return ap;
+};
+
+/* ============================================================
+   Sprachsteuerung 2026-09-24 (A4): Wispr tippt eine vorgelesene Signatur
+   oft als EINE oder wenige, mit Kommas/Schrägstrichen durchsetzte Zeilen
+   statt der mehrzeiligen Form, die parse() erwartet (eine Info pro Zeile).
+   Reine Funktion, rührt parse() selbst NICHT an — die 14 bestehenden Tests
+   in test-kontakterkennung.html bleiben unberührt. Nur aufgerufen, wenn
+   der Text bereits weniger als 3 Zeilen hat (siehe _detectContactCreate).
+   ============================================================ */
+CRM.emailParser.splitFlatSignature = function (text) {
+  let t = String(text || '');
+  // Abkürzungen mit Punkt schützen, bevor an ". " getrennt wird.
+  const ABK = ['co.', 'e.k.', 'e. v.', 'e.v.', 'dipl.-ing.', 'dipl. ing.', 'str.', 'nr.', 'tel.', 'inkl.', 'bzw.', 'ca.'];
+  ABK.forEach((a) => {
+    const re = new RegExp(a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\./g, '\\.'), 'gi');
+    t = t.replace(re, (m) => m.replace(/\./g, '\x01'));
+  });
+  // Gesprochene Mail "x punkt y at z punkt de" → "x.y@z.de" (Wispr schreibt
+  // "@" gelegentlich als "at" oder "ät" aus).
+  t = t.replace(/\s+at\s+|\s+ät\s+/gi, '@').replace(/\s+punkt\s+/gi, '.');
+  // Umbrüche vor erkennbaren Signatur-Feldern erzwingen — das sind genau
+  // die Anker, die parse() pro Zeile sucht (E-Mail/Telefon/Web-Kennung).
+  t = t.replace(/\s*([,;|]|\s\/\s|\.\s(?=[A-ZÄÖÜ]))\s*/g, '\n');
+  t = t.replace(/\s+(?=(?:T|Tel\.?|Telefon|Fon|M|Mobil|Fax)\s*[:.]?\s*\+?\d)/gi, '\n');
+  t = t.replace(/\s+(?=(?:www\.|https?:\/\/))/gi, '\n');
+  t = t.replace(/\s+(?=[\w.+-]+@[\w.-]+\.\w+)/g, '\n');
+  t = t.replace(/\x01/g, '.');
+  return t.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+};
+
 /* ============================================================
    Mail-Ablage: E-Mail aus Outlook einfügen → Absender wird erkannt →
    als Kommunikation am Kontakt (+ optional Projekt) abgelegt.
@@ -687,14 +732,13 @@ CRM.mailAblage._typVorschlag = function (data) {
    Ähnlichkeitsprüfung wie beim Excel-Import). Ergebnis in
    CRM.mailAblage._parsedMatch, wird in renderMatch()/showNeuForm()
    gelesen. */
-CRM.mailAblage._analyseAdresse = function () {
-  const text = (document.getElementById('ma-input') || {}).value || '';
-  const data = CRM.emailParser.parse(text);
-  // Eigene Adresse (z.B. aus einer zitierten "Von:"-Kopfzeile in einer
-  // weitergeleiteten Mail) darf nie als Kontakt-Mailadresse durchgehen.
-  if (data.email && CRM.mailAblage.isOwn(data.email)) data.email = '';
-  if (data.email2 && CRM.mailAblage.isOwn(data.email2)) data.email2 = '';
-  if (!data.company && !data.name) { CRM.mailAblage._parsedMatch = null; return; }
+/* Reine Funktion (Sprachsteuerung 2026-09-24, A4): Bestandsabgleich + Typ-
+   Vorschlag + Unsicherheits-Gründe aus schon geparsten Daten — von
+   _analyseAdresse (liest #ma-input) UND von CRM.voice._detectContactCreate
+   (liest den Sprachtext) gemeinsam genutzt, damit es nur EINE
+   Duplikaterkennung gibt statt einer zweiten Kopie. */
+CRM.mailAblage.matchParsed = function (data, detectedMail) {
+  if (!data.company && !data.name) return null;
   const typ = CRM.mailAblage._typVorschlag(data);
   const kand = CRM.emailParser.toContact(data, typ, 'eigene');
   let treffer = null, bestScore = 0;
@@ -708,11 +752,21 @@ CRM.mailAblage._analyseAdresse = function () {
   const gruende = [];
   if (data._confidence && data._confidence.company === 'low') gruende.push('Firma nicht eindeutig erkannt');
   if (data._confidence && data._confidence.name === 'low') gruende.push('Name nicht eindeutig erkannt');
-  if (data.email && CRM.mailAblage._detectedMail && data.email.toLowerCase() !== CRM.mailAblage._detectedMail.toLowerCase()) {
+  if (data.email && detectedMail && data.email.toLowerCase() !== detectedMail.toLowerCase()) {
     gruende.push('Signatur weicht von der Absenderadresse ab — evtl. eine zitierte/weitergeleitete Mail');
   }
   if (!data.postal) gruende.push('Keine PLZ erkannt — Abgleich mit bestehenden Kontakten unsicher');
-  CRM.mailAblage._parsedMatch = { data, kand, treffer, typVorschlag: typ, unsicher: gruende.length > 0, gruende };
+  return { data, kand, treffer, typVorschlag: typ, unsicher: gruende.length > 0, gruende };
+};
+
+CRM.mailAblage._analyseAdresse = function () {
+  const text = (document.getElementById('ma-input') || {}).value || '';
+  const data = CRM.emailParser.parse(text);
+  // Eigene Adresse (z.B. aus einer zitierten "Von:"-Kopfzeile in einer
+  // weitergeleiteten Mail) darf nie als Kontakt-Mailadresse durchgehen.
+  if (data.email && CRM.mailAblage.isOwn(data.email)) data.email = '';
+  if (data.email2 && CRM.mailAblage.isOwn(data.email2)) data.email2 = '';
+  CRM.mailAblage._parsedMatch = CRM.mailAblage.matchParsed(data, CRM.mailAblage._detectedMail);
 };
 
 /* Kopfzeilen der eingefügten Mail auswerten (deutsch + englisch) */
@@ -1222,7 +1276,10 @@ CRM.emailParser._addContactMitNachlauf = function (c, opts) {
   const linkCount = (CRM.emailParser._pendingProjectId ? 1 : 0) + (CRM.emailParser._pendingLinks || []).length;
   CRM.emailParser._pendingLinks = [];
   CRM.emailParser._pendingProjectId = '';
-  CRM.toast(linkCount ? `Kontakt angelegt und ${linkCount} Verknüpfung(en) gesetzt.` : 'Kontakt angelegt.', 'success');
+  // opts.toast:false (Sprachsteuerung 2026-09-24): die Sprachvorschau zeigt
+  // ihre eigene Erfolgsmeldung ("✓ N Sprachbefehl(e) ausgeführt") — ein
+  // zweiter Toast hier wäre doppelt gemoppelt.
+  if (opts.toast !== false) CRM.toast(linkCount ? `Kontakt angelegt und ${linkCount} Verknüpfung(en) gesetzt.` : 'Kontakt angelegt.', 'success');
   CRM.renderContactList();
   if (opts.openDetail !== false) CRM.openContactDetail(saved.id);
   if (CRM.geocoding && CRM.geocoding.geocodeSingle) CRM.geocoding.geocodeSingle(saved.id);
