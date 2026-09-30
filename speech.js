@@ -16,6 +16,7 @@ CRM.speech = {
   targetContactId: null,
   transcript: '',
   parsedDate: null,
+  _draftId: null,        // id des aktuellen Rohablage-Eintrags, s. CRM.voice._bindDraft
 };
 
 CRM.speech.webSpeechAvailable = function () {
@@ -38,11 +39,17 @@ CRM.speech.parseCommands = function (text) {
   return { date, cleaned };
 };
 
-/* ---------- Aufnahme-Dialog öffnen ---------- */
-CRM.speech.openCapture = function (contactId) {
+/* ---------- Aufnahme-Dialog öffnen ----------
+   dismissible:false (Chris 2026-09-30, Punkt 1): ein Tipp neben den Dialog
+   hat bisher die diktierte Notiz kommentarlos verworfen. opts.draftId/
+   opts.text erlauben den Wiedereinstieg aus der Rohablage (siehe
+   CRM.voice.reuseFromHistory). */
+CRM.speech.openCapture = function (contactId, opts) {
+  opts = opts || {};
   CRM.speech.targetContactId = contactId;
   CRM.speech.transcript = '';
   CRM.speech.parsedDate = null;
+  CRM.speech._draftId = opts.draftId || null;
   const c = CRM.db.getContact(contactId);
   const engine = CRM.db.getSettings().speechEngine || 'webspeech';
 
@@ -52,7 +59,7 @@ CRM.speech.openCapture = function (contactId) {
     <div id="speech-status" class="speech-status">Bereit.</div>
     <div style="margin:12px 0">
       <label>Erkannter Text</label>
-      <textarea id="speech-transcript" rows="4" placeholder="Hier erscheint die Transkription..."></textarea>
+      <textarea id="speech-transcript" rows="4" placeholder="Hier erscheint die Transkription...">${opts.text ? esc(opts.text) : ''}</textarea>
     </div>
     <div class="row" style="align-items:center;gap:8px">
       <label style="margin:0;max-width:160px">Besuchsdatum</label>
@@ -65,7 +72,8 @@ CRM.speech.openCapture = function (contactId) {
       <button class="btn btn-primary" onclick="CRM.speech.saveAsVisit()">Als Besuch speichern</button>
     </div>
     <p style="color:var(--text-dim);font-size:12px;margin-top:8px">„Als Besuch" landet im offiziellen Besuchsbericht (Excel-Ablage). „Als Notiz" landet nur im fortlaufenden Kontaktjournal, ohne Export.</p>
-  `);
+  `, { dismissible: false });
+  CRM.voice._bindDraft('speech-transcript', { quelle: 'sprachnotiz', contactId });
 };
 
 CRM.speech.setStatus = function (txt, cls) {
@@ -107,6 +115,8 @@ CRM.speech.startWebSpeech = function () {
     const full = (finalText + interim).trim();
     document.getElementById('speech-transcript').value = full;
     CRM.speech.applyParsed(full);
+    // Web Speech setzt .value per Programm — feuert kein 'input'-Ereignis.
+    if (CRM.voice._activeDraftSchedule) CRM.voice._activeDraftSchedule();
   };
   rec.onerror = (e) => {
     CRM.speech.setStatus('Fehler: ' + e.error, 'err');
@@ -166,6 +176,7 @@ CRM.speech.sendToWhisper = async function () {
     const text = (data.text || '').trim();
     document.getElementById('speech-transcript').value = text;
     CRM.speech.applyParsed(text);
+    if (CRM.voice._activeDraftSchedule) CRM.voice._activeDraftSchedule();
     CRM.speech.setStatus('Transkription fertig. Text prüfen und speichern.', '');
   } catch (e) {
     CRM.speech.setStatus('Whisper-Fehler: ' + e.message, 'err');
@@ -199,8 +210,12 @@ CRM.speech.stop = function () {
 };
 
 CRM.speech.cancel = function () {
+  CRM.voice._flushDraft();
+  const hatte = !!CRM.speech._draftId;
   CRM.speech.stop();
   CRM.closeModal();
+  if (hatte) CRM.toast('💾 Text in der Rohablage gesichert — siehe Startseite.', 'success');
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
 };
 
 CRM.speech.saveAsVisit = function () {
@@ -210,6 +225,7 @@ CRM.speech.saveAsVisit = function () {
   const id = CRM.speech.targetContactId;
   if (!id) { CRM.toast('Kein Kontakt zugeordnet.', 'error'); return; }
   CRM.addVisit(id, date, text);
+  if (CRM.speech._draftId) { CRM.voice._setStatus(CRM.speech._draftId, 'erledigt'); CRM.speech._draftId = null; }
   CRM.toast('Sprachnotiz als Besuch gespeichert.', 'success');
   if (CRM.renderContactDetailModal && document.getElementById('view-kontakte')) CRM.renderContactList();
   // Batch 8a: "Heute" ist jetzt Teil der Startseite (view-start), kein
@@ -314,6 +330,7 @@ CRM.speech.saveAsJournal = function () {
   if (!id) { CRM.toast('Kein Kontakt zugeordnet.', 'error'); return; }
   if (!text) { CRM.toast('Kein Text erfasst.', 'error'); return; }
   CRM.db.addJournalEntry({ contactId: id, entryType: 'info', content: text, inputMethod: 'voice' });
+  if (CRM.speech._draftId) { CRM.voice._setStatus(CRM.speech._draftId, 'erledigt'); CRM.speech._draftId = null; }
   CRM.toast('Als Notiz im Kontaktjournal gespeichert.', 'success');
   if (CRM.renderContactDetailModal && document.getElementById('view-kontakte')) CRM.renderContactList();
   CRM.speech.showPostSaveActions(id, null, text);

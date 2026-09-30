@@ -57,6 +57,8 @@ CRM.renderDashboard = function () {
         </button>
       </div>
 
+      ${CRM.dashboardVoiceWarnHtml()}
+
       ${(CRM.lager && CRM.lager.knapp().length) ? `
       <button class="dash-lager-warn" onclick="CRM.lager.openDialog()">
         <span class="dash-lager-icon">🔔</span>
@@ -188,6 +190,26 @@ CRM.dashboardDelete = function (quelle, id, contactId) {
   else if (quelle === 'task') CRM.db.deleteTask(id);
   CRM.renderDashboard();
   CRM.toastUndo('Eintrag gelöscht.');
+};
+
+/* Hinweis über dem Lager-Warnbanner (Chris 2026-09-30, Punkt 1): jede
+   noch nicht verarbeitete Spracheingabe (Entwurf oder ohne Ergebnis
+   ausgeführt) bleibt hier sichtbar, statt spurlos zu verschwinden.
+   Absichtlich ÜBER dem Lager-Hinweis — ein verlorener Kundensatz wiegt
+   schwerer als fehlende Prospekte. */
+CRM.dashboardVoiceWarnHtml = function () {
+  if (!CRM.voice || !CRM.voice.openItems) return '';
+  const offene = CRM.voice.openItems();
+  if (!offene.length) return '';
+  const kurztext = offene[0].text.length > 50 ? offene[0].text.slice(0, 50) + '…' : offene[0].text;
+  const txt = offene.length === 1
+    ? `<strong>1 unverarbeitete Sprachaufnahme</strong> — „${esc(kurztext)}"`
+    : `<strong>${offene.length} unverarbeitete Sprachaufnahmen</strong> — zuletzt „${esc(kurztext)}"`;
+  return `<button class="dash-lager-warn dash-voice-warn" onclick="CRM.voice.openFromDashboard()">
+    <span class="dash-lager-icon">🎤</span>
+    <span class="dash-lager-txt">${txt}</span>
+    <span class="dash-lager-chev">›</span>
+  </button>`;
 };
 
 /* Sprachnotiz vom Dashboard: erst Kontakt wählen (Suche wie Header-Suche),

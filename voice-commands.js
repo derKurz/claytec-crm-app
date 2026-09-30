@@ -40,6 +40,7 @@ CRM.voice = {
   _rec: null,             // aktive SpeechRecognition-Instanz (Befehl-Modus, unabhängig von CRM.speech)
   _active: false,
   _lastTranscript: '',
+  _draftId: null,         // id des aktuellen Rohablage-Eintrags (Sprachbefehl-Dialog), s. _bindDraft
 };
 
 /* ============================================================
@@ -954,7 +955,8 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
 CRM.voice.confirmAndExecute = function (commands, rawText) {
   CRM.voice._pending = commands || [];
   if (rawText !== undefined) CRM.voice._lastTranscript = rawText;
-  CRM.voice._logHistory(rawText, commands);
+  const entry = CRM.voice._logHistory(rawText, commands, CRM.voice._draftId);
+  if (entry) CRM.voice._draftId = entry.id;
   CRM.voice._renderConfirmModal();
 };
 
@@ -970,7 +972,8 @@ CRM.voice._runAnalyze = function (text, skipAsrFixes) {
   const result = CRM.voice.analyze(text, { skipAsrFixes: !!skipAsrFixes });
   CRM.voice._pending = result.commands;
   CRM.voice._pendingFixes = result.fixes || [];
-  CRM.voice._logHistory(text, result.commands);
+  const entry = CRM.voice._logHistory(text, result.commands, CRM.voice._draftId);
+  if (entry) CRM.voice._draftId = entry.id;
   CRM.voice._renderConfirmModal();
 };
 CRM.voice._reparseWithoutFixes = function () {
@@ -991,53 +994,166 @@ CRM.voice._reparseWithoutFixes = function () {
    genau die Testschleife, die eben mit erfundenen Saetzen lief, diesmal
    aber mit echten. Weiterhin rein lokal, nichts Cloud. */
 CRM.voice._HISTORY_LIMIT = 300;
-CRM.voice._logHistory = function (rawText, commands) {
-  const text = String(rawText || '').trim();
-  if (!text) return;
+
+/* Chris (2026-09-30, Punkt 1): "Texte gingen verloren, ich musste umständlich
+   herumsuchen." Ursache: voiceHistory wurde bisher erst beim aktiven "Befehle
+   prüfen" geschrieben, also NACHDEM die Analyse schon lief, nicht davor wie
+   gefordert. Jeder Eintrag bekommt jetzt eine feste id (Positionen in der
+   Liste verschieben sich sonst) sowie einen Status:
+   entwurf → offen → erledigt|verworfen. Nur entwurf/offen lösen den
+   Startseiten-Hinweis aus; nur erledigt/verworfen dürfen beim Kürzen auf
+   den Deckel herausfallen (alte Einträge ohne id/status werden dabei lazy
+   auf status:'erledigt' migriert, damit sie keinen Hinweis auslösen). */
+CRM.voice._getHistory = function () {
   const settings = CRM.db.getSettings();
-  const history = (settings.voiceHistory || []).slice(0, CRM.voice._HISTORY_LIMIT - 1);
+  const arr = settings.voiceHistory || [];
+  let changed = false;
+  arr.forEach((h) => {
+    if (!h.id) { h.id = CRM.uid('vh'); changed = true; }
+    if (!h.status) { h.status = 'erledigt'; changed = true; }
+    if (!h.quelle) { h.quelle = 'befehl'; changed = true; }
+    if (!h.updTs) { h.updTs = h.ts; changed = true; }
+  });
+  if (changed) CRM.db.saveSettings({ voiceHistory: arr });
+  return arr;
+};
+CRM.voice._saveHistory = function (arr) {
+  if (arr.length > CRM.voice._HISTORY_LIMIT) {
+    const removableIdx = [];
+    arr.forEach((h, i) => { if (h.status === 'erledigt' || h.status === 'verworfen') removableIdx.push(i); });
+    const overflow = arr.length - CRM.voice._HISTORY_LIMIT;
+    // Liste ist neueste zuerst — die LETZTEN removable-Indizes sind die
+    // ältesten erledigten/verworfenen Einträge, die zuerst fallen.
+    const toRemove = new Set(removableIdx.slice(-overflow));
+    if (toRemove.size) arr = arr.filter((h, i) => !toRemove.has(i));
+  }
+  CRM.db.saveSettings({ voiceHistory: arr });
+};
+CRM.voice._upsertEntry = function (id, patch) {
+  const arr = CRM.voice._getHistory();
+  let entry = id && arr.find((h) => h.id === id);
+  const now = new Date().toISOString();
+  if (entry) {
+    Object.assign(entry, patch, { updTs: now });
+  } else {
+    entry = Object.assign({ id: id || CRM.uid('vh'), ts: now, updTs: now, text: '', erkannt: '', status: 'entwurf', quelle: 'befehl' }, patch);
+    arr.unshift(entry);
+  }
+  CRM.voice._saveHistory(arr);
+  return entry;
+};
+CRM.voice._setStatus = function (id, status) {
+  if (!id) return;
+  const arr = CRM.voice._getHistory();
+  const entry = arr.find((h) => h.id === id);
+  if (!entry) return;
+  entry.status = status;
+  entry.updTs = new Date().toISOString();
+  CRM.voice._saveHistory(arr);
+};
+CRM.voice._removeEntry = function (id) {
+  if (!id) return;
+  const arr = CRM.voice._getHistory().filter((h) => h.id !== id);
+  CRM.voice._saveHistory(arr);
+};
+CRM.voice.openItems = function () {
+  return CRM.voice._getHistory().filter((h) => h.status === 'entwurf' || h.status === 'offen');
+};
+
+/* Aktualisiert (per id) denselben Eintrag statt bei jedem "🔄 Neu prüfen"
+   einen neuen anzulegen. Ein bereits erledigt/verworfen-er Eintrag wird
+   durch bloßes erneutes Prüfen NICHT wieder auf "offen" zurückgestuft
+   (sonst würde ein Blick in "Alle" der Rohablage einen erledigten Satz
+   fälschlich wieder als offen markieren). */
+CRM.voice._logHistory = function (rawText, commands, id) {
+  const text = String(rawText || '').trim();
+  if (!text) return null;
   const kurz = (commands || []).map((c) => {
     if (c.intent === 'unrecognized') return 'nicht zugeordnet: „' + c.rawText + '"';
     if (c.intent === 'unsupported') return 'nicht unterstützt: „' + c.rawText + '"';
     return c.intent;
   }).join(', ') || '(nichts erkannt)';
-  history.unshift({ ts: new Date().toISOString(), text: text, erkannt: kurz });
-  CRM.db.saveSettings({ voiceHistory: history });
+  const arr = CRM.voice._getHistory();
+  const existing = id && arr.find((h) => h.id === id);
+  const RANK = { entwurf: 0, offen: 1, erledigt: 2, verworfen: 2 };
+  const neuerStatus = existing && RANK[existing.status] >= RANK.offen ? existing.status : 'offen';
+  return CRM.voice._upsertEntry(id, { text, erkannt: kurz, status: neuerStatus, quelle: 'befehl' });
 };
 
 // Nur die letzten 50 werden gerendert (lesbar bleiben) — der Export-Knopf
 // nimmt trotzdem ALLE, unabhängig von der Anzeige.
 CRM.voice._HISTORY_SHOW = 50;
-CRM.voice.openHistory = function () {
-  const history = (CRM.db.getSettings().voiceHistory || []);
-  const shown = history.slice(0, CRM.voice._HISTORY_SHOW);
+CRM.voice._historyFilter = 'offen';
+CRM.voice._STATUS_LABEL = { entwurf: '📝 Entwurf', offen: '⏳ Offen', erledigt: '✓ Erledigt', verworfen: '— Verworfen' };
+
+/* Umbenannt von "🕘 Verlauf" zu "🗂 Sprach-Rohablage" (Chris 2026-09-30,
+   Punkt 1: "musste umständlich herumsuchen") — Filter Offen/Alle,
+   Status-Abzeichen je Zeile, kein echtes Löschen. */
+CRM.voice.openHistory = function (opts) {
+  CRM.voice._historyFilter = (opts && opts.nurOffen) ? 'offen' : (CRM.voice._historyFilter || 'offen');
+  CRM.voice._renderHistoryModal();
+};
+CRM.voice._renderHistoryModal = function () {
+  const all = CRM.voice._getHistory();
+  const offenAnzahl = all.filter((h) => h.status === 'entwurf' || h.status === 'offen').length;
+  const filtered = CRM.voice._historyFilter === 'offen'
+    ? all.filter((h) => h.status === 'entwurf' || h.status === 'offen')
+    : all;
+  const shown = filtered.slice(0, CRM.voice._HISTORY_SHOW);
   const rows = shown.length
     ? shown.map((h) => {
-        const datum = new Date(h.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const datum = new Date(h.updTs || h.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const offen = h.status === 'entwurf' || h.status === 'offen';
+        const kontakt = h.contactId && CRM.db.getContact(h.contactId);
+        const quelleLabel = h.quelle === 'sprachnotiz' ? ' · 🎤 Sprachnotiz' + (kontakt ? ' — ' + esc(kontakt.firma1) : '') : '';
         return '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px">'
-          + '<div style="font-size:11px;color:var(--text-dim)">' + esc(datum) + '</div>'
+          + '<div style="font-size:11px;color:var(--text-dim)">' + esc(datum) + ' · ' + esc(CRM.voice._STATUS_LABEL[h.status] || h.status) + quelleLabel + '</div>'
           + '<div style="margin:4px 0;user-select:text">„' + esc(h.text) + '"</div>'
-          + '<div style="font-size:12px;color:var(--text-dim)">' + esc(h.erkannt) + '</div>'
-          + '<div class="row" style="margin-top:6px">'
-          + '<button class="btn btn-sm" onclick="CRM.voice.reuseFromHistory(' + history.indexOf(h) + ')">↺ In Vorschau erneut prüfen</button>'
+          + '<div style="font-size:12px;color:var(--text-dim)">' + esc(h.erkannt || '') + '</div>'
+          + '<div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap">'
+          + '<button class="btn btn-sm" onclick="CRM.voice.reuseFromHistory(\'' + h.id + '\')">↺ Prüfen</button>'
+          + '<button class="btn btn-sm" onclick="CRM.voice._copyHistoryText(\'' + h.id + '\')">📋 Kopieren</button>'
+          + (offen ? '<button class="btn btn-sm" onclick="CRM.voice._verwerfeHistory(\'' + h.id + '\')">✓ Erledigt — weg damit</button>' : '')
           + '</div></div>';
       }).join('')
-    : '<p style="color:var(--text-dim)">Noch nichts aufgezeichnet — nach dem nächsten Sprachbefehl steht er hier.</p>';
-  const mehrHinweis = history.length > shown.length
-    ? '<p style="color:var(--text-dim);font-size:12px">... und ' + (history.length - shown.length) + ' weitere (im Export enthalten).</p>' : '';
-  CRM.openModal('<h2>🕘 Verlauf erkannter Sätze</h2>'
-    + '<p style="color:var(--text-dim);font-size:13px">Nur auf diesem Gerät gespeichert (bis zu ' + CRM.voice._HISTORY_LIMIT + '). "Alle exportieren" kopiert jeden gespeicherten Satz als Text — zum Einfügen in den Chat für einen erneuten Testlauf an echten Beispielen.</p>'
-    + (history.length ? '<div class="row" style="margin-bottom:10px"><button class="btn btn-sm" onclick="CRM.voice.exportHistory()">📋 Alle ' + history.length + ' exportieren</button></div>' : '')
+    : '<p style="color:var(--text-dim)">' + (CRM.voice._historyFilter === 'offen' ? 'Nichts Offenes — alles erledigt oder verworfen.' : 'Noch nichts aufgezeichnet — nach dem nächsten Sprachbefehl steht er hier.') + '</p>';
+  const mehrHinweis = filtered.length > shown.length
+    ? '<p style="color:var(--text-dim);font-size:12px">... und ' + (filtered.length - shown.length) + ' weitere (im Export enthalten).</p>' : '';
+  CRM.openModal('<h2>🗂 Sprach-Rohablage</h2>'
+    + '<p style="color:var(--text-dim);font-size:13px">Jede Spracheingabe landet hier — unabhängig vom Ergebnis. Nur auf diesem Gerät gespeichert (bis zu ' + CRM.voice._HISTORY_LIMIT + ').</p>'
+    + '<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+    + '<button class="btn btn-sm ' + (CRM.voice._historyFilter === 'offen' ? 'btn-primary' : '') + '" onclick="CRM.voice._setHistoryFilter(\'offen\')">Offen (' + offenAnzahl + ')</button>'
+    + '<button class="btn btn-sm ' + (CRM.voice._historyFilter === 'alle' ? 'btn-primary' : '') + '" onclick="CRM.voice._setHistoryFilter(\'alle\')">Alle</button>'
+    + (all.length ? '<button class="btn btn-sm" style="margin-left:auto" onclick="CRM.voice.exportHistory()">📋 Alle ' + all.length + ' exportieren</button>' : '')
+    + '</div>'
     + rows + mehrHinweis
     + '<div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>');
 };
+CRM.voice._setHistoryFilter = function (f) {
+  CRM.voice._historyFilter = f;
+  CRM.voice._renderHistoryModal();
+};
+CRM.voice._copyHistoryText = function (id) {
+  const h = CRM.voice._getHistory().find((x) => x.id === id);
+  if (!h) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(h.text).then(() => CRM.toast('Kopiert.', 'success')).catch(() => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+  } else {
+    CRM.toast('Kopieren in diesem Browser nicht verfügbar.', 'error');
+  }
+};
+CRM.voice._verwerfeHistory = function (id) {
+  CRM.voice._setStatus(id, 'verworfen');
+  CRM.voice._renderHistoryModal();
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
+};
 
 CRM.voice.exportHistory = function () {
-  const history = (CRM.db.getSettings().voiceHistory || []);
+  const history = CRM.voice._getHistory();
   if (!history.length) return;
   const text = history.slice().reverse().map((h) => {
     const datum = new Date(h.ts).toLocaleString('de-DE');
-    return datum + ' — ' + h.text + '  [' + h.erkannt + ']';
+    return datum + ' — ' + h.text + '  [' + h.status + ' · ' + h.erkannt + ']';
   }).join('\n');
   const done = () => CRM.toast('✓ ' + history.length + ' Sätze in die Zwischenablage kopiert.', 'success');
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1047,9 +1163,19 @@ CRM.voice.exportHistory = function () {
   }
 };
 
-CRM.voice.reuseFromHistory = function (i) {
-  const h = (CRM.db.getSettings().voiceHistory || [])[i];
+/* id-basiert statt Positions-Index (Listenpositionen verschieben sich,
+   siehe Datenmodell oben). Sprachnotiz-Einträge öffnen den richtigen
+   Kontakt statt der Sprachbefehl-Vorschau. */
+CRM.voice.reuseFromHistory = function (id) {
+  const history = CRM.voice._getHistory();
+  const h = typeof id === 'number' ? history[id] : history.find((x) => x.id === id);
   if (!h) return;
+  if (h.quelle === 'sprachnotiz') {
+    CRM.closeModal();
+    CRM.speech.openCapture(h.contactId, { draftId: h.id, text: h.text });
+    return;
+  }
+  CRM.voice._draftId = h.id;
   CRM.voice._runAnalyze(h.text);
 };
 
@@ -1414,9 +1540,19 @@ CRM.voice._promoteUnsupportedToReport = function (idx) {
   CRM.voice._renderConfirmModal();
 };
 
-CRM.voice.cancelPreview = function () {
+// showToast=false für interne Aufrufe wie _promoteToContact, wo "+ Neuer
+// Kontakt" folgt und ein "bleibt in der Rohablage"-Toast nur verwirren würde.
+CRM.voice._closePreview = function (showToast) {
+  // Status bleibt 'offen' — der Text bleibt in der Rohablage auffindbar,
+  // auch wenn Chris die Vorschau abbricht (Chris 2026-09-30, Punkt 1).
+  if (showToast !== false && CRM.voice._draftId) CRM.toast('Text bleibt in der Rohablage.', 'success');
+  CRM.voice._draftId = null;
   CRM.voice._pending = null;
   CRM.closeModal();
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
+};
+CRM.voice.cancelPreview = function () {
+  CRM.voice._closePreview(true);
 };
 
 /* Chris (2026-08): "wenn ich hier eine Kontaktadresse reinkopiere, muss
@@ -1432,7 +1568,7 @@ CRM.voice._promoteToContact = function (idx) {
   const cmd = (CRM.voice._pending || [])[idx];
   if (!cmd) return;
   const text = cmd.rawText;
-  CRM.voice.cancelPreview();
+  CRM.voice._closePreview(false);
   CRM.emailParser.openDialog();
   const input = document.getElementById('ep-input');
   if (input) input.value = text;
@@ -1551,11 +1687,17 @@ CRM.voice.executeConfirmed = function () {
   });
 
   CRM.voice._pending = null;
+  // Teilerfolg zählt als erledigt (Chris' Entscheidung, siehe Plan) — sonst
+  // bliebe der Hinweis oft wegen einzelner Füllwort-Zeilen bestehen.
+  if (done && CRM.voice._draftId) CRM.voice._setStatus(CRM.voice._draftId, 'erledigt');
+  CRM.voice._draftId = null;
   CRM.closeModal();
   if (done) {
     CRM.toast('✓ ' + done + ' Sprachbefehl(e) ausgeführt' + (skipped ? ', ' + skipped + ' übersprungen (nicht eindeutig/nicht unterstützt)' : '') + '.', 'success');
   } else {
-    CRM.toast('Kein Befehl konnte ausgeführt werden.', 'error');
+    // Chris' gemeldeter Fall (2026-09-30, Punkt 1): der Text ist NICHT weg,
+    // nur nichts wurde gespeichert — Status bleibt 'offen'.
+    CRM.toast('Nichts gespeichert — der Text liegt weiter in der Rohablage (Startseite).', 'error');
   }
   if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
   if (musterTarget) CRM.muster.open(musterTarget); // erst jetzt, damit CRM.openModal nicht vorher schon wieder schließt
@@ -1571,15 +1713,149 @@ CRM.voice.webSpeechAvailable = function () {
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 };
 
+/* ============================================================
+   Sofort-Persistenz während der Eingabe (Chris 2026-09-30, Punkt 1):
+   "Jede transkribierte Spracheingabe muss sofort in einer Rohablage
+   gespeichert werden, bevor überhaupt eine inhaltliche Analyse
+   stattfindet." Maßgeblich ist, was in der Textarea STEHT — nicht wie es
+   dort hineinkam. Bei Wispr (externe Diktier-App, tippt direkt ins Feld)
+   wird _lastTranscript nie aktualisiert (nur rec.onresult tut das) —
+   deshalb liest _bindDraft direkt den DOM-Wert, über vier voneinander
+   unabhängige Sicherungswege:
+   1) 'input'-Ereignis, 400ms verzögert (Wispr/Tippen/Einfügen)
+   2) direkter Aufruf aus rec.onresult (Web Speech setzt .value per
+      Programm, das feuert kein 'input')
+   3) Prüfung alle 1,5s solange die Textarea im DOM steht (Fallback)
+   4) sofort bei blur / visibilitychange→hidden / pagehide (Tab-Wechsel,
+      Sperrbildschirm, Neuladen, App-Kill — saveSettings schreibt bereits
+      synchron in localStorage, siehe storage.js)
+   ============================================================ */
+CRM.voice._activeDraftFlush = null;
+CRM.voice._activeDraftSchedule = null;
+CRM.voice._bindDraft = function (textareaId, meta) {
+  // vorherige Bindung (voriger Dialogaufruf) abräumen, bevor eine neue
+  // globale blur/visibilitychange-Bindung entsteht
+  if (CRM.voice._activeDraftCleanup) { CRM.voice._activeDraftCleanup(); CRM.voice._activeDraftCleanup = null; }
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+  meta = meta || {};
+  const owner = meta.quelle === 'sprachnotiz' ? CRM.speech : CRM.voice;
+  let timer = null;
+  let lastSaved = null;
+  const flush = () => {
+    clearTimeout(timer);
+    const text = (ta.value || '').trim();
+    if (text === lastSaved) return;
+    lastSaved = text;
+    CRM.voice._persistDraft(owner, meta, text);
+  };
+  const scheduleSave = () => { clearTimeout(timer); timer = setTimeout(flush, 400); };
+  ta.addEventListener('input', scheduleSave);
+  ta.addEventListener('blur', flush);
+  const iv = setInterval(() => {
+    if (!document.contains(ta)) { clearInterval(iv); return; }
+    if ((ta.value || '').trim() !== lastSaved) flush();
+  }, 1500);
+  const onHide = () => flush();
+  document.addEventListener('visibilitychange', onHide);
+  window.addEventListener('pagehide', onHide);
+  CRM.voice._activeDraftFlush = flush;
+  CRM.voice._activeDraftSchedule = scheduleSave;
+  CRM.voice._activeDraftCleanup = () => {
+    clearInterval(iv);
+    document.removeEventListener('visibilitychange', onHide);
+    window.removeEventListener('pagehide', onHide);
+  };
+};
+CRM.voice._flushDraft = function () {
+  if (CRM.voice._activeDraftFlush) CRM.voice._activeDraftFlush();
+};
+/* Leerer Text → Entwurf ersatzlos entfernen (bewusst geleert = verworfen,
+   kein "letzten nicht-leeren Stand behalten"). Vorhandene id → nur
+   aktualisieren, Status NICHT zurücksetzen (ein bereits "offen"
+   gewordener Eintrag bleibt offen, bis er ausgeführt wird). */
+CRM.voice._persistDraft = function (owner, meta, text) {
+  if (!text) {
+    if (owner._draftId) CRM.voice._removeEntry(owner._draftId);
+    owner._draftId = null;
+    return;
+  }
+  if (!owner._draftId) {
+    const entry = CRM.voice._upsertEntry(null, {
+      text, erkannt: meta.quelle === 'sprachnotiz' ? 'Sprachnotiz' : '(noch nicht geprüft)',
+      status: 'entwurf', quelle: meta.quelle || 'befehl', contactId: meta.contactId || null,
+    });
+    owner._draftId = entry.id;
+  } else {
+    CRM.voice._upsertEntry(owner._draftId, { text });
+  }
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
+};
+
+CRM.voice._weitermachen = function (id) {
+  const h = CRM.voice._getHistory().find((x) => x.id === id);
+  if (!h) return;
+  CRM.voice._draftId = h.id;
+  const box = document.getElementById('voice-weiter-box');
+  if (box) box.remove();
+  if (h.status === 'offen') {
+    // wurde schon einmal geprüft — direkt zurück in die Bestätigungsvorschau
+    CRM.voice._runAnalyze(h.text);
+    return;
+  }
+  const ta = document.getElementById('voice-transcript');
+  if (ta) { ta.value = h.text; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+};
+
+/* Tipp auf den Dashboard-Hinweis (dashboard.js): bei genau einem offenen
+   Eintrag direkt den passenden Dialog mit geladenem Text öffnen, bei
+   mehreren die gefilterte Rohablage. */
+CRM.voice.openFromDashboard = function () {
+  const offene = CRM.voice.openItems();
+  if (!offene.length) return;
+  if (offene.length > 1) { CRM.voice.openHistory({ nurOffen: true }); return; }
+  const h = offene[0];
+  if (h.quelle === 'sprachnotiz') {
+    CRM.speech.openCapture(h.contactId, { draftId: h.id, text: h.text });
+    return;
+  }
+  if (h.status === 'entwurf') {
+    CRM.voice.openCapture();
+    const box = document.getElementById('voice-weiter-box');
+    if (box) box.remove();
+    const ta = document.getElementById('voice-transcript');
+    if (ta) ta.value = h.text;
+    CRM.voice._draftId = h.id;
+    return;
+  }
+  CRM.voice._draftId = h.id;
+  CRM.voice._runAnalyze(h.text);
+};
+
 CRM.voice.openCapture = function () {
   CRM.voice._pending = null;
   CRM.voice._lastTranscript = '';
+  CRM.voice._draftId = null;
+  const offene = CRM.voice.openItems().filter((h) => h.quelle === 'befehl');
+  const neuester = offene[0];
+  const minutenher = neuester ? Math.max(0, Math.round((Date.now() - new Date(neuester.updTs || neuester.ts).getTime()) / 60000)) : 0;
+  const kurztext = neuester ? (neuester.text.length > 80 ? neuester.text.slice(0, 80) + '…' : neuester.text) : '';
+  const weiterBox = neuester ? `
+    <div id="voice-weiter-box" class="card" style="border-color:var(--accent);padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:13px;margin-bottom:6px">⚠️ Du hattest angefangen (vor ${minutenher} Min): „${esc(kurztext)}"</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" onclick="CRM.voice._weitermachen('${neuester.id}')">↺ Weitermachen</button>
+        <button class="btn btn-sm" onclick="document.getElementById('voice-weiter-box').remove()">Neu beginnen</button>
+      </div>
+      ${offene.length > 1 ? '<div style="margin-top:6px"><a href="#" onclick="event.preventDefault();CRM.voice.openHistory({nurOffen:true})">+ ' + (offene.length - 1) + ' weitere in der Rohablage</a></div>' : ''}
+    </div>` : '';
   CRM.openModal(`
     <div class="row" style="justify-content:space-between;align-items:flex-start">
       <h2 style="margin:0">🎤 Sprachbefehl</h2>
-      <button class="btn btn-sm" onclick="CRM.voice.openHistory()" title="Bisher erkannte Sätze ansehen (lokal gespeichert)">🕘 Verlauf</button>
+      <button class="btn btn-sm" onclick="CRM.voice.openHistory()" title="Jede Spracheingabe wird hier gesichert, unabhängig vom Ergebnis">🗂 Rohablage${offene.length ? ' (' + offene.length + ')' : ''}</button>
     </div>
     <p style="color:var(--text-dim);font-size:13px">Push-to-Talk: Aufnahme starten, sprechen, stoppen. Text bei Bedarf korrigieren, dann prüfen — jeder erkannte Befehl wird danach einzeln bestätigt, bevor etwas gespeichert wird.</p>
+    ${weiterBox}
     <div id="voice-status" class="speech-status">Bereit.</div>
     <div style="margin:12px 0">
       <label>Erkannter Text</label>
@@ -1591,11 +1867,16 @@ CRM.voice.openCapture = function () {
       <button class="btn btn-primary" style="margin-left:auto" onclick="CRM.voice.reviewFromCapture()">Befehle prüfen →</button>
     </div>
   `, { dismissible: false });
+  CRM.voice._bindDraft('voice-transcript', { quelle: 'befehl' });
 };
 
 CRM.voice.closeCaptureDialog = function () {
+  CRM.voice._flushDraft();
+  const hatte = !!CRM.voice._draftId;
   CRM.voice.stop();
   CRM.closeModal();
+  if (hatte) CRM.toast('💾 Text in der Rohablage gesichert — siehe Startseite.', 'success');
+  if (CRM._refreshAllVisibleViews) CRM._refreshAllVisibleViews();
 };
 
 CRM.voice.setStatus = function (txt, cls) {
@@ -1635,6 +1916,9 @@ CRM.voice.start = function () {
     const ta = document.getElementById('voice-transcript');
     if (ta) ta.value = full;
     CRM.voice._lastTranscript = full;
+    // Web Speech setzt .value per Programm — das feuert kein 'input'-Ereignis,
+    // deshalb hier direkt die Rohablage-Sicherung anstoßen.
+    if (CRM.voice._activeDraftSchedule) CRM.voice._activeDraftSchedule();
   };
   rec.onerror = (e) => {
     CRM.voice.setStatus('Fehler: ' + e.error, 'err');
@@ -1663,6 +1947,7 @@ CRM.voice._updateRecBtn = function (active) {
 };
 
 CRM.voice.reviewFromCapture = function () {
+  CRM.voice._flushDraft(); // Rohablage VOR der Analyse sichern (Punkt 1, wörtlich)
   const ta = document.getElementById('voice-transcript');
   const text = ta ? ta.value.trim() : (CRM.voice._lastTranscript || '').trim();
   CRM.voice.stop();

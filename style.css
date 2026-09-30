@@ -959,6 +959,11 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .dash-lager-icon{font-size:18px;flex-shrink:0}
 .dash-lager-txt{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-lager-chev{color:var(--text-dim);font-size:18px;flex-shrink:0}
+/* Dashboard-Hinweis auf unverarbeitete Sprachaufnahmen (Chris 2026-09-30,
+   Punkt 1) — eigene Akzentfarbe (rot statt orange), steht über dem
+   Lager-Hinweis. */
+.dash-voice-warn{background:rgba(255,92,92,.12);border-color:var(--red)}
+.dash-voice-warn:hover{background:rgba(255,92,92,.2)}
 
 /* ============================================================
    Batch 4 (2026-08): Vergleichs-/Zusammenführen-Fenster (CRM.win.*)
