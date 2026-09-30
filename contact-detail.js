@@ -790,6 +790,7 @@ CRM.renderLinksSection = function (c) {
     { field: 'haendlerIds', label: 'Händler' },
     { field: 'verarbeiterIds', label: 'Verarbeiter' },
     { field: 'architektIds', label: 'Architekten' },
+    { field: 'bauherrIds', label: 'Bauherren' },
   ];
   let html = '';
   groups.forEach((g) => {
@@ -834,7 +835,7 @@ CRM.openLinkPicker = function (contactId) {
 
 CRM.renderLinkPicker = function () {
   const { contactId, multi } = CRM._linkPicker;
-  const filterBtns = ['all', 'haendler', 'verarbeiter', 'architekt'].map(
+  const filterBtns = ['all', 'haendler', 'verarbeiter', 'architekt', 'bauherr'].map(
     (t) => `<button class="qf-btn ${t === 'all' ? 'active' : ''}" data-t="${t}" onclick="CRM.setLinkPickerFilter('${t}')">${t === 'all' ? 'Alle' : CRM.TYPE_LABELS[t]}</button>`
   ).join('');
 
@@ -882,7 +883,7 @@ CRM.setLinkPickerFilter = function (t) {
 CRM.updateLinkPickerResults = function () {
   const { contactId, query, typeFilter, multi, selected } = CRM._linkPicker;
   const self = CRM.db.getContact(contactId);
-  const linkedIds = new Set([].concat(self.links.haendlerIds || [], self.links.verarbeiterIds || [], self.links.architektIds || []));
+  const linkedIds = new Set([].concat(self.links.haendlerIds || [], self.links.verarbeiterIds || [], self.links.architektIds || [], self.links.bauherrIds || []));
   const q = query.toLowerCase();
   const results = CRM.db.getContacts()
     .filter((c) => c.id !== contactId)

@@ -193,7 +193,7 @@ CRM.restoreLastTab = function () {
 /* ============================================================
    Kontaktliste (einfache Tabellenansicht für Schritt 1)
    ============================================================ */
-CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
+CRM._quickFilters = CRM._quickFilters || { partner: false, overdue: false, week: false, aktiv: false, inaktiv: false, archiv: false, top25: false, platzhalter: false, ohneZuordnung: false };
 /* Fokusgruppen-Filter der Kontaktliste (Chris 2026-09-22): mehrere Gruppen
    gleichzeitig aktiv = ODER (Gruppen sind nicht exklusiv), Kombination mit
    Suche/Typ/Quick-Filtern bleibt UND — siehe CRM.contactMatchesFilters. */
@@ -253,6 +253,8 @@ CRM.contactMatchesFilters = function (c, f) {
   if (f.qf.aktiv && !c.aktiv) return false;
   if (f.qf.inaktiv && c.aktiv) return false;
   if (f.qf.eurobaustoff && c.source !== 'eurobaustoff') return false;
+  if (f.qf.platzhalter && !CRM.istPlatzhalterBauherr(c)) return false;
+  if (f.qf.ohneZuordnung && !CRM.bauherrOhneZuordnung(c)) return false;
   if (f.qf.overdue || f.qf.week) {
     const st = CRM.getDueStatus(c).status;
     if (f.qf.overdue && f.qf.week) {
@@ -1508,7 +1510,7 @@ CRM.setTypeChipFilter = function (typ) {
 
 CRM.toggleQuickFilter = function (qf) {
   if (qf === 'reset') {
-    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false, top25: false };
+    CRM._quickFilters = { partner: false, overdue: false, week: false, eurobaustoff: false, aktiv: false, inaktiv: false, archiv: false, top25: false, platzhalter: false, ohneZuordnung: false };
     CRM._regionFilter = new Set();
     // Sonst bliebe ein unsichtbarer Fokus-Filter aktiv, obwohl alle anderen
     // Filter-Chips schon zurückgesetzt aussehen (Chris 2026-09-22, Fallstrick

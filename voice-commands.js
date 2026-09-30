@@ -988,10 +988,14 @@ CRM.voice._cmdRowHtml = function (cmd, idx, num) {
     candidatesHtml = CRM.voice._contactCreateHtml(cmd, idx);
     const treffer = cmd.match && cmd.match.treffer;
     const brauchtNeuenKontakt = !treffer || cmd.decision === 'forceNew'; // sonst nur Ansprechpartner/Öffnen — kein Typ nötig
-    if (!(cmd.data.company || cmd.data.name)) ready = false;
+    if (!(cmd.data.company || cmd.data.name) && !(cmd.typ === 'bauherr' && CRM.hatKontaktAnker(cmd.data))) ready = false;
     if (brauchtNeuenKontakt && !cmd.typ) ready = false;
     if (treffer && !cmd.decision) ready = false; // Chris muss aktiv eine der 3 Optionen wählen
-    desc = '➕ Neuer Kontakt' + ((cmd.data.company || cmd.data.name) ? ': <strong>' + esc(cmd.data.company || cmd.data.name) + '</strong>' : ' <span style="color:var(--text-dim)">(noch keine Angaben)</span>');
+    desc = '➕ Neuer Kontakt' + ((cmd.data.company || cmd.data.name)
+      ? ': <strong>' + esc(cmd.data.company || cmd.data.name) + '</strong>'
+      : (cmd.typ === 'bauherr' && CRM.hatKontaktAnker(cmd.data))
+        ? ': <strong>' + esc(CRM.PLATZHALTER_BAUHERR) + '</strong>'
+        : ' <span style="color:var(--text-dim)">(noch keine Angaben)</span>');
   }
 
   const cls = ready ? 'voice-cmd-ready' : 'voice-cmd-ambiguous';
@@ -1392,6 +1396,19 @@ CRM.voice._setContactType = function (idx, value) {
   const cmd = (CRM.voice._pending || [])[idx];
   if (!cmd) return;
   cmd.typ = value;
+  CRM.voice._renderConfirmModal();
+};
+/* Punkt 6 (Chris 2026-09-30): der einzige Weg zum Platzhalter-Kontakt —
+   ein bewusster Tipp, nie automatisch erkannt (CRM.emailParser.parse()
+   trägt bei fast jedem Diktat IRGENDetwas als company ein, es gibt keinen
+   verlässlichen automatischen Auslöser für "wirklich kein Name genannt"). */
+CRM.voice._setPlatzhalter = function (idx) {
+  const cmd = (CRM.voice._pending || [])[idx];
+  if (!cmd) return;
+  cmd.data.company = '';
+  cmd.data.name = '';
+  cmd.typ = 'bauherr';
+  CRM.voice._renderConfirmModal();
 };
 /* Entscheidung bei Bestandstreffer (Chris 2026-09-24, Beispiel 3): primär
    "Ansprechpartner hinzufügen" statt eine zweite Firma anzulegen. */
@@ -1431,6 +1448,18 @@ CRM.voice._contactCreateHtml = function (cmd, idx) {
   }
   if (!(d.company || d.name)) {
     html += '<p style="color:var(--text-dim);font-size:12px;margin-top:6px">Signatur ins Textfeld oben diktieren/einfügen und „🔄 Neu prüfen" — oder Felder direkt ausfüllen.</p>';
+    if (cmd.typ === 'bauherr' && CRM.hatKontaktAnker(d)) {
+      html += '<p style="color:var(--text-dim);font-size:12px;margin-top:4px">Wird als „' + esc(CRM.PLATZHALTER_BAUHERR) + '" angelegt — Name kannst du später im Profil nachtragen.</p>';
+    }
+  }
+  // Punkt 6: Name ganz unbekannt — nur anbieten, wenn kein Bestandstreffer
+  // vorliegt (bei einem Treffer geht es um addAp/open/forceNew, nicht ums
+  // Anlegen ohne Namen). Absichtlich UNABHÄNGIG davon, ob company/name
+  // schon etwas enthalten: CRM.emailParser.parse() trägt bei fast jedem
+  // Diktat irgendetwas ein (z.B. "Bauherr" selbst als Firma) — genau das
+  // soll dieser Tipp korrigieren können, nicht nur den leeren Fall.
+  if (!(m && m.treffer)) {
+    html += '<button class="btn btn-sm" style="margin-top:6px" onclick="CRM.voice._setPlatzhalter(' + idx + ')">❓ Name unbekannt (als Bauherr anlegen)</button>';
   }
   return html;
 };
@@ -1677,6 +1706,15 @@ CRM.voice.executeConfirmed = function () {
         done++;
       } else if ((!treffer || cmd.decision === 'forceNew') && (cmd.data.company || cmd.data.name) && cmd.typ) {
         const c = CRM.emailParser.toContact(cmd.data, cmd.typ, 'eigene');
+        const saved = CRM.emailParser._addContactMitNachlauf(c, { openDetail: false, toast: false });
+        openContactTarget = saved.id;
+        done++;
+      } else if ((!treffer || cmd.decision === 'forceNew') && !cmd.data.company && !cmd.data.name
+          && cmd.typ === 'bauherr' && CRM.hatKontaktAnker(cmd.data)) {
+        // Punkt 6: Platzhalter-Kontakt — kein Name diktiert, aber ein
+        // anderer brauchbarer Anker (Adresse/Telefon/E-Mail) vorhanden.
+        const data = Object.assign({}, cmd.data, { company: CRM.PLATZHALTER_BAUHERR });
+        const c = CRM.emailParser.toContact(data, 'bauherr', 'eigene');
         const saved = CRM.emailParser._addContactMitNachlauf(c, { openDetail: false, toast: false });
         openContactTarget = saved.id;
         done++;

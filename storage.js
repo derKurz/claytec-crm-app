@@ -32,6 +32,35 @@ CRM.TYPE_LABELS = {
   bauherr: 'Bauherr',
   behoerde: 'Behörden',
 };
+
+/* Punkt 5+6 (Chris 2026-09-30): private Bauherren brauchen eine
+   Verknüpfung zu Händler/Handwerker (CLAUDE.md, Zielgruppen) — dafür kein
+   neuer Kontakttyp (siehe _migrateBauherrTypes unten, "ich möchte nur
+   Bauherr haben"), sondern der bestehende 'bauherr'-Typ. Ein privater
+   Bauherr nennt oft seine Adresse, aber nicht seinen Namen — dafür dieser
+   Platzhalter statt die Erfassung zu blockieren. Fixer String, KEIN
+   Präfix mit Ortszusatz: CRM.displayNameDisambig ergänzt bei mehreren
+   Kontakten mit demselben firma1 ohnehin automatisch Ort/Straße, ein
+   eigener Zusatz hier würde das duplizieren. */
+CRM.PLATZHALTER_BAUHERR = 'Bauherr (kein Name genannt)';
+CRM.istPlatzhalterBauherr = function (c) {
+  return !!c && c.type === 'bauherr' && (c.firma1 || '').trim() === CRM.PLATZHALTER_BAUHERR && !(c.anzeigename || '').trim();
+};
+/* "Zuordnung" = DIREKTE Verknüpfung zu Händler/Verarbeiter, nicht über ein
+   gemeinsames Projekt (einfachere, nachvollziehbare Regel). Platzhalter-
+   Kontakte zählen NICHT als "ohne Zuordnung" — Punkt 5 will fehlende
+   Information und fehlende Zuordnung getrennt sichtbar machen, nicht
+   denselben Kontakt doppelt melden. */
+CRM.bauherrOhneZuordnung = function (c) {
+  return !!c && c.type === 'bauherr' && !CRM.istPlatzhalterBauherr(c)
+    && !((c.links && c.links.haendlerIds) || []).length && !((c.links && c.links.verarbeiterIds) || []).length;
+};
+/* Hat ein geparster Datensatz irgendeinen brauchbaren Anker außer Name/
+   Firma? Ohne das wäre ein Platzhalter-Kontakt eine leere Hülle, die
+   niemand wiederfindet. */
+CRM.hatKontaktAnker = function (data) {
+  return !!(data && (data.street || data.postal || data.city || data.phone_mobile || data.phone_work || data.email || data.email2));
+};
 CRM.TYPE_SHORT = {
   haendler: 'HA',
   verarbeiter: 'BU',

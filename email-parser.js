@@ -1227,14 +1227,28 @@ CRM.emailParser.analyze = function () {
 CRM.emailParser.createContact = function () {
   const data = {};
   CRM.emailParser.FIELDS.forEach(([, key]) => { data[key] = (document.getElementById('ep-' + key) || {}).value || ''; });
-  if (!data.company && !data.name) { CRM.toast('Mindestens Firma oder Name nötig.', 'error'); return; }
-  const c = CRM.emailParser.toContact(data, document.getElementById('ep-type').value, document.getElementById('ep-source').value);
+  const typ = document.getElementById('ep-type').value;
+  if (!data.company && !data.name) {
+    // Punkt 6: private Bauherren nennen oft ihre Adresse, aber nicht
+    // ihren Namen — dafür ein Platzhalter statt zu blockieren.
+    if (typ === 'bauherr' && CRM.hatKontaktAnker(data)) {
+      data.company = CRM.PLATZHALTER_BAUHERR;
+    } else {
+      CRM.toast('Mindestens Firma oder Name nötig — bei Bauherren ohne Namen Kontakttyp „Bauherr" wählen.', 'error');
+      return;
+    }
+  }
+  const c = CRM.emailParser.toContact(data, typ, document.getElementById('ep-source').value);
   // Vor dem evtl. Doppelkontakt-Dialog sichern, da der das Formular ersetzt
   CRM.emailParser._pendingProjectId = document.getElementById('ep-project')?.value || '';
 
   // einfache Duplikatprüfung: gleicher Firmenname (normalisiert) + gleiche PLZ
+  // — bei Platzhalter-Namen übersprungen, sonst würde jeder zweite
+  // Platzhalter-Kontakt fälschlich als Duplikat des ersten gemeldet.
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-zäöüß0-9]/g, '');
-  const dup = CRM.db.getContacts().find((x) => norm(x.firma1) === norm(c.firma1) && (!c.plz || x.plz === c.plz));
+  const dup = data.company === CRM.PLATZHALTER_BAUHERR
+    ? null
+    : CRM.db.getContacts().find((x) => norm(x.firma1) === norm(c.firma1) && (!c.plz || x.plz === c.plz));
   const warnEl = document.getElementById('ep-dup-warning');
   if (dup) {
     // WICHTIG: hier bewusst KEIN CRM.openModal(...) — das würde per closeModal()
@@ -1284,8 +1298,12 @@ CRM.emailParser._addContactMitNachlauf = function (c, opts) {
   if (opts.openDetail !== false) CRM.openContactDetail(saved.id);
   if (CRM.geocoding && CRM.geocoding.geocodeSingle) CRM.geocoding.geocodeSingle(saved.id);
   // vCard automatisch im Kundenordner ablegen (nur am Laptop mit
-  // verbundenem Claytec-Ordner; sonst still — 📇-Button im Profil bleibt)
-  if (CRM.vcard) CRM.vcard.autoSave(saved.id);
+  // verbundenem Claytec-Ordner; sonst still — 📇-Button im Profil bleibt).
+  // Platzhalter-Kontakte (Punkt 6) ausgenommen: autoSave legt einen
+  // Kundenordner nach dem aktuellen Namen an und benennt ihn nie um —
+  // sonst bliebe ein verwaister "Bauherr (kein Name genannt), Ort"-Ordner
+  // zurück, sobald Chris später den echten Namen nachträgt.
+  if (CRM.vcard && !CRM.istPlatzhalterBauherr(saved)) CRM.vcard.autoSave(saved.id);
   return saved;
 };
 
