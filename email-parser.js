@@ -37,6 +37,11 @@ CRM.emailParser.COMPANY_INDICATORS = [
   // Ansprechpartner keinen gemeinsamen Nachnamen teilen (z.B. angestellter
   // Mitarbeiter statt Inhaber).
   'Stuck',
+  // Chris-Feedback 2026-09-30: "Jura Verputz" (zwei Wörter, kein gemeinsamer
+  // Nachname mit dem folgenden Ansprechpartner "Vetter Gerhard") wurde als
+  // Personenname gelesen — "Verputz"/"Putz" fehlten hier, obwohl Putz-/
+  // Stuckateurbetriebe zur Kernzielgruppe (Lehmputz-Verarbeiter) gehören.
+  'Verputz', 'Putz',
 ];
 
 CRM.emailParser.CRAFT_JOBS = [
@@ -164,7 +169,12 @@ CRM.emailParser.parse = function (rawText) {
       // wurde nur "-" akzeptiert, die Straße ging dann komplett verloren.
       // Der Buchstaben-Zusatz ("2b") kann auch mit Leerzeichen geschrieben
       // sein ("2 b", Chris-Beispiel "Tauchersreuther Hauptstraße 2 b").
-      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+(?:\s?[a-z])?(?:\s*[-–\/]\s*\d+(?:\s?[a-z])?)?)$/i);
+      // Jedes Wort im mittleren Wiederholungsblock darf mit einem Punkt
+      // enden (Chris-Feedback 2026-09-30: "Harthofer Str. 11" — das
+      // Wiederholungs-Wort "Str" verschluckte sich sonst am nachfolgenden
+      // Punkt, weil zwischen ihm und der str./straße-Alternative kein
+      // Leerzeichen erlaubt war; die Straße blieb komplett leer).
+      const streetMatch = line.match(/^([A-ZÄÖÜ][a-zäöüßA-Z\-]+(?:\s+[A-ZÄÖÜ]?[a-zäöüß\-]+\.?)*(?:str\.?|straße|strasse|weg|platz|allee|gasse)?)\s+(\d+(?:\s?[a-z])?(?:\s*[-–\/]\s*\d+(?:\s?[a-z])?)?)$/i);
       if (streetMatch) data.street = line;
     }
 
