@@ -92,6 +92,46 @@ CRM.hatAktivitaetSeit = function (c, monate) {
   if (CRM.db.getTasksForContact(c.id).some((t) => !t.done)) return true;
   return false;
 };
+
+/* Jüngstes Datum aus Besuchen, Kommunikation, Journal und erledigten
+   Aufgaben eines Kontakts — als YYYY-MM-DD-String, oder null, wenn nie
+   etwas erfasst wurde. Für "letzte Aktivität" gedacht (Punkt 4, Chris
+   2026-09-30: Kontext zur Sprachbefehl-Disambiguierung bei mehreren
+   gleichnamigen Treffern), andere Fragestellung als CRM.hatAktivitaetSeit
+   (dort zählt auch eine offene Aufgabe ohne Datum, hier zählt nur, was
+   WANN tatsächlich passiert ist). Bewusst NICHT über CRM.activities.build
+   (activities.js) — das lädt in test-sprachbefehle.html gar nicht und
+   baut ohnehin volle Anzeige-Objekte nur um an ein Datum zu kommen.
+   Zukünftige Daten (Tippfehler, verschobene Termine) zählen nicht. */
+CRM.lastActivityDate = function (c) {
+  if (!c) return null;
+  const heute = new Date().toISOString().slice(0, 10);
+  let best = null;
+  const nimm = (d) => { if (d && d <= heute && (!best || d > best)) best = d; };
+  (c.visits || []).forEach((v) => nimm(v.date));
+  CRM.db.getCommsForContact(c.id).forEach((m) => nimm((m.date || '').slice(0, 10)));
+  CRM.db.getJournalForContact(c.id).forEach((j) => nimm((j.createdAt || '').slice(0, 10)));
+  CRM.db.getTasksForContact(c.id).filter((t) => t.done).forEach((t) => nimm((t.doneAt || t.due || '').slice(0, 10)));
+  return best;
+};
+
+/* Analog für Projekte — bewusst NUR Aktivität, die am Projekt selbst
+   hängt (Kommunikation/Journal/erledigte Aufgaben MIT diesem projectId),
+   NICHT die Besuche aller verknüpften Kontakte: sonst würde ein an viele
+   Bauvorhaben verknüpfter Händler jedes einzelne Projekt fälschlich
+   "aktuell" erscheinen lassen. CRM.renderProjectTimeline (projects.js)
+   zeigt Kontakt-Besuche zusätzlich an — das ist eine Lese-Ansicht für den
+   Nutzer, kein Signal, auf dessen Basis die App etwas vorschlägt. */
+CRM.lastActivityDateProject = function (p) {
+  if (!p) return null;
+  const heute = new Date().toISOString().slice(0, 10);
+  let best = null;
+  const nimm = (d) => { if (d && d <= heute && (!best || d > best)) best = d; };
+  CRM.db.getCommsForProject(p.id).forEach((m) => nimm((m.date || '').slice(0, 10)));
+  CRM.db.getJournalEntries().filter((j) => j.projectId === p.id).forEach((j) => nimm((j.createdAt || '').slice(0, 10)));
+  CRM.db.getTasksForProject(p.id).filter((t) => t.done).forEach((t) => nimm((t.doneAt || t.due || '').slice(0, 10)));
+  return best;
+};
 CRM.fokusDef = function (key) {
   return CRM.FOKUS_GRUPPEN.find((g) => g.key === key) || null;
 };

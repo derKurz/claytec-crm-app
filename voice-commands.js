@@ -522,7 +522,8 @@ CRM.voice._contextContact = function (all, idx) {
    Kontakt-/Projekt-Auflösung — nutzt die bestehenden Such-Rangfolgen
    (CRM.contactQueryMatch / CRM.projectQueryMatch), erfindet keine
    eigene Fuzzy-Logik. Nie raten: 0 Treffer -> notfound, >1 Treffer ->
-   ambiguous (Auswahl in der Vorschau), niemals automatisch der erste.
+   ambiguous (Auswahl in der Vorschau, sortiert nach letzter Aktivität —
+   siehe _ambiguousResult), niemals automatisch der erste.
    ============================================================ */
 CRM.voice.resolveContact = function (nameHint, locationHint) {
   const name = String(nameHint || '').trim();
@@ -532,8 +533,7 @@ CRM.voice.resolveContact = function (nameHint, locationHint) {
   const contacts = CRM.db.getContacts();
 
   let matches = contacts.filter((c) => CRM.contactQueryMatch(combined, c));
-  if (matches.length === 1) return { status: 'resolved', contact: matches[0], query: combined };
-  if (matches.length > 1) return { status: 'ambiguous', candidates: matches.slice(0, 8), query: combined };
+  if (matches.length) return CRM.voice._ambiguousResult(matches, 'contact', combined);
 
   // 0 Treffer mit der vollen Phrase (z.B. weil ein Straßenname nicht
   // exakt im Bestand steht) — schrittweise vom Ende her verkürzen und
@@ -549,8 +549,7 @@ CRM.voice.resolveContact = function (nameHint, locationHint) {
       const filtered = m2.filter((c) => CRM.searchNorm(c.ort || '').includes(rn) || CRM.searchNorm(c.strasse || '').includes(rn));
       if (filtered.length) m2 = filtered;
     }
-    if (m2.length === 1) return { status: 'resolved', contact: m2[0], query: combined };
-    if (m2.length > 1) return { status: 'ambiguous', candidates: m2.slice(0, 8), query: combined };
+    if (m2.length) return CRM.voice._ambiguousResult(m2, 'contact', combined);
   }
   // Letzte Stufe (A6, Chris 2026-09-24: "Wallauf" war ein Wispr-Verhörer
   // von "BayWa Lauf") — klangliche Ähnlichkeit gegen die echte Kontakt-
@@ -569,8 +568,7 @@ CRM.voice.resolveProject = function (nameHint, locationHint) {
   const projects = CRM.db.getProjects();
 
   let matches = projects.filter((p) => CRM.projectQueryMatch(combined, p));
-  if (matches.length === 1) return { status: 'resolved', project: matches[0], query: combined };
-  if (matches.length > 1) return { status: 'ambiguous', candidates: matches.slice(0, 8), query: combined };
+  if (matches.length) return CRM.voice._ambiguousResult(matches, 'project', combined);
 
   const tokens = combined.split(/\s+/).filter(Boolean);
   for (let cut = tokens.length - 1; cut >= 1; cut--) {
@@ -583,12 +581,56 @@ CRM.voice.resolveProject = function (nameHint, locationHint) {
       const filtered = m2.filter((p) => CRM.searchNorm(p.ort || '').includes(rn));
       if (filtered.length) m2 = filtered;
     }
-    if (m2.length === 1) return { status: 'resolved', project: m2[0], query: combined };
-    if (m2.length > 1) return { status: 'ambiguous', candidates: m2.slice(0, 8), query: combined };
+    if (m2.length) return CRM.voice._ambiguousResult(m2, 'project', combined);
   }
   const guess = CRM.voice._phoneticGuess(combined, projects, 'project');
   if (guess) return { status: 'phonetic', project: guess, query: combined };
   return { status: 'notfound', query: combined, project: null };
+};
+
+/* ============================================================
+   Punkt 4 (Chris 2026-09-30): "mehr Kontext für die Analyse — insbesondere
+   letzte Aktivitäten zur Disambiguierung". Bei genau einem Treffer bleibt
+   es bei 'resolved'; bei mehreren wird die Kandidatenliste nach letzter
+   Aktivität sortiert (CRM.lastActivityDate/-Project, storage.js) und, wenn
+   GENAU EIN Kandidat klar aktueller ist als alle anderen, dessen id als
+   vorschlagId markiert (nur eine visuelle Hervorhebung in der Vorschau,
+   siehe _candRowHtml/_entityPickerHtml — NIE automatisch übernommen,
+   ausgewählt wird weiterhin ausschließlich per Tipp auf eine Zeile,
+   _pickCandidate). Kein neuer Status: 'ambiguous' bleibt 'ambiguous'.
+   ============================================================ */
+CRM.voice._RECENT_WINDOW_DAYS = 90; // = intervals.C (storage.js) — älter ist keine "aktuelle" Beziehung mehr
+CRM.voice._RECENT_MARGIN_DAYS = 30; // = intervals.A — ein kürzerer Vorsprung sagt nichts
+CRM.voice._rankByRecency = function (matches, kind) {
+  // stabile Sortierung: Kandidaten ganz ohne Datum bleiben untereinander
+  // in ihrer bisherigen Reihenfolge, landen aber hinter allen mit Datum.
+  return matches
+    .map((it) => ({ it, letzte: kind === 'project' ? CRM.lastActivityDateProject(it) : CRM.lastActivityDate(it) }))
+    .sort((a, b) => {
+      if (a.letzte === b.letzte) return 0;
+      if (!a.letzte) return 1;
+      if (!b.letzte) return -1;
+      return a.letzte < b.letzte ? 1 : -1;
+    });
+};
+CRM.voice._ambiguousResult = function (matches, kind, combined) {
+  if (matches.length === 1) {
+    const res = { status: 'resolved', query: combined };
+    res[kind === 'project' ? 'project' : 'contact'] = matches[0];
+    return res;
+  }
+  const ranked = CRM.voice._rankByRecency(matches, kind);
+  const top = ranked[0], second = ranked[1];
+  const heute = new Date().toISOString().slice(0, 10);
+  const tageSeit = (d) => Math.round((new Date(heute) - new Date(d)) / 86400000);
+  const klarerFuehrer = top.letzte && tageSeit(top.letzte) <= CRM.voice._RECENT_WINDOW_DAYS
+    && (!second.letzte || tageSeit(second.letzte) - tageSeit(top.letzte) >= CRM.voice._RECENT_MARGIN_DAYS);
+  return {
+    status: 'ambiguous',
+    candidates: ranked.map((r) => r.it).slice(0, 8),
+    vorschlagId: klarerFuehrer ? top.it.id : null,
+    query: combined,
+  };
 };
 
 /* ============================================================
@@ -663,7 +705,11 @@ CRM.voice._resDesc = function (res, kind) {
   if (res.status === 'phonetic') {
     return '🔊 Klingt wie: ' + esc(kind === 'project' ? CRM.voice._projectLabel(res.project) : CRM.voice._contactLabel(res.contact)) + ' — passt das?';
   }
-  if (res.status === 'ambiguous') return '„' + esc(res.query) + '" — mehrdeutig, bitte auswählen';
+  if (res.status === 'ambiguous') {
+    const v = res.vorschlagId && (res.candidates || []).find((x) => x.id === res.vorschlagId);
+    return '„' + esc(res.query) + '" — mehrdeutig, bitte auswählen'
+      + (v ? ' (wahrscheinlich ' + esc(kind === 'project' ? CRM.voice._projectLabel(v) : CRM.voice._contactLabel(v)) + ')' : '');
+  }
   return '„' + esc(res.query) + '" — nicht gefunden';
 };
 /* Liefert das resolution-Objekt zur passenden Seite eines Befehls —
@@ -723,12 +769,17 @@ CRM.voice.buildPreview = function (commands) {
   return '<ol class="voice-cmd-list" style="list-style:none;padding:0;margin:0">' + rows + '</ol>';
 };
 
-CRM.voice._candRowHtml = function (x, kind) {
+/* opts.vorschlag markiert die per Aktivität empfohlene Zeile (Punkt 4) —
+   ausgewählt wird trotzdem ausschließlich per Tipp, wie jede andere Zeile
+   auch (_pickCandidate, per Event-Delegation auf .voice-cand-row). */
+CRM.voice._candRowHtml = function (x, kind, opts) {
   const label = kind === 'project' ? CRM.voice._projectLabel(x) : CRM.voice._contactLabel(x);
-  const sub = [x.plz, x.ort].filter(Boolean).join(' ');
-  return '<div class="header-search-item voice-cand-row" data-id="' + x.id + '">'
-    + '<strong>' + esc(label) + '</strong>'
-    + '<span style="color:var(--text-dim);font-size:12px"> · ' + esc(sub) + '</span>'
+  const letzte = kind === 'project' ? CRM.lastActivityDateProject(x) : CRM.lastActivityDate(x);
+  const subParts = [[x.plz, x.ort].filter(Boolean).join(' '), letzte ? 'zuletzt ' + letzte.split('-').reverse().join('.') : ''].filter(Boolean);
+  const empfohlen = !!(opts && opts.vorschlag);
+  return '<div class="header-search-item voice-cand-row' + (empfohlen ? ' voice-cand-row-empfohlen' : '') + '" data-id="' + x.id + '">'
+    + '<strong>' + (empfohlen ? '⭐ ' : '') + esc(label) + '</strong>'
+    + (subParts.length ? '<span style="color:var(--text-dim);font-size:12px"> · ' + esc(subParts.join(' · ')) + '</span>' : '')
     + '</div>';
 };
 
@@ -776,11 +827,15 @@ CRM.voice._entityPickerHtml = function (res, idx, side, kind) {
       + '</div>';
   }
 
+  const vorschlag = res.status === 'ambiguous' && res.vorschlagId
+    ? (res.candidates || []).find((x) => x.id === res.vorschlagId) : null;
   const hint = res.status === 'ambiguous'
-    ? 'Mehrere Treffer für „' + esc(res.query) + '" — bitte wählen, oder unten neu suchen:'
+    ? (vorschlag
+      ? 'Mehrere Treffer für „' + esc(res.query) + '" — zuletzt Kontakt mit ' + esc(kind === 'project' ? CRM.voice._projectLabel(vorschlag) : CRM.voice._contactLabel(vorschlag)) + ', antippen zum Übernehmen (oder unten neu suchen):'
+      : 'Mehrere Treffer für „' + esc(res.query) + '" — bitte wählen, oder unten neu suchen:')
     : '„' + esc(res.query) + '" nicht gefunden — bitte suchen und zuordnen:';
   const candRows = res.status === 'ambiguous'
-    ? (res.candidates || []).map((x) => CRM.voice._candRowHtml(x, kind)).join('')
+    ? (res.candidates || []).map((x) => CRM.voice._candRowHtml(x, kind, { vorschlag: x.id === res.vorschlagId })).join('')
     : '';
   return '<div class="voice-cand-list" data-idx="' + idx + '" data-side="' + side + '" data-kind="' + kind + '">'
     + '<div class="voice-cand-hint">' + hint + '</div>'

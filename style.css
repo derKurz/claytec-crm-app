@@ -1074,6 +1074,10 @@ body.theme-hell .nearby-row.nearby-intour{background:rgba(14,143,126,.10)}
 .voice-cand-list{margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .voice-cand-hint{padding:6px 10px;font-size:12px;color:var(--text-dim);background:var(--bg)}
 .voice-cand-row{min-height:44px;display:flex;flex-direction:column;justify-content:center}
+/* Punkt 4 (Chris 2026-09-30): per letzter Aktivität empfohlene Zeile in
+   einer mehrdeutigen Kandidatenliste — reine Hervorhebung, ausgewählt wird
+   trotzdem per Tipp wie jede andere Zeile (kein Auto-Pick). */
+.voice-cand-row-empfohlen{background:rgba(61,169,252,.1);border-left:3px solid var(--accent)}
 .voice-search-input{width:calc(100% - 16px);margin:6px 8px;display:block}
 .voice-search-results:empty{display:none}
 .voice-edit-input{width:100%;margin-top:2px}
