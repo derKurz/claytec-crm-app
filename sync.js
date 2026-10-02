@@ -134,6 +134,111 @@ CRM.sync.exportSingleVisit = async function (contactId, visitId) {
 };
 
 /* ============================================================
+   Abgleich-Prüfung (Punkt 8, Chris 2026-10-02): "Tagesabschluss ist leer,
+   obwohl ich viele Einträge am Handy gemacht habe — ich kann nicht
+   nachvollziehen, wo die Berichte geblieben sind." Rein LESEND: schreibt
+   nichts, ändert nichts. Zeigt (A) wie die Besuche auf DIESEM Gerät stehen
+   und (B) wo die Besuche einer Backup-/Eingang-Datei hier gelandet sind.
+   ============================================================ */
+CRM.sync.zaehleBesuche = function (contacts) {
+  const z = { gesamt: 0, mitNotiz: 0, ohneNotiz: 0, abgelegt: 0, abgelegtOhneZeit: 0, offen: 0 };
+  (contacts || []).forEach((c) => (c.visits || []).forEach((v) => {
+    z.gesamt++;
+    const hatNotiz = !!(v.note && v.note.trim());
+    if (hatNotiz) z.mitNotiz++; else z.ohneNotiz++;
+    if (v.excelFiled) { z.abgelegt++; if (!v.excelFiledAt) z.abgelegtOhneZeit++; }
+    else if (hatNotiz) z.offen++;
+  }));
+  return z;
+};
+
+/* Ordnet jeden Besuch der Datei einer Kategorie zu (Kontakt-ID + Besuchs-ID,
+   Ersatz: gleiches Datum + gleiche Notiz, falls die Besuchs-ID abweicht). */
+CRM.sync.vergleicheBesuche = function (fileData, contacts) {
+  const byId = new Map((contacts || []).map((c) => [c.id, c]));
+  const norm = (s) => String(s || '').trim();
+  const counts = { 'fehlt-kontakt': 0, 'fehlt-besuch': 0, offen: 0, abgelegt: 0, konflikt: 0 };
+  const rows = [];
+  ((fileData && fileData.contacts) || []).forEach((fc) => {
+    const local = byId.get(fc.id);
+    (fc.visits || []).forEach((fv) => {
+      const row = { datum: fv.date || '', firma: fc.firma1 || '', note: norm(fv.note), kat: '', grund: '' };
+      if (!local) { row.kat = 'fehlt-kontakt'; row.grund = 'Kontakt existiert hier nicht'; }
+      else {
+        const lv = (local.visits || []).find((x) => x.id === fv.id)
+          || (local.visits || []).find((x) => x.date === fv.date && norm(x.note) === norm(fv.note));
+        if (!lv) { row.kat = 'fehlt-besuch'; row.grund = 'Kontakt vorhanden, Besuch fehlt hier'; }
+        else if (norm(lv.note) !== norm(fv.note)) { row.kat = 'konflikt'; row.grund = 'Notiz hier anders als in der Datei'; }
+        else if (!!lv.excelFiled !== !!fv.excelFiled) {
+          row.kat = 'konflikt';
+          row.grund = fv.excelFiled ? 'Datei: abgelegt — hier: offen' : 'Datei: offen — hier: abgelegt';
+        } else { row.kat = lv.excelFiled ? 'abgelegt' : 'offen'; row.grund = lv.excelFiled ? 'hier abgelegt' : 'hier offen (im Tagesabschluss)'; }
+      }
+      counts[row.kat]++;
+      rows.push(row);
+    });
+  });
+  return { counts, rows };
+};
+
+CRM.sync._KAT_LABEL = {
+  'fehlt-kontakt': '❌ Kontakt fehlt hier', 'fehlt-besuch': '❌ Besuch fehlt hier',
+  offen: '🟡 hier offen', abgelegt: '✅ hier abgelegt', konflikt: '⚠️ Konflikt',
+};
+
+CRM.sync.openPruefung = function () {
+  const z = CRM.sync.zaehleBesuche(CRM.db.getContacts());
+  const excelOk = CRM.ablage && CRM.ablage.supported && CRM.ablage.supported();
+  CRM.openModal(''
+    + '<h2>🔍 Abgleich prüfen</h2>'
+    + '<p style="color:var(--text-dim);font-size:13px">Nur Ansicht — es wird nichts geändert oder gesendet.</p>'
+    + '<h3 style="margin:10px 0 4px">Dieses Gerät</h3>'
+    + '<div style="font-size:14px;line-height:1.7">'
+    + '<div>Besuche gesamt: <strong>' + z.gesamt + '</strong> (mit Notiz ' + z.mitNotiz + ', ohne Notiz ' + z.ohneNotiz + ' — ohne Notiz nie ablegbar)</div>'
+    + '<div>In Excel abgelegt: <strong>' + z.abgelegt + '</strong>' + (z.abgelegtOhneZeit ? ' (davon ' + z.abgelegtOhneZeit + ' ohne Ablage-Zeitpunkt)' : '') + '</div>'
+    + '<div>Offen = im Tagesabschluss („Alle offenen"): <strong>' + z.offen + '</strong></div>'
+    + (excelOk ? '' : '<div style="color:var(--orange)">Excel-Ablage ist auf diesem Gerät nicht möglich (nur Chrome/Edge am Laptop) — am Handy gibt es keinen Tagesabschluss.</div>')
+    + '</div>'
+    + '<h3 style="margin:14px 0 4px">Datei vergleichen</h3>'
+    + '<p style="color:var(--text-dim);font-size:13px">Backup (<code>claytec-crm-backup-….json</code>) oder <code>eingang-….json</code> wählen — zeigt, wo jeder Besuch daraus hier gelandet ist.</p>'
+    + '<input type="file" id="pruef-file" accept=".json,application/json">'
+    + '<div id="pruef-result" style="margin-top:10px"></div>'
+    + '<div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>');
+  document.getElementById('pruef-file').addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    const out = document.getElementById('pruef-result');
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      if (!data || !Array.isArray(data.contacts)) throw new Error('keine Kontakte in der Datei');
+      const res = CRM.sync.vergleicheBesuche(data, CRM.db.getContacts());
+      CRM.sync._pruefRows = res.rows;
+      const L = CRM.sync._KAT_LABEL;
+      const summary = Object.keys(L).map((k) => '<div>' + L[k] + ': <strong>' + res.counts[k] + '</strong></div>').join('');
+      const list = res.rows.slice().sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, 200).map((r) =>
+        '<div class="list-item" style="cursor:default"><div class="li-main" style="min-width:0">'
+        + '<div class="li-title">' + esc(r.firma) + ' · ' + esc(r.datum) + '</div>'
+        + '<div style="font-size:12px;color:var(--text-dim)">' + esc(L[r.kat]) + ' — ' + esc(r.grund) + '</div>'
+        + '<div style="font-size:12px;color:var(--text-dim)">' + esc(r.note.replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
+        + '</div></div>').join('');
+      out.innerHTML = '<div style="font-size:14px;line-height:1.7">Datei: <strong>' + res.rows.length + '</strong> Besuche aus ' + data.contacts.length + ' Kontakten (Stand ' + esc(data.exportedAt || '?') + ')' + summary + '</div>'
+        + '<div class="row" style="margin:8px 0"><button class="btn btn-sm" onclick="CRM.sync.kopierePruefliste()">📋 Liste kopieren</button></div>'
+        + '<div style="max-height:35vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">' + list + '</div>';
+    } catch (err) {
+      out.innerHTML = '<p style="color:var(--red)">Datei konnte nicht gelesen werden: ' + esc(err.message) + '</p>';
+    }
+  });
+};
+
+CRM.sync.kopierePruefliste = function () {
+  const L = CRM.sync._KAT_LABEL;
+  const text = (CRM.sync._pruefRows || []).map((r) => [r.datum, r.firma, L[r.kat], r.grund].join(' | ')).join('\n');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => CRM.toast('Liste kopiert.', 'success'), () => CRM.toast('Kopieren fehlgeschlagen.', 'error'));
+  } else CRM.toast('Kopieren in diesem Browser nicht verfügbar.', 'error');
+};
+
+/* ============================================================
    Notion-Feierabend-Block
    Sammelt alles, was seit dem letzten Notion-Export erfasst wurde
    (Besuche, Notizen, neu angelegte Aufgaben) und bündelt es je Kontakt

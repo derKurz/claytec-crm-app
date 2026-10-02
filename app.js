@@ -1193,6 +1193,10 @@ CRM.initMobileNav = function () {
     closeSheet();
     CRM.ablage.openTagesabschluss();
   });
+  document.getElementById('more-sheet-pruefung')?.addEventListener('click', () => {
+    closeSheet();
+    CRM.sync.openPruefung();
+  });
   document.getElementById('more-sheet-import').addEventListener('click', () => {
     closeSheet();
     document.getElementById('file-input-excel').click();
@@ -1253,6 +1257,7 @@ CRM.initHeaderSearch = function () {
     { icon: '🏨', label: 'Hotels / Übernachtungen', keys: ['hotel', 'hotels', 'uebernachtung', 'übernachtung', 'gasthof'], run: () => { if (CRM.hotels && CRM.hotels.openDialog) CRM.hotels.openDialog(); } },
     { icon: '💾', label: 'Backup erstellen', keys: ['backup', 'sicherung', 'sichern'], run: () => CRM.backup && CRM.backup.exportJSON() },
     { icon: '📥', label: 'Handy-Eingang verarbeiten', keys: ['eingang', 'sync', 'synchronisieren'], run: () => CRM.ablage && CRM.ablage.processEingang(false) },
+    { icon: '🔍', label: 'Abgleich prüfen (Handy/Laptop/Excel)', keys: ['abgleich', 'prüfen', 'pruefen', 'diagnose', 'sync'], run: () => CRM.sync.openPruefung() },
     { icon: '🗂️', label: 'Tagesabschluss (Besuche → Excel)', keys: ['tagesabschluss', 'abschluss', 'excel', 'ablegen', 'feierabend'], run: () => CRM.ablage && CRM.ablage.openTagesabschluss() },
     { icon: '➕', label: 'Neuer Kontakt', keys: ['neuer kontakt', 'kontakt anlegen', 'neu'], run: () => CRM.createNewContact && CRM.createNewContact() },
     { icon: '⚙️', label: 'Einstellungen', keys: ['einstellungen', 'settings', 'optionen'], run: () => CRM.switchTab('einstellungen') },
