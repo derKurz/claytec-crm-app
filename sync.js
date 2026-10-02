@@ -181,6 +181,30 @@ CRM.sync.vergleicheBesuche = function (fileData, contacts) {
   return { counts, rows };
 };
 
+/* Mehrere Dateien (z. B. alle Backups/Eingänge eines Monats) zu EINEM
+   Bestand vereinigen: je Kontakt + Besuchs-ID einmal; bei Mehrfachvorkommen
+   gewinnt die jüngste Datei (exportedAt), "abgelegt" bleibt abgelegt. */
+CRM.sync.vereinigeDateien = function (fileDatas) {
+  const sorted = (fileDatas || []).slice().sort((a, b) => String(a.exportedAt || '').localeCompare(String(b.exportedAt || '')));
+  const byContact = new Map();
+  let gesamt = 0;
+  sorted.forEach((fd) => (fd.contacts || []).forEach((fc) => {
+    let e = byContact.get(fc.id);
+    if (!e) { e = { id: fc.id, firma1: fc.firma1 || '', visits: new Map() }; byContact.set(fc.id, e); }
+    if (fc.firma1) e.firma1 = fc.firma1;
+    (fc.visits || []).forEach((v) => {
+      gesamt++;
+      const prev = e.visits.get(v.id);
+      const merged = prev ? Object.assign({}, prev, v) : Object.assign({}, v);
+      if (prev && (prev.excelFiled || v.excelFiled)) merged.excelFiled = true;
+      e.visits.set(v.id, merged);
+    });
+  }));
+  const contacts = Array.from(byContact.values()).map((e) => ({ id: e.id, firma1: e.firma1, visits: Array.from(e.visits.values()) }));
+  const einzigartig = contacts.reduce((n, c) => n + c.visits.length, 0);
+  return { data: { contacts, exportedAt: sorted.length ? sorted[sorted.length - 1].exportedAt : '' }, dateien: sorted.length, gesamt, einzigartig };
+};
+
 CRM.sync._KAT_LABEL = {
   'fehlt-kontakt': '❌ Kontakt fehlt hier', 'fehlt-besuch': '❌ Besuch fehlt hier',
   offen: '🟡 hier offen', abgelegt: '✅ hier abgelegt', konflikt: '⚠️ Konflikt',
@@ -200,34 +224,57 @@ CRM.sync.openPruefung = function () {
     + (excelOk ? '' : '<div style="color:var(--orange)">Excel-Ablage ist auf diesem Gerät nicht möglich (nur Chrome/Edge am Laptop) — am Handy gibt es keinen Tagesabschluss.</div>')
     + '</div>'
     + '<h3 style="margin:14px 0 4px">Datei vergleichen</h3>'
-    + '<p style="color:var(--text-dim);font-size:13px">Backup (<code>claytec-crm-backup-….json</code>) oder <code>eingang-….json</code> wählen — zeigt, wo jeder Besuch daraus hier gelandet ist.</p>'
-    + '<input type="file" id="pruef-file" accept=".json,application/json">'
+    + '<p style="color:var(--text-dim);font-size:13px">Eine oder <strong>mehrere</strong> Dateien wählen (z. B. alle Backups/Eingänge eines Monats: <code>claytec-crm-backup-….json</code>, <code>eingang-….json</code>) — zeigt, wo jeder Besuch daraus hier gelandet ist.</p>'
+    + '<input type="file" id="pruef-file" accept=".json,application/json" multiple>'
     + '<div id="pruef-result" style="margin-top:10px"></div>'
     + '<div class="modal-footer"><button class="btn" onclick="CRM.closeModal()">Schließen</button></div>');
   document.getElementById('pruef-file').addEventListener('change', async (e) => {
-    const f = e.target.files && e.target.files[0];
+    const files = Array.from(e.target.files || []);
     const out = document.getElementById('pruef-result');
-    if (!f) return;
-    try {
-      const data = JSON.parse(await f.text());
-      if (!data || !Array.isArray(data.contacts)) throw new Error('keine Kontakte in der Datei');
-      const res = CRM.sync.vergleicheBesuche(data, CRM.db.getContacts());
-      CRM.sync._pruefRows = res.rows;
-      const L = CRM.sync._KAT_LABEL;
-      const summary = Object.keys(L).map((k) => '<div>' + L[k] + ': <strong>' + res.counts[k] + '</strong></div>').join('');
-      const list = res.rows.slice().sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, 200).map((r) =>
-        '<div class="list-item" style="cursor:default"><div class="li-main" style="min-width:0">'
-        + '<div class="li-title">' + esc(r.firma) + ' · ' + esc(r.datum) + '</div>'
-        + '<div style="font-size:12px;color:var(--text-dim)">' + esc(L[r.kat]) + ' — ' + esc(r.grund) + '</div>'
-        + '<div style="font-size:12px;color:var(--text-dim)">' + esc(r.note.replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
-        + '</div></div>').join('');
-      out.innerHTML = '<div style="font-size:14px;line-height:1.7">Datei: <strong>' + res.rows.length + '</strong> Besuche aus ' + data.contacts.length + ' Kontakten (Stand ' + esc(data.exportedAt || '?') + ')' + summary + '</div>'
-        + '<div class="row" style="margin:8px 0"><button class="btn btn-sm" onclick="CRM.sync.kopierePruefliste()">📋 Liste kopieren</button></div>'
-        + '<div style="max-height:35vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">' + list + '</div>';
-    } catch (err) {
-      out.innerHTML = '<p style="color:var(--red)">Datei konnte nicht gelesen werden: ' + esc(err.message) + '</p>';
+    if (!files.length) return;
+    const datas = [], fehler = [], zeilen = [];
+    for (const f of files) {
+      try {
+        const data = JSON.parse(await f.text());
+        if (!data || !Array.isArray(data.contacts)) throw new Error('keine Kontakte');
+        datas.push(data);
+        const n = data.contacts.reduce((s, c) => s + (c.visits || []).length, 0);
+        zeilen.push(f.name + ' — Stand ' + (data.exportedAt || '?').slice(0, 16).replace('T', ' ') + ', ' + n + ' Besuche');
+      } catch (err) { fehler.push(f.name + ': ' + err.message); }
     }
+    if (!datas.length) { out.innerHTML = '<p style="color:var(--red)">Keine Datei lesbar: ' + esc(fehler.join('; ')) + '</p>'; return; }
+    const v = CRM.sync.vereinigeDateien(datas);
+    CRM.sync._pruefRes = Object.assign({ zeilen, fehler }, v, CRM.sync.vergleicheBesuche(v.data, CRM.db.getContacts()));
+    CRM.sync._pruefMonat = '';
+    CRM.sync._pruefAnzeigen();
   });
+};
+
+CRM.sync._pruefAnzeigen = function () {
+  const R = CRM.sync._pruefRes, out = document.getElementById('pruef-result');
+  if (!R || !out) return;
+  const L = CRM.sync._KAT_LABEL;
+  const monate = Array.from(new Set(R.rows.map((r) => (r.datum || '').slice(0, 7)).filter(Boolean))).sort().reverse();
+  const m = CRM.sync._pruefMonat || '';
+  const rows = R.rows.filter((r) => !m || (r.datum || '').slice(0, 7) === m);
+  CRM.sync._pruefRows = rows;
+  const counts = {}; Object.keys(L).forEach((k) => { counts[k] = rows.filter((r) => r.kat === k).length; });
+  const summary = Object.keys(L).map((k) => '<div>' + L[k] + ': <strong>' + counts[k] + '</strong></div>').join('');
+  const list = rows.slice().sort((a, b) => (a.datum < b.datum ? 1 : -1)).slice(0, 200).map((r) =>
+    '<div class="list-item" style="cursor:default"><div class="li-main" style="min-width:0">'
+    + '<div class="li-title">' + esc(r.firma) + ' · ' + esc(r.datum) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-dim)">' + esc(L[r.kat]) + ' — ' + esc(r.grund) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-dim)">' + esc(r.note.replace(/\s+/g, ' ').slice(0, 80)) + '</div>'
+    + '</div></div>').join('');
+  out.innerHTML = '<div style="font-size:13px;color:var(--text-dim)">' + R.dateien + ' Datei(en), ' + R.gesamt + ' Besuche, davon <strong>' + R.einzigartig + ' einzigartig</strong>'
+    + (R.fehler.length ? '<br><span style="color:var(--red)">Nicht lesbar: ' + esc(R.fehler.join('; ')) + '</span>' : '')
+    + '<details style="margin-top:4px"><summary>Dateien</summary>' + R.zeilen.map(esc).join('<br>') + '</details></div>'
+    + '<div class="row" style="align-items:center;gap:8px;margin:8px 0"><label style="margin:0">Monat</label>'
+    + '<select onchange="CRM.sync._pruefMonat=this.value;CRM.sync._pruefAnzeigen()"><option value="">Alle Monate</option>'
+    + monate.map((x) => '<option value="' + x + '"' + (x === m ? ' selected' : '') + '>' + x + '</option>').join('') + '</select></div>'
+    + '<div style="font-size:14px;line-height:1.7"><strong>' + rows.length + '</strong> Besuche' + (m ? ' im Monat ' + esc(m) : '') + summary + '</div>'
+    + '<div class="row" style="margin:8px 0"><button class="btn btn-sm" onclick="CRM.sync.kopierePruefliste()">📋 Liste kopieren</button></div>'
+    + '<div style="max-height:30vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">' + list + '</div>';
 };
 
 CRM.sync.kopierePruefliste = function () {

@@ -1258,6 +1258,44 @@ CRM.mergeIncomingContact = function (existing, incoming) {
 };
 
 /* ============================================================
+   Backup-"Zusammenführen" (Punkt 8, Chris 2026-10-02): Handy-Backup
+   täglich, Zusammenführen fast täglich — bisher ersetzte importJSON bei
+   gleicher ID den GANZEN Kontakt und überschrieb damit Besuche und
+   excelFiled-Markierungen der Gegenseite. Jetzt, in beide Richtungen
+   gleich: Besuche beider Seiten werden vereinigt (per ID, Ersatz gleiches
+   Datum + gleiche Notiz); ein einmal abgelegter Bericht bleibt abgelegt
+   (excelFiled = ODER, frühester excelFiledAt); Stammdaten überschreibt
+   die Datei nur, wenn sie tatsächlich neuer ist (updatedAt). Gibt
+   { contact, added } zurück — contact ist ein neues Objekt.
+   ============================================================ */
+CRM.mergeBackupContact = function (existing, incoming) {
+  const norm = (s) => String(s || '').trim();
+  const same = (a, b) => a.id === b.id || (a.date === b.date && norm(a.note) === norm(b.note));
+  const stamp = (v) => v.updatedAt || v.createdAt || '';
+  const incomingNewer = !!incoming.updatedAt && (!existing.updatedAt || incoming.updatedAt > existing.updatedAt);
+  const visits = (existing.visits || []).map((v) => Object.assign({}, v));
+  let added = 0;
+  (incoming.visits || []).forEach((iv) => {
+    const i = visits.findIndex((v) => same(v, iv));
+    if (i === -1) { visits.push(Object.assign({}, iv)); added++; return; }
+    const ev = visits[i];
+    const merged = stamp(iv) > stamp(ev) ? Object.assign({}, ev, iv, { id: ev.id }) : ev;
+    if (ev.excelFiled || iv.excelFiled) {
+      merged.excelFiled = true;
+      const first = [ev.excelFiledAt, iv.excelFiledAt].filter(Boolean).sort()[0];
+      if (first) merged.excelFiledAt = first;
+    }
+    visits[i] = merged;
+  });
+  visits.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const contact = incomingNewer ? Object.assign({}, existing, incoming) : Object.assign({}, existing);
+  contact.visits = visits;
+  contact.tags = Array.from(new Set([...(existing.tags || []), ...(incoming.tags || [])]));
+  contact.fokus = Array.from(new Set([...(existing.fokus || []), ...(incoming.fokus || [])]));
+  return { contact, added };
+};
+
+/* ============================================================
    Agenda: Priorisierung (A vor B vor C, dann nach Überfälligkeit)
    Inspiriert von Cloze's täglicher Agenda — das meistgelobte Feature
    in Nutzerbewertungen (automatische Nachfass-Vorschläge ohne Konfiguration)
@@ -1656,6 +1694,7 @@ CRM.backup = {
     if (!jsonObj || !Array.isArray(jsonObj.contacts)) {
       throw new Error('Ungültiges Backup-Format');
     }
+    const stats = { neu: 0, aktualisiert: 0, besuche: 0 };
     if (mode === 'replace') {
       CRM.db._contacts = jsonObj.contacts || [];
       CRM.db._projects = jsonObj.projects || [];
@@ -1667,14 +1706,20 @@ CRM.backup = {
       if (jsonObj.settings) CRM.db._settings = Object.assign({}, CRM.DEFAULT_SETTINGS, jsonObj.settings);
       if (jsonObj.meta) CRM.db._meta = jsonObj.meta;
     } else {
-      // merge: incoming wins on id collision, else append
+      // merge: Kontakte per CRM.mergeBackupContact (Besuche vereinigen,
+      // nichts überschreiben), unbekannte IDs werden angehängt
       const existingIds = new Set(CRM.db._contacts.map((c) => c.id));
       (jsonObj.contacts || []).forEach((c) => {
         if (existingIds.has(c.id)) {
           const idx = CRM.db._contacts.findIndex((x) => x.id === c.id);
-          CRM.db._contacts[idx] = c;
+          const r = CRM.mergeBackupContact(CRM.db._contacts[idx], c);
+          CRM.db._contacts[idx] = r.contact;
+          stats.aktualisiert++;
+          stats.besuche += r.added;
         } else {
           CRM.db._contacts.push(c);
+          stats.neu++;
+          stats.besuche += (c.visits || []).length;
         }
       });
       const existingProjIds = new Set(CRM.db._projects.map((p) => p.id));
@@ -1721,6 +1766,7 @@ CRM.backup = {
     CRM.db.saveJournal();
     CRM.db.saveSettings({});
     CRM.db.saveMeta({});
+    return stats;
   },
 };
 

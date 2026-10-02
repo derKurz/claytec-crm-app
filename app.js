@@ -1859,7 +1859,7 @@ CRM.confirmRestoreBackup = function (data) {
   CRM.openModal(`
     <h2>Backup wiederherstellen</h2>
     <p>Das Backup enthält <strong>${n}</strong> Kontakte und ${(data.projects || []).length} Projekte (Stand: ${esc(data.exportedAt || '?')}).</p>
-    <p style="color:var(--text-dim);font-size:13px">"Ersetzen" überschreibt alle aktuellen Daten. "Zusammenführen" fügt hinzu / aktualisiert per ID.</p>
+    <p style="color:var(--text-dim);font-size:13px">"Ersetzen" überschreibt alle aktuellen Daten. "Zusammenführen" behält die Besuche beider Seiten (bereits in Excel abgelegte bleiben abgelegt); Stammdaten übernimmt die Datei nur, wenn sie neuer sind.</p>
     <div class="modal-footer">
       <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
       <button class="btn" onclick='CRM.doRestore("merge")'>Zusammenführen</button>
@@ -1875,7 +1875,7 @@ CRM.confirmMerge = function (data) {
   CRM.openModal(`
     <h2>🔀 Vom Laptop zusammenführen</h2>
     <p>Diese Datei enthält <strong>${n}</strong> Kontakte und ${(data.projects || []).length} Projekte (Stand: ${esc(data.exportedAt || '?')}).</p>
-    <p style="color:var(--text-dim);font-size:13px">Die Daten werden <strong>hinzugefügt und aktualisiert</strong> — nichts auf diesem Gerät wird gelöscht. Bei gleicher ID gewinnt die Version aus der Datei (dein Laptop-Stand).</p>
+    <p style="color:var(--text-dim);font-size:13px">Die Daten werden <strong>hinzugefügt und abgeglichen</strong> — nichts auf diesem Gerät wird gelöscht. Besuche beider Seiten bleiben erhalten (bereits abgelegte bleiben abgelegt); Stammdaten übernimmt die Datei nur, wenn sie neuer sind.</p>
     <div class="modal-footer">
       <button class="btn" onclick="CRM.closeModal()">Abbrechen</button>
       <button class="btn btn-primary" onclick='CRM.doRestore("merge")'>🔀 Zusammenführen</button>
@@ -1887,9 +1887,10 @@ CRM.confirmMerge = function (data) {
 CRM.doRestore = function (mode) {
   try {
     CRM.takeSnapshot('Vor Backup-Wiederherstellung');
-    CRM.backup.importJSON(CRM._pendingRestoreData, mode);
+    const st = CRM.backup.importJSON(CRM._pendingRestoreData, mode);
     CRM.closeModal();
-    CRM.toastUndo('Backup wiederhergestellt (' + (mode === 'replace' ? 'ersetzt' : 'zusammengeführt') + ').');
+    CRM.toastUndo(mode === 'replace' ? 'Backup wiederhergestellt (ersetzt).'
+      : 'Zusammengeführt: ' + st.neu + ' neue Kontakte, ' + st.aktualisiert + ' abgeglichen, ' + st.besuche + ' Besuche ergänzt.');
     CRM.renderContactList();
   } catch (e) {
     CRM.toast('Fehler: ' + e.message, 'error');
